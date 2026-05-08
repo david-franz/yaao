@@ -96,14 +96,17 @@ Each step declares **what runs (`agent` / `model` / `skills`)**, **where it runs
 
 Every task gets its own git worktree on its own branch. Independent tasks run in physically separate working trees on disk so agents cannot stomp on each other. Dependent tasks branch from their parent's branch, so downstream agents see committed upstream work.
 
-### ctx-sys integration
+### ctx-sys integration (optional)
 
-If `context.ctx-sys.enabled: true` and `ctx-sys` is initialized in the project, yaao:
+[`ctx-sys`](../ctx-sys) is a local hybrid-RAG context system. yaao integrates with it cleanly but treats it as **completely optional** — yaao never depends on ctx-sys, never installs it, and the default config has it disabled.
 
-- Auto-spawns `ctx-sys serve` on a project-scoped socket if not already running (no long-running daemon required).
-- Injects an MCP connection into each agent's launch config (Claude Code `--mcp-config`, Cursor `mcp.json`, Codex `~/.codex/config.toml`, raw API tool definitions).
+When `context.ctx-sys.enabled: true`, yaao:
+
+- Auto-spawns `ctx-sys serve` on a project-scoped socket for the duration of the run (toggleable; if you'd rather run it yourself, set `auto-spawn: false`).
+- Registers ctx-sys as an MCP server alongside yaao's own MCP server, so every agent that connects to yaao's MCP also has `context_query` available.
 - Prepends a system-prompt directive to every step: "Before writing or modifying code, call the `context_query` MCP tool to retrieve relevant context from this codebase."
-- When `require-query: true`, yaao will fail a step that produces a diff without having issued at least one `context_query` call (verified via MCP usage logs).
+
+ctx-sys is one example of an MCP context provider. yaao's MCP wiring is generic — you can plug in any MCP server you like via `context.mcp-servers:` and the same injection path applies.
 
 ---
 
@@ -192,10 +195,10 @@ yaao run .yaao/exec/oauth.yaml
     }
   },
   "ctx-sys": {
-    "enabled": true,
-    "auto-spawn": true,
-    "require-query": true
+    "enabled": false,
+    "auto-spawn": true
   },
+  "mcp-servers": {},
   "plan": {
     "format": "markdown",
     "speckit": false
@@ -207,24 +210,66 @@ yaao run .yaao/exec/oauth.yaml
 
 ---
 
-## Agent abstraction
+## Agent compatibility — MCP-first
 
-yaao normalizes five very different things behind one `AgentBackend` interface:
+The integration story across Claude Code, Cursor, Copilot, Codex, and raw API models is built around a single primitive: **yaao itself is an MCP server**. Every agent connects to yaao the same way. Skills, planning, converting, running, and inspecting all happen through MCP tools yaao exposes.
 
-| Backend | How it's invoked | Skill format |
+This collapses the four-agent-format problem into a single problem: register yaao as an MCP server in each agent's config. The four agents converge on one surface.
+
+### The two roles yaao plays
+
+yaao is both an MCP **server** (exposing tools to agents) and an MCP **client** (consuming tools from ctx-sys and any other context provider). When a task runs:
+
+```
+┌──────────────────┐       MCP        ┌────────────────┐
+│   agent backend  │ ◀──────────────▶ │  yaao server   │
+│ (cc/cursor/cop/  │   tools, plans   │ (per-run stdio │
+│  codex/api)      │   skill calls    │  or socket)    │
+└──────────────────┘                  └───────┬────────┘
+                                              │ MCP client
+                                      ┌───────▼────────┐
+                                      │ ctx-sys (opt.) │
+                                      │ + user MCPs    │
+                                      └────────────────┘
+```
+
+### Tools yaao exposes over MCP
+
+The same surface used by `yaao serve` is what every agent sees:
+
+| Tool | Mirrors | Purpose |
+|------|---------|---------|
+| `yaao_plan`     | `yaao plan`     | Generate an implementation plan. |
+| `yaao_convert`  | `yaao convert`  | Turn a plan into an execution plan. |
+| `yaao_validate` | `yaao validate` | Validate an execution plan. |
+| `yaao_run`      | `yaao run`      | Start a run; returns `runId`. |
+| `yaao_status`   | `yaao status`   | Inspect a run; supports `watch`. |
+| `yaao_skill_<name>` | (skill body) | Each user-defined skill is exposed as a callable MCP tool. |
+
+A skill in `.yaao/skills/<name>/` becomes an MCP tool `yaao_skill_<name>` automatically. Authoring a skill is now: write `prompt.md` with declared inputs, run `yaao skills sync`, and every agent connected to yaao's MCP can call it.
+
+### What `yaao skills install` does per agent
+
+Per-agent files exist, but they're *thin*: each agent only needs to know that yaao's MCP server is available. The big content (skill bodies, system prompts, tool definitions) lives behind the MCP boundary, not duplicated four ways.
+
+| Backend | What yaao writes | Bytes (typical) |
 |---|---|---|
-| `claude-code` | `claude --print` (one-shot) or interactive session | `.claude/skills/<name>/SKILL.md`, `.claude/agents/<name>.md` |
-| `cursor`      | `cursor-agent --print` | `.cursor/rules/<name>.mdc` |
-| `copilot`     | `gh copilot` agent mode | `.github/copilot-instructions.md`, `.github/prompts/*.prompt.md` |
-| `codex`       | `codex exec` | `AGENTS.md` |
-| `api`         | direct SDK call (Anthropic / OpenAI / OpenRouter) | inline prompt + tools |
+| `claude-code` | `.claude/yaao-mcp.json` (MCP server registration) + a one-paragraph note in `.claude/CLAUDE.md` | small |
+| `cursor`      | Managed `ctx-sys` + `yaao` blocks in `.cursor/mcp.json` (preserved + restored if pre-existing) | small |
+| `copilot`     | MCP config block + a one-paragraph stub in `.github/copilot-instructions.md` | small |
+| `codex`       | MCP overlay in the per-run `~/.codex/config.toml` shadow + a managed block in `AGENTS.md` | small |
+| `api`         | MCP client wiring is in-process; tools are registered directly on the SDK call. | n/a |
 
-`yaao skills install` writes the right files into the right places for whichever agents the project uses, so a "skill" you author once is callable from any of them. Under the hood these are different artifacts; yaao keeps them in sync from a single source of truth in `.yaao/skills/<name>/`.
+This is the part that changed compared to traditional skill-emitter approaches: the per-agent files are bootstraps that point at yaao's MCP server, not duplicated prompt content. When yaao adds a skill or changes a tool, every agent picks up the change without re-emission.
+
+### When a backend doesn't speak MCP well
+
+Each agent backend's MCP coverage is uneven (Copilot's MCP support is newest, Codex's is solid, Claude Code and Cursor have first-class support). For backends with weaker or evolving MCP support, the F4 backend layer falls back to inlining the relevant skill body into the prompt at spawn time. The MCP path is preferred; the inline path is the safety net.
 
 ### The two built-in skills
 
-- **`yaao-planner`** — generates implementation plans. Knows to query `ctx-sys` for codebase context, knows the markdown / Spec Kit conventions, knows how to scope to feature vs. project.
-- **`yaao-converter`** — turns implementation plans into execution plans. Knows the schema, infers dependencies from prose ("after the API exists…"), assigns sensible default agents per task.
+- **`yaao-planner`** — generates implementation plans. Surfaced as the `yaao_plan` MCP tool. Knows the markdown / Spec Kit conventions, knows how to scope to feature vs. project.
+- **`yaao-converter`** — turns implementation plans into execution plans. Surfaced as the `yaao_convert` MCP tool. Knows the schema, infers dependencies from prose ("after the API exists…"), assigns sensible default agents per task.
 
 ---
 
