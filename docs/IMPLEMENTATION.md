@@ -6,6 +6,8 @@ This document is the working spec for `yaao`, organized by phase. Each feature h
 
 yaao is implemented in 14 phases, progressing from foundational CLI infrastructure through the execution engine, agent integrations, the planner/converter skills, the TUI, and finally distribution and the web viewer.
 
+> **Architectural keystone — MCP-first agent compatibility.** The integration story across Claude Code, Cursor, Copilot, Codex, and raw API models is built around yaao itself being an MCP server. Per-agent files are *thin* — each agent only needs to register yaao's MCP server. Skills, tool definitions, and prompts live behind the MCP boundary, not duplicated four ways. This means **Phase 12 (yaao-as-MCP) is foundational, not auxiliary**, and is intended to be implemented in parallel with Phase 8 (skills system). Phase 8's emitters write MCP-config bootstraps, not large skill artifacts. See the Implementation Priority section.
+
 | Phase | Focus | Features | Status |
 |-------|-------|----------|--------|
 | 1  | Foundation                  | Project setup, CLI, config, init command, logging               | Planned |
@@ -148,44 +150,45 @@ How completed worktrees come back together — and what happens when they collid
 
 ---
 
-## Phase 7: ctx-sys Integration
+## Phase 7: ctx-sys Integration (optional)
 
-Make ctx-sys a first-class context provider for every agent yaao spawns, without making it mandatory.
+Make ctx-sys a first-class context provider for any agent yaao runs, **but completely optional**. yaao never depends on ctx-sys, never installs it, and ships with `ctx-sys.enabled: false` in the default config. When the user opts in, the integration is proactive — not lazy or deferred.
 
 | Feature | Description | Doc |
 |---------|-------------|-----|
-| **F7.1** | Detection & auto-spawn                      | [F7.1-detect-and-spawn.md](phase-7/F7.1-detect-and-spawn.md) |
-| **F7.2** | Per-agent MCP config injection              | [F7.2-mcp-injection.md](phase-7/F7.2-mcp-injection.md) |
-| **F7.3** | Query enforcement (`require-query`)         | [F7.3-query-enforcement.md](phase-7/F7.3-query-enforcement.md) |
+| **F7.1** | Detection & auto-spawn (when enabled)       | [F7.1-detect-and-spawn.md](phase-7/F7.1-detect-and-spawn.md) |
+| **F7.2** | MCP server registration (ctx-sys + user MCPs) | [F7.2-mcp-injection.md](phase-7/F7.2-mcp-injection.md) |
+| **F7.3** | System-prompt directive (advisory)          | [F7.3-query-enforcement.md](phase-7/F7.3-query-enforcement.md) |
 | **F7.4** | Optional git-hook impact reports            | [F7.4-impact-hook.md](phase-7/F7.4-impact-hook.md) |
 
 **Key Deliverables:**
-- yaao detects `.ctx-sys/` and probes whether `ctx-sys serve` is running on the project socket; if not and `auto-spawn: true`, spawns one.
-- Generates ephemeral MCP config files per agent: Claude Code via `--mcp-config`, Cursor by writing `.cursor/mcp.json`, Codex via `~/.codex/config.toml` overlay, API backend by registering tools.
-- Every step gets a system-prompt directive: "Before writing or modifying code, call the `context_query` MCP tool with a query relevant to your task."
-- When `require-query: true`, yaao tails the MCP server log; if a step produces a non-empty diff without any `context_query` calls, the step fails with a clear error.
+- Default-off in `yaao.config.json`. When `ctx-sys.enabled: true`, yaao detects whether `ctx-sys serve` is running and (if `auto-spawn: true`) spawns it for the run.
+- Generic MCP-server registration: ctx-sys is one entry; users can add other MCP servers via `mcp-servers:` and they flow through the same injection path.
+- Every step gets an advisory system-prompt directive recommending `context_query` before writing code. **No hard enforcement** — agents decide whether to query.
 - Optional: install a git pre-commit hook that calls `ctx-sys hooks.impact_report` and feeds the result to merge-time conflict-resolution agents.
 
 ---
 
-## Phase 8: Skills System
+## Phase 8: Skills System (MCP-first)
 
-One source-of-truth skill, four agent formats. Plus the two built-in skills (`yaao-planner`, `yaao-converter`) that the next two phases depend on.
+One source-of-truth skill. The skill is exposed primarily as a yaao MCP tool (`yaao_skill_<name>`) — see Phase 12. The per-agent emitters write *small* MCP-config bootstraps and short instruction stubs that point agents at yaao's MCP server, not large duplicated skill artifacts.
 
 | Feature | Description | Doc |
 |---------|-------------|-----|
 | **F8.1** | Skill source-of-truth format                | [F8.1-skill-format.md](phase-8/F8.1-skill-format.md) |
-| **F8.2** | Claude Code emitter                         | [F8.2-claude-code-emitter.md](phase-8/F8.2-claude-code-emitter.md) |
-| **F8.3** | Cursor emitter                              | [F8.3-cursor-emitter.md](phase-8/F8.3-cursor-emitter.md) |
-| **F8.4** | Copilot emitter                             | [F8.4-copilot-emitter.md](phase-8/F8.4-copilot-emitter.md) |
-| **F8.5** | Codex emitter                               | [F8.5-codex-emitter.md](phase-8/F8.5-codex-emitter.md) |
+| **F8.2** | Claude Code emitter (MCP config + stub)     | [F8.2-claude-code-emitter.md](phase-8/F8.2-claude-code-emitter.md) |
+| **F8.3** | Cursor emitter (MCP config + stub)          | [F8.3-cursor-emitter.md](phase-8/F8.3-cursor-emitter.md) |
+| **F8.4** | Copilot emitter (MCP config + stub)         | [F8.4-copilot-emitter.md](phase-8/F8.4-copilot-emitter.md) |
+| **F8.5** | Codex emitter (MCP config + stub)           | [F8.5-codex-emitter.md](phase-8/F8.5-codex-emitter.md) |
 | **F8.6** | `yaao skills install` / sync                | [F8.6-skills-install.md](phase-8/F8.6-skills-install.md) |
 
 **Key Deliverables:**
-- `.yaao/skills/<name>/skill.yaml` (metadata + applies-to + tools) + `prompt.md` (body) as the source of truth.
-- Emitters generate the right artifact in the right place for each agent, idempotently, with a fingerprint so re-installs are detectable.
-- `yaao skills install` writes for all enabled agents; `yaao skills install --agent <name>` for one; `yaao skills sync` updates if source-of-truth changed.
-- Generated files include a `# Managed by yaao — do not edit` header and a hash; manual edits are detected and surfaced.
+
+- `.yaao/skills/<name>/skill.yaml` (metadata + inputs + applies-to) + `prompt.md` (body) as the source of truth.
+- Each skill is auto-registered as a yaao MCP tool `yaao_skill_<name>` (Phase 12 wires this).
+- Per-agent emitters write **MCP-config bootstraps**: `.claude/yaao-mcp.json`, managed blocks in `.cursor/mcp.json` / `~/.codex/config.toml`, and short instruction stubs (`AGENTS.md`, `CLAUDE.md`, `copilot-instructions.md`) that say "yaao's MCP tools are available; use `yaao_skill_<name>` for X."
+- Inline-prompt fallback only for agents with weak MCP coverage (e.g. early Copilot builds), as a safety net not the default path.
+- Generated files include a `# Managed by yaao` header + hash; manual edits are detected and surfaced.
 
 ---
 
@@ -254,22 +257,25 @@ Static plan viewer, live execution monitor, and the rendering primitives behind 
 
 ---
 
-## Phase 12: yaao-as-MCP
+## Phase 12: yaao-as-MCP (primary integration surface)
 
-Expose yaao itself as an MCP server so any MCP-capable agent can drive it.
+Expose yaao itself as an MCP server. **This is the canonical way every agent — Claude Code, Cursor, Copilot, Codex, raw API — drives yaao.** Build alongside Phase 8: the skills emitters generate MCP bootstraps that point at this server.
 
 | Feature | Description | Doc |
 |---------|-------------|-----|
-| **F12.1** | MCP server scaffold                        | [F12.1-mcp-server.md](phase-12/F12.1-mcp-server.md) |
-| **F12.2** | `generate_plan` tool                       | [F12.2-generate-plan-tool.md](phase-12/F12.2-generate-plan-tool.md) |
-| **F12.3** | `convert_plan` tool                        | [F12.3-convert-plan-tool.md](phase-12/F12.3-convert-plan-tool.md) |
-| **F12.4** | `run_plan` & `status` tools                | [F12.4-run-plan-tool.md](phase-12/F12.4-run-plan-tool.md) |
+| **F12.1** | MCP server scaffold + transport            | [F12.1-mcp-server.md](phase-12/F12.1-mcp-server.md) |
+| **F12.2** | `yaao_plan` tool                           | [F12.2-generate-plan-tool.md](phase-12/F12.2-generate-plan-tool.md) |
+| **F12.3** | `yaao_convert` tool                        | [F12.3-convert-plan-tool.md](phase-12/F12.3-convert-plan-tool.md) |
+| **F12.4** | `yaao_run` & `yaao_status` tools           | [F12.4-run-plan-tool.md](phase-12/F12.4-run-plan-tool.md) |
+| **F12.5** | Skill-as-MCP-tool exposure                 | [F12.5-skill-tools.md](phase-12/F12.5-skill-tools.md) |
 
 **Key Deliverables:**
-- `yaao serve` exposes an MCP server over stdio (default) or socket.
-- `generate_plan` mirrors `yaao plan` programmatically; returns the plan as text plus the path it was written to.
-- `convert_plan` mirrors `yaao convert`; returns the resulting YAML and validates it.
-- `run_plan` starts a run asynchronously and returns a run ID; `status` returns live state. Long-running progress is delivered via MCP progress notifications.
+
+- `yaao serve` exposes an MCP server over stdio (default), socket, or HTTP.
+- `yaao_plan` mirrors `yaao plan`; returns the plan body plus the path written.
+- `yaao_convert` mirrors `yaao convert`; returns YAML and validates.
+- `yaao_run` starts a run asynchronously; `yaao_status` reports live state. Long-running progress flows via MCP progress notifications.
+- Every user-defined skill in `.yaao/skills/` is auto-registered as `yaao_skill_<name>` with input schema derived from `skill.yaml`. New skills become callable tools without touching agent configs.
 
 ---
 
@@ -415,10 +421,11 @@ yaao/
 
 1. Phases 1-3 are the critical path — without config, schema, and worktrees, nothing else works.
 2. Phase 4 + 5 + 6 unlock the first end-to-end demo: a hand-written YAML plan that runs across worktrees and merges back.
-3. Phase 7 (ctx-sys) is independent of 8-10; can be developed in parallel once 5 lands.
-4. Phases 8-10 enable the "plan from a description" workflow that is yaao's headline feature.
-5. Phase 11 (TUI) can be developed alongside 5/6 since it just consumes the event bus.
-6. Phases 12-14 are polish/distribution and can ship independently.
+3. **Phase 12 (yaao-as-MCP) is built alongside Phase 8**, not after it. The skills emitters in Phase 8 emit MCP bootstraps that point at the Phase 12 server, so the two are co-dependent. Build the MCP server scaffold (F12.1) first, then F8.1 (skill format), then F12.5 (skill-as-tool exposure), then the per-agent emitters (F8.2-F8.5).
+4. Phase 7 (ctx-sys) is fully optional and independent; can land any time after Phase 5. Default-off in shipped config.
+5. Phases 9-10 (planner/converter skills) build on the MCP-tool path established in 8 + 12.
+6. Phase 11 (TUI) can be developed alongside 5/6 since it just consumes the event bus.
+7. Phases 13-14 are distribution and the web viewer — ship independently.
 
 ---
 
