@@ -1,0 +1,9 @@
+plan:
+  name: minimal
+  version: 1
+
+tasks:
+  - id: hello
+    title: Say hello
+    agent: claude-code
+    prompt: print hello

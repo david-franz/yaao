@@ -8,6 +8,29 @@ export { createLogger } from './log/logger.js';
 export type { YaaoConfig, AgentName, ApiProvider } from './config/types.js';
 export { DEFAULT_CONFIG, AGENT_NAMES } from './config/types.js';
 export { ConfigSchema } from './config/schema.js';
+export {
+  PlanSchema,
+  TaskSchema,
+  ApiBindingSchema,
+  PlanHeaderSchema,
+  PlanConfigSchema,
+  PlanContextSchema,
+  ValidationSchema,
+  DurationSchema,
+  resolvePlan,
+} from './plan/schema/types.js';
+export type {
+  Plan,
+  Task,
+  PlanHeader,
+  PlanConfig,
+  ApiBinding,
+  ResolvedPlan,
+  ResolvedTask,
+  ResolvedPlanConfig,
+  ResolvedPlanContext,
+  ResolveOptions,
+} from './plan/schema/types.js';
 export { loadConfig, configPaths, findProjectConfig, deepMerge, expandEnv } from './config/loader.js';
 export type { ConfigPaths, LoadConfigOptions, LoadResult } from './config/loader.js';
 export {

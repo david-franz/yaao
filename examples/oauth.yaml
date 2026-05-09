@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=../schema/execution-plan.schema.json
+plan:
+  name: oauth
+  version: 1
+  description: Add OAuth2 login with Google and GitHub.
+
+config:
+  max-parallel: 4
+  base-branch: main
+  merge:
+    strategy: auto
+    on-conflict: manual
+
+tasks:
+  - id: scaffold
+    title: Scaffold the OAuth module
+    agent: claude-code
+    model: opus
+    prompt: |
+      Create src/auth/oauth.ts with provider stubs for Google and GitHub.
+    files: ['src/auth/**']
+
+  - id: api
+    title: Implement OAuth callback API
+    depends: [scaffold]
+    agent: claude-code
+    model: sonnet
+    prompt: |
+      Implement /auth/google/callback and /auth/github/callback in src/api/oauth.ts.
+    files: ['src/api/oauth.ts']
+
+  - id: ui
+    title: Implement login UI
+    depends: [scaffold]
+    agent: claude-code
+    prompt: |
+      Add a Login component with Google and GitHub buttons in src/ui/Login.tsx.
+    files: ['src/ui/Login.tsx']
+
+  - id: integration-tests
+    title: End-to-end tests
+    depends: [api, ui]
+    agent: claude-code
+    prompt: |
+      Add integration tests covering the happy path through both providers.
+    merge: pr
