@@ -12,7 +12,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 |-------|-------|----------|--------|
 | 1  | Foundation                  | Project setup, CLI, config, init command, logging               | Shipped |
 | 2  | Plan schema & validation    | Zod schema, YAML parser, DAG validation, `validate`             | Shipped |
-| 3  | Worktree & git engine       | Worktree manager, branch graph, git wrapper, run journal        | Planned |
+| 3  | Worktree & git engine       | Worktree manager, branch graph, git wrapper, run journal        | Shipped |
 | 4  | Agent backends              | Backend interface + Claude Code, Cursor, Copilot, Codex, API    | Planned |
 | 5  | Execution engine            | Scheduler, lifecycle, event bus, `run`, resume, dry-run         | Planned |
 | 6  | Merge engine                | Topological merge, manual/auto/agent conflict modes, PR mode    | Planned |
@@ -67,16 +67,16 @@ The execution-plan schema is the lingua franca that connects the planner, conver
 
 ---
 
-## Phase 3: Worktree & Git Engine
+## Phase 3: Worktree & Git Engine **(shipped)**
 
 The mechanical layer that lets multiple agents work on the same repo at once without colliding.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F3.1** | Worktree manager                            | [F3.1-worktree-manager.md](phase-3/F3.1-worktree-manager.md) |
-| **F3.2** | Dependency-aware branch graph               | [F3.2-branch-graph.md](phase-3/F3.2-branch-graph.md) |
-| **F3.3** | Git operations wrapper                      | [F3.3-git-wrapper.md](phase-3/F3.3-git-wrapper.md) |
-| **F3.4** | Run state journal                           | [F3.4-run-journal.md](phase-3/F3.4-run-journal.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F3.1** | Worktree manager                            | shipped | [F3.1-worktree-manager.md](phase-3/F3.1-worktree-manager.md) |
+| **F3.2** | Dependency-aware branch graph               | shipped | [F3.2-branch-graph.md](phase-3/F3.2-branch-graph.md) |
+| **F3.3** | Git operations wrapper                      | shipped | [F3.3-git-wrapper.md](phase-3/F3.3-git-wrapper.md) |
+| **F3.4** | Run state journal                           | shipped | [F3.4-run-journal.md](phase-3/F3.4-run-journal.md) |
 
 **Key Deliverables:**
 - Per-task worktree creation/teardown under `.yaao/worktrees/<run-id>/<task-id>/`.
