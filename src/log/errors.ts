@@ -34,6 +34,8 @@ export const DEFAULT_HINTS: Record<string, string> = {
   YAAO_PLAN_INVALID: 'Fix the schema violations and re-run `yaao validate`.',
   YAAO_PLAN_INCLUDE_CYCLE: 'Break the include cycle by inlining or removing one of the entries.',
   YAAO_PLAN_INCLUDE_DEPTH: 'Flatten the include tree or raise maxIncludeDepth.',
+  YAAO_GIT: 'Inspect the git command, stdout, and stderr in the error for the underlying cause.',
+  YAAO_WORKTREE: 'Inspect the worktree path; remove leftovers via `yaao clean` if necessary.',
 };
 
 export class NotInitializedError extends YaaoError {
@@ -127,5 +129,44 @@ export class IncludeDepthError extends YaaoError {
   constructor(opts: Omit<YaaoErrorOptions, 'code'> & { depth: number }) {
     super({ ...opts, code: 'YAAO_PLAN_INCLUDE_DEPTH' });
     this.depth = opts.depth;
+  }
+}
+
+export class GitError extends YaaoError {
+  readonly cmd: string[];
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+  constructor(
+    opts: Omit<YaaoErrorOptions, 'code'> & {
+      cmd: string[];
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+    },
+  ) {
+    super({ ...opts, code: 'YAAO_GIT' });
+    this.cmd = opts.cmd;
+    this.exitCode = opts.exitCode;
+    this.stdout = opts.stdout;
+    this.stderr = opts.stderr;
+  }
+}
+
+export class WorktreeError extends YaaoError {
+  readonly path?: string;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { path?: string }) {
+    super({ ...opts, code: 'YAAO_WORKTREE' });
+    this.path = opts.path;
+  }
+}
+
+export class WorktreeMergeError extends WorktreeError {
+  readonly conflicts: string[];
+  constructor(
+    opts: Omit<YaaoErrorOptions, 'code'> & { conflicts: string[]; path?: string },
+  ) {
+    super({ ...opts });
+    this.conflicts = opts.conflicts;
   }
 }
