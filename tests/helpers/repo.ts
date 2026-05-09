@@ -22,6 +22,10 @@ const env: NodeJS.ProcessEnv = {
 export function createTestRepo(): TestRepo {
   const path = mkdtempSync(join(tmpdir(), 'yaao-repo-'));
   execaSync('git', ['init', '-q', '-b', 'main'], { cwd: path, env });
+  // local git config so subsequent invocations (which may not inherit our env) succeed
+  execaSync('git', ['config', 'user.name', 'yaao test'], { cwd: path });
+  execaSync('git', ['config', 'user.email', 'test@yaao.dev'], { cwd: path });
+  execaSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: path });
   // ensure there is at least one commit
   writeFileSync(join(path, '.gitkeep'), '');
   execaSync('git', ['add', '.gitkeep'], { cwd: path, env });

@@ -80,6 +80,7 @@ export interface Git {
   fetch(remote?: string, refspec?: string, cwd?: string): Promise<void>;
   version(): Promise<string>;
   add(paths: string[], cwd?: string): Promise<void>;
+  addAll(cwd?: string): Promise<void>;
   commit(message: string, opts?: { allowEmpty?: boolean }, cwd?: string): Promise<string>;
 }
 
@@ -236,6 +237,9 @@ export const git: Git = {
   },
   async add(paths, cwd) {
     await runOk(['add', '--', ...paths], cwd);
+  },
+  async addAll(cwd) {
+    await runOk(['add', '-A'], cwd);
   },
   async commit(message, opts, cwd) {
     const args = ['commit', '-m', message];
