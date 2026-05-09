@@ -208,3 +208,27 @@ export class AgentNonZeroExitError extends YaaoError {
     this.exitCode = opts.exitCode;
   }
 }
+
+export class ApiKeyMissingError extends YaaoError {
+  readonly provider: string;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { provider: string }) {
+    super({ ...opts, code: 'YAAO_API_KEY_MISSING' });
+    this.provider = opts.provider;
+  }
+}
+
+export class ApiToolLoopBudgetError extends YaaoError {
+  readonly limit: number;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { limit: number }) {
+    super({ ...opts, code: 'YAAO_API_TOOL_BUDGET' });
+    this.limit = opts.limit;
+  }
+}
+
+export class ApiToolError extends YaaoError {
+  readonly tool: string;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { tool: string }) {
+    super({ ...opts, code: 'YAAO_API_TOOL_ERROR' });
+    this.tool = opts.tool;
+  }
+}
