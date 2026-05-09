@@ -24,16 +24,19 @@ interface GlobalFlags {
  */
 export async function yaao(opts: YaaoRunOptions = {}): Promise<number> {
   const argv = opts.argv ?? process.argv;
-  const ctxBuilder = (flags: GlobalFlags): Promise<CliContext> => {
+  const buildArgs = (flags: GlobalFlags) => {
     const level: LogLevel = flags.verbose ? 'debug' : flags.quiet ? 'warn' : 'info';
     const format: LogFormat = flags.json ? 'json' : 'text';
-    return buildContext({
+    return {
       cwd: flags.cwd ?? opts.cwd,
       env: opts.env,
       level,
       format,
       exit: opts.exit,
-    });
+    } as const;
+  };
+  const ctxBuilder = (flags: GlobalFlags, bootstrap: boolean): Promise<CliContext> | CliContext => {
+    return bootstrap ? buildDefaultContext(buildArgs(flags)) : buildContext(buildArgs(flags));
   };
 
   const program = new Command()
@@ -49,14 +52,20 @@ export async function yaao(opts: YaaoRunOptions = {}): Promise<number> {
 
   // Use a default-config ctx for registration; preAction loads the real config so any
   // YaaoError (literal secret, missing env, schema violation) bubbles up before the action.
+  // Bootstrap commands (init) keep using defaults so they can still run when the project
+  // config is missing or invalid.
   const baseCtx: CliContext = buildDefaultContext({ cwd: opts.cwd, env: opts.env, exit: opts.exit });
+  const moduleByName = new Map<string, (typeof COMMAND_MODULES)[number]>();
   for (const mod of COMMAND_MODULES) {
+    moduleByName.set(mod.name, mod);
     mod.register(program, baseCtx);
   }
 
-  program.hook('preAction', async (thisCommand) => {
+  program.hook('preAction', async (thisCommand, actionCommand) => {
     const flags = thisCommand.opts() as GlobalFlags;
-    const refreshed = await ctxBuilder(flags);
+    const mod = moduleByName.get(actionCommand.name());
+    const bootstrap = mod?.bootstrap === true;
+    const refreshed = await ctxBuilder(flags, bootstrap);
     Object.assign(baseCtx, refreshed);
   });
 

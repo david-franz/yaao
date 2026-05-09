@@ -14,7 +14,6 @@ const STUB_COMMANDS: { argv: string[]; phase: string }[] = [
   { argv: ['skills'], phase: 'F8' },
   { argv: ['doctor'], phase: 'F13' },
   { argv: ['serve'], phase: 'F12' },
-  { argv: ['init'], phase: 'F1.4' },
 ];
 
 describe('non-init stub commands', () => {

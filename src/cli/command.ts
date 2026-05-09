@@ -4,6 +4,12 @@ import type { CliContext } from './context.js';
 export interface CommandModule {
   name: string;
   describe: string;
+  /**
+   * If true, the CLI runner skips `loadConfig` for this command and falls back to the
+   * compiled-in defaults. Bootstrap commands (init) need this because the config file
+   * may not exist yet, or may be the very thing the user is trying to reset.
+   */
+  bootstrap?: boolean;
   register(program: Command, ctx: CliContext): void;
 }
 

@@ -4,3 +4,9 @@ coverage/
 .DS_Store
 *.log
 .vitest-cache
+
+# >>> yaao
+.yaao/secrets.local.json
+.yaao/worktrees/
+.yaao/runs/
+# <<< yaao
