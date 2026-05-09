@@ -11,7 +11,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | Phase | Focus | Features | Status |
 |-------|-------|----------|--------|
 | 1  | Foundation                  | Project setup, CLI, config, init command, logging               | Shipped |
-| 2  | Plan schema & validation    | Zod schema, YAML parser, DAG validation, `validate`             | Planned |
+| 2  | Plan schema & validation    | Zod schema, YAML parser, DAG validation, `validate`             | Shipped |
 | 3  | Worktree & git engine       | Worktree manager, branch graph, git wrapper, run journal        | Planned |
 | 4  | Agent backends              | Backend interface + Claude Code, Cursor, Copilot, Codex, API    | Planned |
 | 5  | Execution engine            | Scheduler, lifecycle, event bus, `run`, resume, dry-run         | Planned |
@@ -48,16 +48,16 @@ Sets up the TypeScript project, CLI skeleton, configuration system, and the `ini
 
 ---
 
-## Phase 2: Plan Schema & Validation
+## Phase 2: Plan Schema & Validation **(shipped)**
 
 The execution-plan schema is the lingua franca that connects the planner, converter, scheduler, and viewer. This phase pins it down.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F2.1** | Execution-plan schema (Zod + JSON Schema)     | [F2.1-execution-plan-schema.md](phase-2/F2.1-execution-plan-schema.md) |
-| **F2.2** | YAML parser & loader                          | [F2.2-yaml-parser.md](phase-2/F2.2-yaml-parser.md) |
-| **F2.3** | DAG validation (cycles, missing refs, fan-out)| [F2.3-dag-validation.md](phase-2/F2.3-dag-validation.md) |
-| **F2.4** | `yaao validate` command                       | [F2.4-validate-command.md](phase-2/F2.4-validate-command.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F2.1** | Execution-plan schema (Zod + JSON Schema)     | shipped | [F2.1-execution-plan-schema.md](phase-2/F2.1-execution-plan-schema.md) |
+| **F2.2** | YAML parser & loader                          | shipped | [F2.2-yaml-parser.md](phase-2/F2.2-yaml-parser.md) |
+| **F2.3** | DAG validation (cycles, missing refs, fan-out)| shipped | [F2.3-dag-validation.md](phase-2/F2.3-dag-validation.md) |
+| **F2.4** | `yaao validate` command                       | shipped | [F2.4-validate-command.md](phase-2/F2.4-validate-command.md) |
 
 **Key Deliverables:**
 - Single canonical Zod schema for execution plans; `.json-schema` artifact emitted for editor IntelliSense.
