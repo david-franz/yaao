@@ -13,7 +13,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 1  | Foundation                  | Project setup, CLI, config, init command, logging               | Shipped |
 | 2  | Plan schema & validation    | Zod schema, YAML parser, DAG validation, `validate`             | Shipped |
 | 3  | Worktree & git engine       | Worktree manager, branch graph, git wrapper, run journal        | Shipped |
-| 4  | Agent backends              | Backend interface + Claude Code, Cursor, Copilot, Codex, API    | Planned |
+| 4  | Agent backends              | Backend interface + Claude Code, Cursor, Copilot, Codex, API    | Shipped |
 | 5  | Execution engine            | Scheduler, lifecycle, event bus, `run`, resume, dry-run         | Planned |
 | 6  | Merge engine                | Topological merge, manual/auto/agent conflict modes, PR mode    | Planned |
 | 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Planned |
@@ -86,19 +86,19 @@ The mechanical layer that lets multiple agents work on the same repo at once wit
 
 ---
 
-## Phase 4: Agent Backends
+## Phase 4: Agent Backends **(shipped)**
 
 A uniform `AgentBackend` interface plus an implementation for every supported agent in the v1 release.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F4.1** | `AgentBackend` interface                    | [F4.1-agent-backend-interface.md](phase-4/F4.1-agent-backend-interface.md) |
-| **F4.2** | Claude Code backend                         | [F4.2-claude-code-backend.md](phase-4/F4.2-claude-code-backend.md) |
-| **F4.3** | Cursor backend                              | [F4.3-cursor-backend.md](phase-4/F4.3-cursor-backend.md) |
-| **F4.4** | GitHub Copilot backend                      | [F4.4-copilot-backend.md](phase-4/F4.4-copilot-backend.md) |
-| **F4.5** | Codex backend                               | [F4.5-codex-backend.md](phase-4/F4.5-codex-backend.md) |
-| **F4.6** | API backend (Anthropic / OpenAI / OpenRouter)| [F4.6-api-backend.md](phase-4/F4.6-api-backend.md) |
-| **F4.7** | Backend detection & `yaao agents`           | [F4.7-backend-detection.md](phase-4/F4.7-backend-detection.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F4.1** | `AgentBackend` interface                    | shipped | [F4.1-agent-backend-interface.md](phase-4/F4.1-agent-backend-interface.md) |
+| **F4.2** | Claude Code backend                         | shipped | [F4.2-claude-code-backend.md](phase-4/F4.2-claude-code-backend.md) |
+| **F4.3** | Cursor backend                              | shipped | [F4.3-cursor-backend.md](phase-4/F4.3-cursor-backend.md) |
+| **F4.4** | GitHub Copilot backend                      | shipped | [F4.4-copilot-backend.md](phase-4/F4.4-copilot-backend.md) |
+| **F4.5** | Codex backend                               | shipped | [F4.5-codex-backend.md](phase-4/F4.5-codex-backend.md) |
+| **F4.6** | API backend (Anthropic / OpenAI / OpenRouter)| shipped (loop + sandbox; provider SDKs are stubs) | [F4.6-api-backend.md](phase-4/F4.6-api-backend.md) |
+| **F4.7** | Backend detection & `yaao agents`           | shipped | [F4.7-backend-detection.md](phase-4/F4.7-backend-detection.md) |
 
 **Key Deliverables:**
 - One interface: `name`, `isAvailable()`, `spawn(options) → AgentProcess { pid, completed, cancel, output$ }`.

@@ -15,7 +15,7 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 ## Status
 
-Active development. Phases 1-3 are shipped: foundation (CLI skeleton, layered config, init command, structured logger, typed errors), plan schema & validation (Zod schema with JSON Schema export, YAML loader with includes and source maps, DAG validator, `yaao validate`), and the worktree & git engine (typed git wrapper, branch graph, worktree manager with diamond merges, NDJSON run journal). Phases 4-6 — agent backends, execution engine, merge engine — complete the MVP and are next. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
+Active development. Phases 1-4 are shipped: foundation, plan schema & validation, the worktree & git engine, and agent backends (interface + Claude Code / Cursor / Copilot / Codex / API tool-use loop with sandboxed tools + parallel `yaao agents` detection). Phases 5-6 — execution engine and merge engine — complete the MVP and are next. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
 
 ---
 
