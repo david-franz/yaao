@@ -4,6 +4,8 @@ import type { LogFormat, LogLevel } from '../log/logger.js';
 import type { CliContext } from './context.js';
 import { buildContext, buildDefaultContext } from './context.js';
 import { COMMAND_MODULES } from './registry.js';
+import { YaaoError } from '../log/errors.js';
+import { isExitSignal } from './exit-signal.js';
 
 export interface YaaoRunOptions {
   argv?: string[];
@@ -73,10 +75,21 @@ export async function yaao(opts: YaaoRunOptions = {}): Promise<number> {
     await program.parseAsync(argv);
     return 0;
   } catch (err: unknown) {
+    if (isExitSignal(err)) {
+      // ctx.exit() was used; let the caller (bin or test) decide what to do.
+      throw err;
+    }
     if (isCommanderExitError(err)) {
       return err.exitCode ?? 1;
     }
-    throw err;
+    if (err instanceof YaaoError) {
+      baseCtx.logger.error(err.message, { code: err.code });
+      if (err.hint) baseCtx.logger.error(`hint: ${err.hint}`);
+      return 1;
+    }
+    const e = err as Error;
+    baseCtx.logger.error('unexpected error', { err: e?.message ?? String(err), stack: e?.stack });
+    return 99;
   }
 }
 

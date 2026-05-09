@@ -1,4 +1,5 @@
 import { yaao } from '../../src/cli/index.js';
+import { ExitSignal, isExitSignal } from '../../src/cli/exit-signal.js';
 
 export interface CliRunResult {
   exitCode: number;
@@ -27,13 +28,6 @@ export async function runCli(args: string[], opts: { cwd?: string; env?: NodeJS.
   process.stderr.write = ((chunk: string | Uint8Array) => err.write(chunk)) as typeof process.stderr.write;
 
   let exitCode = 0;
-  class ExitSignal extends Error {
-    code: number;
-    constructor(code: number) {
-      super(`exit ${code}`);
-      this.code = code;
-    }
-  }
   const exit = (code: number): never => {
     throw new ExitSignal(code);
   };
@@ -46,8 +40,8 @@ export async function runCli(args: string[], opts: { cwd?: string; env?: NodeJS.
       exit,
     });
   } catch (e) {
-    if (e instanceof ExitSignal) {
-      exitCode = e.code;
+    if (isExitSignal(e)) {
+      exitCode = e.exitCode;
     } else {
       throw e;
     }
