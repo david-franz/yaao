@@ -29,6 +29,11 @@ export const DEFAULT_HINTS: Record<string, string> = {
     "Replace the literal value with '${ENV_VAR}' or move it to .yaao/secrets.local.json.",
   YAAO_MISSING_ENV: 'Set the env var in your shell or in .yaao/secrets.local.json.',
   YAAO_INIT_WRITE: 'Check filesystem permissions for the target directory.',
+  YAAO_PLAN_NOT_FOUND: 'Check the path; relative paths are resolved against --cwd.',
+  YAAO_PLAN_PARSE: 'Open the file at the reported line; YAML syntax must be valid.',
+  YAAO_PLAN_INVALID: 'Fix the schema violations and re-run `yaao validate`.',
+  YAAO_PLAN_INCLUDE_CYCLE: 'Break the include cycle by inlining or removing one of the entries.',
+  YAAO_PLAN_INCLUDE_DEPTH: 'Flatten the include tree or raise maxIncludeDepth.',
 };
 
 export class NotInitializedError extends YaaoError {
@@ -72,5 +77,55 @@ export class InitWriteError extends YaaoError {
   constructor(opts: Omit<YaaoErrorOptions, 'code'> & { path: string }) {
     super({ ...opts, code: 'YAAO_INIT_WRITE' });
     this.path = opts.path;
+  }
+}
+
+export class PlanNotFoundError extends YaaoError {
+  readonly path: string;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { path: string }) {
+    super({ ...opts, code: 'YAAO_PLAN_NOT_FOUND' });
+    this.path = opts.path;
+  }
+}
+
+export class PlanParseError extends YaaoError {
+  readonly file: string;
+  readonly line?: number;
+  readonly col?: number;
+  constructor(
+    opts: Omit<YaaoErrorOptions, 'code'> & { file: string; line?: number; col?: number },
+  ) {
+    super({ ...opts, code: 'YAAO_PLAN_PARSE' });
+    this.file = opts.file;
+    this.line = opts.line;
+    this.col = opts.col;
+  }
+}
+
+export class PlanValidationError extends YaaoError {
+  readonly issues: { path: (string | number)[]; message: string }[];
+  constructor(
+    opts: Omit<YaaoErrorOptions, 'code'> & {
+      issues: { path: (string | number)[]; message: string }[];
+    },
+  ) {
+    super({ ...opts, code: 'YAAO_PLAN_INVALID' });
+    this.issues = opts.issues;
+  }
+}
+
+export class IncludeCycleError extends YaaoError {
+  readonly cycle: string[];
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { cycle: string[] }) {
+    super({ ...opts, code: 'YAAO_PLAN_INCLUDE_CYCLE' });
+    this.cycle = opts.cycle;
+  }
+}
+
+export class IncludeDepthError extends YaaoError {
+  readonly depth: number;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { depth: number }) {
+    super({ ...opts, code: 'YAAO_PLAN_INCLUDE_DEPTH' });
+    this.depth = opts.depth;
   }
 }

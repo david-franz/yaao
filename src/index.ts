@@ -40,5 +40,18 @@ export {
   LiteralSecretError,
   MissingEnvError,
   InitWriteError,
+  PlanNotFoundError,
+  PlanParseError,
+  PlanValidationError,
+  IncludeCycleError,
+  IncludeDepthError,
   DEFAULT_HINTS,
 } from './log/errors.js';
+export { loadPlan } from './plan/yaml/loader.js';
+export type {
+  LoadOptions as LoadPlanOptions,
+  LoadResult as LoadPlanResult,
+  LoadedFile,
+  SourceMap,
+  SourcePosition,
+} from './plan/yaml/loader.js';
