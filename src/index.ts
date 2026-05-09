@@ -48,6 +48,8 @@ export {
   DEFAULT_HINTS,
 } from './log/errors.js';
 export { loadPlan } from './plan/yaml/loader.js';
+export { validatePlan, ALL_AVAILABLE } from './plan/validate/index.js';
+export type { ValidationIssue, AgentAvailability, ValidateOptions } from './plan/validate/index.js';
 export type {
   LoadOptions as LoadPlanOptions,
   LoadResult as LoadPlanResult,
