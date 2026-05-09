@@ -170,3 +170,41 @@ export class WorktreeMergeError extends WorktreeError {
     this.conflicts = opts.conflicts;
   }
 }
+
+export class AgentUnavailableError extends YaaoError {
+  readonly agent: string;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { agent: string }) {
+    super({ ...opts, code: 'YAAO_AGENT_UNAVAILABLE' });
+    this.agent = opts.agent;
+  }
+}
+
+export class AgentTimeoutError extends YaaoError {
+  readonly agent: string;
+  readonly timeoutMs: number;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { agent: string; timeoutMs: number }) {
+    super({ ...opts, code: 'YAAO_AGENT_TIMEOUT' });
+    this.agent = opts.agent;
+    this.timeoutMs = opts.timeoutMs;
+  }
+}
+
+export class AgentCancelledError extends YaaoError {
+  readonly agent: string;
+  readonly reason?: string;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { agent: string; reason?: string }) {
+    super({ ...opts, code: 'YAAO_AGENT_CANCELLED' });
+    this.agent = opts.agent;
+    this.reason = opts.reason;
+  }
+}
+
+export class AgentNonZeroExitError extends YaaoError {
+  readonly agent: string;
+  readonly exitCode: number;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { agent: string; exitCode: number }) {
+    super({ ...opts, code: 'YAAO_AGENT_NONZERO' });
+    this.agent = opts.agent;
+    this.exitCode = opts.exitCode;
+  }
+}
