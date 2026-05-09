@@ -9,7 +9,6 @@ const STUB_COMMANDS: { argv: string[]; phase: string }[] = [
   { argv: ['status'], phase: 'F11' },
   { argv: ['merge'], phase: 'F6' },
   { argv: ['clean'], phase: 'F6' },
-  { argv: ['agents'], phase: 'F4' },
   { argv: ['skills'], phase: 'F8' },
   { argv: ['doctor'], phase: 'F13' },
   { argv: ['serve'], phase: 'F12' },

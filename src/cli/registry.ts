@@ -2,6 +2,7 @@ import type { CommandModule } from './command.js';
 import { makeStubCommand } from './command.js';
 import { initCommand } from './commands/init.js';
 import { validateCommand } from './commands/validate.js';
+import { agentsCommand } from './commands/agents.js';
 
 export const COMMAND_MODULES: CommandModule[] = [
   initCommand,
@@ -48,11 +49,7 @@ export const COMMAND_MODULES: CommandModule[] = [
     phase: 'F6',
     args: [{ name: 'run-id', required: false }],
   }),
-  makeStubCommand({
-    name: 'agents',
-    describe: 'List detected agent backends and availability',
-    phase: 'F4',
-  }),
+  agentsCommand,
   makeStubCommand({
     name: 'skills',
     describe: 'Skill management (install/sync)',
