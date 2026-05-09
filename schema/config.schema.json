@@ -1,0 +1,230 @@
+{
+  "$ref": "#/definitions/YaaoConfig",
+  "definitions": {
+    "YaaoConfig": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "defaults": {
+          "type": "object",
+          "properties": {
+            "agent": {
+              "type": "string",
+              "enum": [
+                "claude-code",
+                "cursor",
+                "copilot",
+                "codex",
+                "api"
+              ],
+              "default": "claude-code"
+            },
+            "model": {
+              "type": "string",
+              "default": "opus"
+            },
+            "max-parallel": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "default": 4
+            },
+            "base-branch": {
+              "type": "string",
+              "default": "main"
+            },
+            "worktree-root": {
+              "type": "string",
+              "default": ".yaao/worktrees"
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        },
+        "merge": {
+          "type": "object",
+          "properties": {
+            "strategy": {
+              "type": "string",
+              "enum": [
+                "auto",
+                "pr",
+                "manual"
+              ],
+              "default": "auto"
+            },
+            "on-conflict": {
+              "type": "string",
+              "enum": [
+                "manual",
+                "agent"
+              ],
+              "default": "manual"
+            },
+            "conflict-resolver": {
+              "type": "object",
+              "properties": {
+                "agent": {
+                  "$ref": "#/definitions/YaaoConfig/properties/defaults/properties/agent"
+                },
+                "model": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "agent",
+                "model"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        },
+        "agents": {
+          "type": "object",
+          "properties": {
+            "claude-code": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "bin": {
+                  "type": "string",
+                  "default": "claude"
+                }
+              },
+              "additionalProperties": false,
+              "default": {}
+            },
+            "cursor": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "bin": {
+                  "type": "string",
+                  "default": "cursor-agent"
+                }
+              },
+              "additionalProperties": false,
+              "default": {}
+            },
+            "copilot": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "bin": {
+                  "type": "string",
+                  "default": "gh"
+                }
+              },
+              "additionalProperties": false,
+              "default": {}
+            },
+            "codex": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "bin": {
+                  "type": "string",
+                  "default": "codex"
+                }
+              },
+              "additionalProperties": false,
+              "default": {}
+            },
+            "api": {
+              "type": "object",
+              "properties": {
+                "providers": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "api-key": {
+                        "type": "string"
+                      },
+                      "base-url": {
+                        "type": "string",
+                        "format": "uri"
+                      }
+                    },
+                    "required": [
+                      "api-key"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "default": {}
+                }
+              },
+              "additionalProperties": false,
+              "default": {}
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        },
+        "ctx-sys": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "auto-spawn": {
+              "type": "boolean",
+              "default": true
+            },
+            "require-query": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        },
+        "plan": {
+          "type": "object",
+          "properties": {
+            "format": {
+              "type": "string",
+              "enum": [
+                "markdown",
+                "speckit",
+                "both"
+              ],
+              "default": "markdown"
+            },
+            "speckit": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

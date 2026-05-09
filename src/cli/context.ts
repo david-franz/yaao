@@ -2,10 +2,12 @@ import type { Logger, LogFormat, LogLevel } from '../log/logger.js';
 import { createLogger } from '../log/logger.js';
 import type { YaaoConfig } from '../config/types.js';
 import { DEFAULT_CONFIG } from '../config/types.js';
+import { loadConfig, type ConfigPaths } from '../config/loader.js';
 
 export interface CliContext {
   cwd: string;
   config: YaaoConfig;
+  configPaths: ConfigPaths;
   logger: Logger;
   env: NodeJS.ProcessEnv;
   exit: (code: number) => never;
@@ -21,8 +23,8 @@ export interface BuildContextOptions {
 }
 
 /**
- * F1.2 builds a placeholder context with the default config. F1.3 wires loadConfig()
- * in via the same shape; commands don't need to change when that lands.
+ * Build a CLI context. Resolves config (defaults → global → project → secrets → env).
+ * Config errors propagate as YaaoError subclasses so the top-level handler can render them.
  */
 export async function buildContext(opts: BuildContextOptions = {}): Promise<CliContext> {
   const cwd = opts.cwd ?? process.cwd();
@@ -30,7 +32,24 @@ export async function buildContext(opts: BuildContextOptions = {}): Promise<CliC
   const level: LogLevel = opts.level ?? 'info';
   const format: LogFormat = opts.format ?? 'text';
   const logger = createLogger({ level, format });
-  const config = opts.config ?? DEFAULT_CONFIG;
   const exit = opts.exit ?? ((code: number) => process.exit(code));
-  return { cwd, env, logger, config, exit };
+  if (opts.config) {
+    return { cwd, env, logger, config: opts.config, configPaths: {}, exit };
+  }
+  const { config, paths } = await loadConfig({ cwd, env });
+  return { cwd, env, logger, config, configPaths: paths, exit };
+}
+
+/**
+ * Build a context that always uses the compiled-in defaults (skipping disk lookup).
+ * Used by the init command before a project config exists.
+ */
+export function buildDefaultContext(opts: BuildContextOptions = {}): CliContext {
+  const cwd = opts.cwd ?? process.cwd();
+  const env = opts.env ?? process.env;
+  const level: LogLevel = opts.level ?? 'info';
+  const format: LogFormat = opts.format ?? 'text';
+  const logger = createLogger({ level, format });
+  const exit = opts.exit ?? ((code: number) => process.exit(code));
+  return { cwd, env, logger, config: DEFAULT_CONFIG, configPaths: {}, exit };
 }

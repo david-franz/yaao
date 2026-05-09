@@ -1,0 +1,72 @@
+import { z } from 'zod';
+
+export const AGENT_NAMES = ['claude-code', 'cursor', 'copilot', 'codex', 'api'] as const;
+export const AgentNameSchema = z.enum(AGENT_NAMES);
+
+const ApiProviderSchema = z.object({
+  'api-key': z.string(),
+  'base-url': z.string().url().optional(),
+});
+
+export const ConfigSchema = z
+  .object({
+    $schema: z.string().optional(),
+    version: z.literal(1),
+    defaults: z
+      .object({
+        agent: AgentNameSchema.default('claude-code'),
+        model: z.string().default('opus'),
+        'max-parallel': z.number().int().positive().default(4),
+        'base-branch': z.string().default('main'),
+        'worktree-root': z.string().default('.yaao/worktrees'),
+      })
+      .default({}),
+    merge: z
+      .object({
+        strategy: z.enum(['auto', 'pr', 'manual']).default('auto'),
+        'on-conflict': z.enum(['manual', 'agent']).default('manual'),
+        'conflict-resolver': z
+          .object({ agent: AgentNameSchema, model: z.string() })
+          .optional(),
+      })
+      .default({}),
+    agents: z
+      .object({
+        'claude-code': z
+          .object({ enabled: z.boolean().default(true), bin: z.string().default('claude') })
+          .default({}),
+        cursor: z
+          .object({ enabled: z.boolean().default(true), bin: z.string().default('cursor-agent') })
+          .default({}),
+        copilot: z
+          .object({ enabled: z.boolean().default(true), bin: z.string().default('gh') })
+          .default({}),
+        codex: z
+          .object({ enabled: z.boolean().default(true), bin: z.string().default('codex') })
+          .default({}),
+        api: z
+          .object({ providers: z.record(ApiProviderSchema).default({}) })
+          .default({}),
+      })
+      .default({}),
+    'ctx-sys': z
+      .object({
+        enabled: z.boolean().default(false),
+        'auto-spawn': z.boolean().default(true),
+        'require-query': z.boolean().default(false),
+      })
+      .default({}),
+    plan: z
+      .object({
+        format: z.enum(['markdown', 'speckit', 'both']).default('markdown'),
+        speckit: z.boolean().default(false),
+      })
+      .default({}),
+  })
+  .strict();
+
+export type YaaoConfig = z.infer<typeof ConfigSchema>;
+export type AgentName = z.infer<typeof AgentNameSchema>;
+export type ApiProvider = z.infer<typeof ApiProviderSchema>;
+
+export const DEFAULT_CONFIG: YaaoConfig = ConfigSchema.parse({ version: 1 });

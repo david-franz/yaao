@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { VERSION } from '../version.js';
 import type { LogFormat, LogLevel } from '../log/logger.js';
 import type { CliContext } from './context.js';
-import { buildContext } from './context.js';
+import { buildContext, buildDefaultContext } from './context.js';
 import { COMMAND_MODULES } from './registry.js';
 
 export interface YaaoRunOptions {
@@ -47,20 +47,17 @@ export async function yaao(opts: YaaoRunOptions = {}): Promise<number> {
 
   program.exitOverride();
 
-  // Build the initial context with default flags so each command's register() has a Logger
-  // ready. Per-invocation flags refine the logger inside the action via program.opts().
-  const baseCtx = await ctxBuilder({});
+  // Use a default-config ctx for registration; preAction loads the real config so any
+  // YaaoError (literal secret, missing env, schema violation) bubbles up before the action.
+  const baseCtx: CliContext = buildDefaultContext({ cwd: opts.cwd, env: opts.env, exit: opts.exit });
   for (const mod of COMMAND_MODULES) {
     mod.register(program, baseCtx);
   }
 
-  // Re-attach a preAction hook so each subcommand sees a Logger that respects global flags.
-  program.hook('preAction', async (thisCommand, actionCommand) => {
+  program.hook('preAction', async (thisCommand) => {
     const flags = thisCommand.opts() as GlobalFlags;
     const refreshed = await ctxBuilder(flags);
     Object.assign(baseCtx, refreshed);
-    // Suppress lint complaint about unused parameter; commander needs it in the signature.
-    void actionCommand;
   });
 
   try {
