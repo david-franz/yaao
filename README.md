@@ -15,7 +15,7 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 ## Status
 
-Early design. This README and the [implementation plan](docs/IMPLEMENTATION.md) are the working spec. Nothing is built yet.
+Active development. Phase 1 (foundation: CLI skeleton, layered config, init command, structured logger, typed error hierarchy) is shipped. Phases 2-6 — schema/validation, worktree engine, agent backends, execution engine, merge engine — make up the MVP and are next. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
 
 ---
 

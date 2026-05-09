@@ -10,7 +10,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 
 | Phase | Focus | Features | Status |
 |-------|-------|----------|--------|
-| 1  | Foundation                  | Project setup, CLI, config, init command, logging               | Planned |
+| 1  | Foundation                  | Project setup, CLI, config, init command, logging               | Shipped |
 | 2  | Plan schema & validation    | Zod schema, YAML parser, DAG validation, `validate`             | Planned |
 | 3  | Worktree & git engine       | Worktree manager, branch graph, git wrapper, run journal        | Planned |
 | 4  | Agent backends              | Backend interface + Claude Code, Cursor, Copilot, Codex, API    | Planned |
@@ -27,17 +27,17 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 
 ---
 
-## Phase 1: Foundation
+## Phase 1: Foundation **(shipped)**
 
 Sets up the TypeScript project, CLI skeleton, configuration system, and the `init` command. Everything else builds on this.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F1.1** | Project setup & build pipeline                | [F1.1-project-setup.md](phase-1/F1.1-project-setup.md) |
-| **F1.2** | CLI skeleton & command registry               | [F1.2-cli-skeleton.md](phase-1/F1.2-cli-skeleton.md) |
-| **F1.3** | Configuration system (`yaao.config.json`)     | [F1.3-config-system.md](phase-1/F1.3-config-system.md) |
-| **F1.4** | `yaao init` command                           | [F1.4-init-command.md](phase-1/F1.4-init-command.md) |
-| **F1.5** | Logging & error handling                      | [F1.5-logging-errors.md](phase-1/F1.5-logging-errors.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F1.1** | Project setup & build pipeline                | shipped | [F1.1-project-setup.md](phase-1/F1.1-project-setup.md) |
+| **F1.2** | CLI skeleton & command registry               | shipped | [F1.2-cli-skeleton.md](phase-1/F1.2-cli-skeleton.md) |
+| **F1.3** | Configuration system (`yaao.config.json`)     | shipped | [F1.3-config-system.md](phase-1/F1.3-config-system.md) |
+| **F1.4** | `yaao init` command                           | shipped | [F1.4-init-command.md](phase-1/F1.4-init-command.md) |
+| **F1.5** | Logging & error handling                      | shipped | [F1.5-logging-errors.md](phase-1/F1.5-logging-errors.md) |
 
 **Key Deliverables:**
 - TypeScript + Node ≥ 20 + ESM project, bundled with `tsup`, tested with `vitest`.
