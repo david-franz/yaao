@@ -1,6 +1,7 @@
 import type { CommandModule } from './command.js';
 import { makeStubCommand } from './command.js';
 import { initCommand } from './commands/init.js';
+import { validateCommand } from './commands/validate.js';
 
 export const COMMAND_MODULES: CommandModule[] = [
   initCommand,
@@ -16,12 +17,7 @@ export const COMMAND_MODULES: CommandModule[] = [
     phase: 'F10',
     args: [{ name: 'plan' }],
   }),
-  makeStubCommand({
-    name: 'validate',
-    describe: 'Validate an execution plan',
-    phase: 'F2',
-    args: [{ name: 'exec-plan' }],
-  }),
+  validateCommand,
   makeStubCommand({
     name: 'view',
     describe: 'Static plan viewer (TUI)',

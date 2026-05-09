@@ -9,6 +9,9 @@ export interface CliContext {
   config: YaaoConfig;
   configPaths: ConfigPaths;
   logger: Logger;
+  /** True if the user passed `--json` on the command line. Commands that emit
+   * structured output should switch to JSON shape on stdout when set. */
+  json: boolean;
   env: NodeJS.ProcessEnv;
   exit: (code: number) => never;
 }
@@ -18,6 +21,7 @@ export interface BuildContextOptions {
   env?: NodeJS.ProcessEnv;
   level?: LogLevel;
   format?: LogFormat;
+  json?: boolean;
   config?: YaaoConfig;
   exit?: (code: number) => never;
 }
@@ -34,10 +38,10 @@ export async function buildContext(opts: BuildContextOptions = {}): Promise<CliC
   const logger = createLogger({ level, format });
   const exit = opts.exit ?? ((code: number) => process.exit(code));
   if (opts.config) {
-    return { cwd, env, logger, config: opts.config, configPaths: {}, exit };
+    return { cwd, env, logger, json: Boolean(opts.json), config: opts.config, configPaths: {}, exit };
   }
   const { config, paths } = await loadConfig({ cwd, env });
-  return { cwd, env, logger, config, configPaths: paths, exit };
+  return { cwd, env, logger, json: Boolean(opts.json), config, configPaths: paths, exit };
 }
 
 /**
@@ -51,5 +55,5 @@ export function buildDefaultContext(opts: BuildContextOptions = {}): CliContext 
   const format: LogFormat = opts.format ?? 'text';
   const logger = createLogger({ level, format });
   const exit = opts.exit ?? ((code: number) => process.exit(code));
-  return { cwd, env, logger, config: DEFAULT_CONFIG, configPaths: {}, exit };
+  return { cwd, env, logger, json: Boolean(opts.json), config: DEFAULT_CONFIG, configPaths: {}, exit };
 }

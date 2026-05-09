@@ -34,6 +34,7 @@ export async function yaao(opts: YaaoRunOptions = {}): Promise<number> {
       env: opts.env,
       level,
       format,
+      json: Boolean(flags.json),
       exit: opts.exit,
     } as const;
   };
