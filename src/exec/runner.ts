@@ -1,4 +1,4 @@
-import { mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve as resolvePath } from 'node:path';
 import type { ResolvedPlan, ResolvedTask } from '../plan/schema/types.js';
 import type { YaaoConfig } from '../config/types.js';

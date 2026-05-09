@@ -3,7 +3,7 @@ import { isAbsolute, resolve as resolvePath } from 'node:path';
 import type { ResolvedPlan, ResolvedTask } from '../plan/schema/types.js';
 import type { Scheduler } from './scheduler.js';
 import type { WorktreeManager } from '../git/worktree-manager.js';
-import type { Git, MergeResult } from '../git/git.js';
+import type { Git } from '../git/git.js';
 import type { BranchPlan } from '../git/branch-graph.js';
 import type { AgentBackend } from '../agents/backend.js';
 import type { RunBus } from './bus.js';
@@ -43,9 +43,7 @@ export class Lifecycle {
       return;
     }
 
-    let worktreePath: string | undefined;
     let stdout = '';
-    let exitCode = 0;
     try {
       // 1) Provision worktree
       const wt = await this.opts.worktreeManager.create({
@@ -57,7 +55,6 @@ export class Lifecycle {
         rootDir: this.opts.rootDir,
         worktreeRoot: this.opts.plan.config['worktree-root'],
       });
-      worktreePath = wt.path;
 
       // 2) Resolve prompt body (inline or from prompt-ref) and prepend context prefix.
       const promptBody = resolvePromptBody(task, this.opts.promptRefBaseDir ?? this.opts.rootDir);
@@ -111,7 +108,6 @@ export class Lifecycle {
 
       const result = await proc.completed;
       stdout = result.stdout;
-      exitCode = result.exitCode;
 
       // 4) Validation command (optional)
       if (task.validation?.command) {

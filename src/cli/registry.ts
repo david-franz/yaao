@@ -3,6 +3,7 @@ import { makeStubCommand } from './command.js';
 import { initCommand } from './commands/init.js';
 import { validateCommand } from './commands/validate.js';
 import { agentsCommand } from './commands/agents.js';
+import { runCommand } from './commands/run.js';
 
 export const COMMAND_MODULES: CommandModule[] = [
   initCommand,
@@ -25,12 +26,7 @@ export const COMMAND_MODULES: CommandModule[] = [
     phase: 'F11',
     args: [{ name: 'exec-plan' }],
   }),
-  makeStubCommand({
-    name: 'run',
-    describe: 'Execute a plan across worktrees',
-    phase: 'F5',
-    args: [{ name: 'exec-plan' }],
-  }),
+  runCommand,
   makeStubCommand({
     name: 'status',
     describe: 'Inspect a run',
