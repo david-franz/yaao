@@ -9,7 +9,7 @@
 3. **Run** — execute the plan across multiple agents in parallel using **git worktrees** (one worktree per task), with merging back to a base branch.
 4. **Watch** — monitor progress in a TUI today, a web viewer later.
 
-It is editor- and agent-agnostic: every step in an execution plan can be assigned to **Claude Code**, **Cursor**, **GitHub Copilot**, **Codex**, or a raw **API model** (Anthropic, OpenAI, OpenRouter, etc.). It integrates natively with [`ctx-sys`](../ctx-sys) for context retrieval when configured — agents are explicitly directed to query ctx-sys before writing code.
+It is editor- and agent-agnostic: every step in an execution plan can be assigned to **Claude Code**, **Cursor**, **GitHub Copilot**, **Codex**, or a raw **API model** (Anthropic, OpenAI, OpenRouter, etc.). The integration story across these is **MCP-first** — yaao itself is an MCP server, every agent registers it the same way, and skills live behind the MCP boundary instead of being duplicated per-agent. It integrates natively with [`ctx-sys`](../ctx-sys) for context retrieval when configured — agents are explicitly directed to query ctx-sys before writing code.
 
 ---
 
@@ -153,13 +153,12 @@ yaao run .yaao/exec/oauth.yaml
 | `yaao convert <plan>` | Convert an implementation plan to an execution plan. `--split` to emit phase files. |
 | `yaao validate <exec-plan>` | Schema + DAG validation, no execution. |
 | `yaao view <exec-plan>` | Static TUI viewer (web later). Shows DAG, per-step config, dependency edges. |
-| `yaao run <exec-plan>` | Execute. Live TUI dashboard. `--max-parallel`, `--dry-run`, `--resume <run-id>`, `--only <ids>`, `--skip <ids>`, `--no-tui`. |
+| `yaao run <exec-plan>` | Execute. Live TUI dashboard. `--max-parallel`, `--dry-run`, `--trial`, `--resume <run-id>`, `--only <ids>`, `--skip <ids>`, `--no-tui`. `--trial` is `--max-parallel 1 --no-merge` for debugging a plan. |
 | `yaao status [run-id]` | Inspect a run (live or completed). |
 | `yaao merge [run-id]` | Merge completed worktrees in topo order. `--pr`, `--target`, `--auto-resolve`. |
 | `yaao clean [run-id]` | Tear down worktrees + branches. |
-| `yaao agents` | List detected agent backends and their availability. |
 | `yaao skills install` | (Re)install skill/agent files for Claude Code, Cursor, Copilot, Codex. |
-| `yaao doctor` | Diagnose environment: git version, agent availability, ctx-sys status, config sanity. |
+| `yaao doctor` | Diagnose environment: git version, agent availability and versions, ctx-sys status, config sanity. (Subsumes the previous `yaao agents` command.) |
 
 ---
 
@@ -215,6 +214,19 @@ yaao run .yaao/exec/oauth.yaml
 The integration story across Claude Code, Cursor, Copilot, Codex, and raw API models is built around a single primitive: **yaao itself is an MCP server**. Every agent connects to yaao the same way. Skills, planning, converting, running, and inspecting all happen through MCP tools yaao exposes.
 
 This collapses the four-agent-format problem into a single problem: register yaao as an MCP server in each agent's config. The four agents converge on one surface.
+
+### Backend support tiers
+
+Each backend's MCP coverage and CLI surface evolves at its own pace. yaao's project-level commitment to each is tiered, so users can pick agents whose maturity matches their tolerance for breakage:
+
+| Tier | Backends | Commitment |
+|---|---|---|
+| **Tier 1** | Claude Code | CI-tested every commit. Reference target. Breakage blocks releases. |
+| **Tier 2** | Cursor, Codex | Smoke-tested per release against pinned versions. Issues triaged but may lag a release. |
+| **Tier 3** | Copilot | Best-effort. The `gh copilot` agentic surface is the youngest of the four; expect breakage on Copilot-side updates and version-pinning workarounds. |
+| **Tier 1 (separate path)** | API (Anthropic / OpenAI / OpenRouter) | Fully supported as a peer to the CLI backends, but the implementation path is separate (own tool loop + sandbox), so feature lag vs. CLI backends is possible. |
+
+Tiering is about *operational commitment*, not feature scope — every backend gets the same execution-plan schema, the same MCP wiring, the same skills.
 
 ### The two roles yaao plays
 

@@ -22,7 +22,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Planned |
 | 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Planned |
 | 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Planned |
-| 13 | Distribution & polish       | npm publish, `doctor`, telemetry (opt-in), docs                 | Planned |
+| 13 | Distribution & polish       | npm publish, `doctor`, docs                                     | Planned |
 | 14 | Web viewer                  | HTTP server, browser-based DAG/run viewer                       | Planned |
 
 ---
@@ -288,13 +288,12 @@ Make yaao installable, diagnosable, and documented.
 | **F13.1** | `yaao doctor`                              | [F13.1-doctor.md](phase-13/F13.1-doctor.md) |
 | **F13.2** | npm distribution                           | [F13.2-npm-publish.md](phase-13/F13.2-npm-publish.md) |
 | **F13.3** | Docs site                                  | [F13.3-docs-site.md](phase-13/F13.3-docs-site.md) |
-| **F13.4** | Telemetry (opt-in)                         | [F13.4-telemetry.md](phase-13/F13.4-telemetry.md) |
 
 **Key Deliverables:**
-- `yaao doctor` checks: Node version, git version, agent CLI presence + versions, ctx-sys presence + version, config sanity, write permissions, secrets-not-in-config rule.
+- `yaao doctor` checks: Node version, git version, agent CLI presence + versions, ctx-sys presence + version, config sanity, write permissions, secrets-not-in-config rule. Subsumes the per-agent availability check that was previously surfaced as a separate `yaao agents` command.
 - Published as `yaao` on npm with `bin/yaao`, ESM-only, types included.
 - Docs site (Astro or Docusaurus) with command reference, schema reference, walkthroughs.
-- Opt-in anonymous telemetry: command name, exit code, duration, OS — strictly no plan content, no diffs, no prompts.
+- yaao does **not** collect telemetry. No event reporting, no installation IDs, no opt-in counter — by design.
 
 ---
 
@@ -370,7 +369,6 @@ yaao/
 │   │   └── status.tsx            # F11.5
 │   ├── mcp/                      # F12 — yaao-as-MCP server
 │   ├── doctor/                   # F13.1
-│   ├── telemetry/                # F13.4
 │   └── web/                      # F14
 ├── tests/
 │   ├── helpers/
