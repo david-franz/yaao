@@ -14,7 +14,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 2  | Plan schema & validation    | Zod schema, YAML parser, DAG validation, `validate`             | Shipped |
 | 3  | Worktree & git engine       | Worktree manager, branch graph, git wrapper, run journal        | Shipped |
 | 4  | Agent backends              | Backend interface + Claude Code, Cursor, Copilot, Codex, API    | Shipped |
-| 5  | Execution engine            | Scheduler, lifecycle, event bus, `run`, resume, dry-run         | Planned |
+| 5  | Execution engine            | Scheduler, lifecycle, event bus, `run`, resume, dry-run         | Shipped |
 | 6  | Merge engine                | Topological merge, manual/auto/agent conflict modes, PR mode    | Planned |
 | 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Planned |
 | 8  | Skills system               | Source-of-truth format, per-agent emitters, `skills install`    | Planned |
@@ -108,17 +108,17 @@ A uniform `AgentBackend` interface plus an implementation for every supported ag
 
 ---
 
-## Phase 5: Execution Engine
+## Phase 5: Execution Engine **(shipped)**
 
 The brain. Walks the DAG, runs ready tasks within a parallelism budget, passes context between dependent tasks, persists state.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F5.1** | DAG scheduler                               | [F5.1-dag-scheduler.md](phase-5/F5.1-dag-scheduler.md) |
-| **F5.2** | Task lifecycle & event bus                  | [F5.2-task-lifecycle.md](phase-5/F5.2-task-lifecycle.md) |
-| **F5.3** | Context passing between tasks               | [F5.3-context-passing.md](phase-5/F5.3-context-passing.md) |
-| **F5.4** | `yaao run` command                          | [F5.4-run-command.md](phase-5/F5.4-run-command.md) |
-| **F5.5** | Resume, `--only`, `--skip`, `--dry-run`     | [F5.5-run-modes.md](phase-5/F5.5-run-modes.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F5.1** | DAG scheduler                               | shipped | [F5.1-dag-scheduler.md](phase-5/F5.1-dag-scheduler.md) |
+| **F5.2** | Task lifecycle & event bus                  | shipped | [F5.2-task-lifecycle.md](phase-5/F5.2-task-lifecycle.md) |
+| **F5.3** | Context passing between tasks               | shipped | [F5.3-context-passing.md](phase-5/F5.3-context-passing.md) |
+| **F5.4** | `yaao run` command                          | shipped | [F5.4-run-command.md](phase-5/F5.4-run-command.md) |
+| **F5.5** | Resume, `--only`, `--skip`, `--dry-run`, `--trial` | shipped | [F5.5-run-modes.md](phase-5/F5.5-run-modes.md) |
 
 **Key Deliverables:**
 - Topological scheduler: tracks pending → ready → active → completed/failed/skipped, respects `max-parallel`.

@@ -15,7 +15,7 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 ## Status
 
-Active development. Phases 1-4 are shipped: foundation, plan schema & validation, the worktree & git engine, and agent backends (interface + Claude Code / Cursor / Copilot / Codex / API tool-use loop with sandboxed tools + parallel `yaao agents` detection). Phases 5-6 — execution engine and merge engine — complete the MVP and are next. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
+Active development. Phases 1-5 are shipped: foundation, plan schema & validation, the worktree & git engine, agent backends, and the execution engine (DAG scheduler with retries and filter modes, task lifecycle wiring scheduler + worktree manager + agent backend + run journal, context.md producer/consumer for downstream tasks, and `yaao run` with `--dry-run`, `--trial`, `--only/--skip`, `--resume`). Phase 6 — the merge engine — completes the MVP and is next. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
 
 ---
 
