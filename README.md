@@ -15,7 +15,7 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 ## Status
 
-Active development. Phases 1-5 are shipped: foundation, plan schema & validation, the worktree & git engine, agent backends, and the execution engine (DAG scheduler with retries and filter modes, task lifecycle wiring scheduler + worktree manager + agent backend + run journal, context.md producer/consumer for downstream tasks, and `yaao run` with `--dry-run`, `--trial`, `--only/--skip`, `--resume`). Phase 6 — the merge engine — completes the MVP and is next. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
+**MVP shipped.** Phases 1-6 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, and the merge engine (topological merge with manual / auto / agent conflict modes, PR mode via `gh pr create`, plus `yaao merge` and `yaao clean`). End-to-end, the user can now run `yaao init` → write or generate an execution plan → `yaao validate` it → `yaao run` it across worktrees → `yaao merge` the completed work back into the base branch. Phases 7-14 (ctx-sys integration, skills system, planner/converter skills, TUI, MCP server, distribution, web viewer) build on top. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
 
 ---
 

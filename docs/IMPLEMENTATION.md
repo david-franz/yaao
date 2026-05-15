@@ -15,7 +15,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 3  | Worktree & git engine       | Worktree manager, branch graph, git wrapper, run journal        | Shipped |
 | 4  | Agent backends              | Backend interface + Claude Code, Cursor, Copilot, Codex, API    | Shipped |
 | 5  | Execution engine            | Scheduler, lifecycle, event bus, `run`, resume, dry-run         | Shipped |
-| 6  | Merge engine                | Topological merge, manual/auto/agent conflict modes, PR mode    | Planned |
+| 6  | Merge engine                | Topological merge, manual/auto/agent conflict modes, PR mode    | Shipped |
 | 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Planned |
 | 8  | Skills system               | Source-of-truth format, per-agent emitters, `skills install`    | Planned |
 | 9  | yaao-planner skill          | Plan generation (markdown + Spec Kit), `plan` command           | Planned |
@@ -129,16 +129,16 @@ The brain. Walks the DAG, runs ready tasks within a parallelism budget, passes c
 
 ---
 
-## Phase 6: Merge Engine
+## Phase 6: Merge Engine **(shipped)**
 
 How completed worktrees come back together — and what happens when they collide.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F6.1** | Topological merge orchestration             | [F6.1-merge-orchestration.md](phase-6/F6.1-merge-orchestration.md) |
-| **F6.2** | Auto / manual / agent conflict modes        | [F6.2-conflict-modes.md](phase-6/F6.2-conflict-modes.md) |
-| **F6.3** | PR merge mode (`gh pr create`)              | [F6.3-pr-mode.md](phase-6/F6.3-pr-mode.md) |
-| **F6.4** | `yaao merge` & `yaao clean`                 | [F6.4-merge-clean-commands.md](phase-6/F6.4-merge-clean-commands.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F6.1** | Topological merge orchestration             | shipped | [F6.1-merge-orchestration.md](phase-6/F6.1-merge-orchestration.md) |
+| **F6.2** | Auto / manual / agent conflict modes        | shipped | [F6.2-conflict-modes.md](phase-6/F6.2-conflict-modes.md) |
+| **F6.3** | PR merge mode (`gh pr create`)              | shipped | [F6.3-pr-mode.md](phase-6/F6.3-pr-mode.md) |
+| **F6.4** | `yaao merge` & `yaao clean`                 | shipped | [F6.4-merge-clean-commands.md](phase-6/F6.4-merge-clean-commands.md) |
 
 **Key Deliverables:**
 - Merge happens in topological order to minimize conflicts; a trial-merge probe detects conflicts before committing.
