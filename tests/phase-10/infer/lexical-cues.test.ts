@@ -7,10 +7,15 @@ function t(id: string, title: string, prompt: string, files: string[] = [], depe
 }
 
 describe('inferDependencies: lexical cues', () => {
-  it('lexical cue + name reference produces a high-confidence inference', () => {
+  it('lexical cue + name reference produces an inference at the default threshold', () => {
     const tasks = [
+      // tB's prose mentions tA's file by basename to push past the default 0.7.
       t('scaffold', 'Scaffold', 'Set up the directory.', ['src/auth/oauth.ts']),
-      t('api', 'API', 'Implement the API. This task uses the scaffold module to register routes.'),
+      t(
+        'api',
+        'API',
+        'Implement the API. This task uses the scaffold module (oauth.ts) to register routes.',
+      ),
     ];
     const inferred = inferDependencies(tasks);
     expect(inferred.find((i) => i.from === 'api' && i.on === 'scaffold')).toBeDefined();
