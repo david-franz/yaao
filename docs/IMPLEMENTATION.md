@@ -17,7 +17,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 5  | Execution engine            | Scheduler, lifecycle, event bus, `run`, resume, dry-run         | Shipped |
 | 6  | Merge engine                | Topological merge, manual/auto/agent conflict modes, PR mode    | Shipped |
 | 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Shipped |
-| 8  | Skills system               | Source-of-truth format, per-agent emitters, `skills install`    | Planned |
+| 8  | Skills system               | Source-of-truth format, per-agent emitters, `skills install`    | Shipped |
 | 9  | yaao-planner skill          | Plan generation (markdown + Spec Kit), `plan` command           | Planned |
 | 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Planned |
 | 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Planned |
@@ -169,18 +169,18 @@ Make ctx-sys a first-class context provider for any agent yaao runs, **but compl
 
 ---
 
-## Phase 8: Skills System (MCP-first)
+## Phase 8: Skills System (MCP-first) **(shipped)**
 
 One source-of-truth skill. The skill is exposed primarily as a yaao MCP tool (`yaao_skill_<name>`) — see Phase 12. The per-agent emitters write *small* MCP-config bootstraps and short instruction stubs that point agents at yaao's MCP server, not large duplicated skill artifacts.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F8.1** | Skill source-of-truth format                | [F8.1-skill-format.md](phase-8/F8.1-skill-format.md) |
-| **F8.2** | Claude Code emitter (MCP config + stub)     | [F8.2-claude-code-emitter.md](phase-8/F8.2-claude-code-emitter.md) |
-| **F8.3** | Cursor emitter (MCP config + stub)          | [F8.3-cursor-emitter.md](phase-8/F8.3-cursor-emitter.md) |
-| **F8.4** | Copilot emitter (MCP config + stub)         | [F8.4-copilot-emitter.md](phase-8/F8.4-copilot-emitter.md) |
-| **F8.5** | Codex emitter (MCP config + stub)           | [F8.5-codex-emitter.md](phase-8/F8.5-codex-emitter.md) |
-| **F8.6** | `yaao skills install` / sync                | [F8.6-skills-install.md](phase-8/F8.6-skills-install.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F8.1** | Skill source-of-truth format                | shipped | [F8.1-skill-format.md](phase-8/F8.1-skill-format.md) |
+| **F8.2** | Claude Code emitter (MCP config + stub)     | shipped | [F8.2-claude-code-emitter.md](phase-8/F8.2-claude-code-emitter.md) |
+| **F8.3** | Cursor emitter (MCP config + stub)          | shipped | [F8.3-cursor-emitter.md](phase-8/F8.3-cursor-emitter.md) |
+| **F8.4** | Copilot emitter (MCP config + stub)         | shipped | [F8.4-copilot-emitter.md](phase-8/F8.4-copilot-emitter.md) |
+| **F8.5** | Codex emitter (MCP config + stub)           | shipped | [F8.5-codex-emitter.md](phase-8/F8.5-codex-emitter.md) |
+| **F8.6** | `yaao skills install` / sync                | shipped | [F8.6-skills-install.md](phase-8/F8.6-skills-install.md) |
 
 **Key Deliverables:**
 
