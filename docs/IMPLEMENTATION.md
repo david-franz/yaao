@@ -19,7 +19,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Shipped |
 | 8  | Skills system               | Source-of-truth format, per-agent emitters, `skills install`    | Shipped |
 | 9  | yaao-planner skill          | Plan generation (markdown + Spec Kit), `plan` command           | Shipped |
-| 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Planned |
+| 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Shipped |
 | 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Planned |
 | 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Planned |
 | 13 | Distribution & polish       | npm publish, `doctor`, docs                                     | Planned |
@@ -213,18 +213,18 @@ The skill that authors implementation plans, plus the CLI driver that invokes it
 
 ---
 
-## Phase 10: yaao-converter Skill
+## Phase 10: yaao-converter Skill **(shipped)**
 
-Turns any implementation plan (yaao-authored or not) into a deterministic execution plan.
+Turns any implementation plan (yaao-authored or not) into a schema-valid execution plan with best-effort dependency inference.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F10.1** | Skill design                               | [F10.1-converter-skill.md](phase-10/F10.1-converter-skill.md) |
-| **F10.2** | Markdown plan parser                       | [F10.2-markdown-parser.md](phase-10/F10.2-markdown-parser.md) |
-| **F10.3** | Spec Kit plan parser                       | [F10.3-speckit-parser.md](phase-10/F10.3-speckit-parser.md) |
-| **F10.4** | Dependency inference                       | [F10.4-dependency-inference.md](phase-10/F10.4-dependency-inference.md) |
-| **F10.5** | Default agent assignment                   | [F10.5-agent-assignment.md](phase-10/F10.5-agent-assignment.md) |
-| **F10.6** | `yaao convert` command                     | [F10.6-convert-command.md](phase-10/F10.6-convert-command.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F10.1** | Skill design                               | shipped | [F10.1-converter-skill.md](phase-10/F10.1-converter-skill.md) |
+| **F10.2** | Markdown plan parser                       | shipped | [F10.2-markdown-parser.md](phase-10/F10.2-markdown-parser.md) |
+| **F10.3** | Spec Kit plan parser                       | shipped | [F10.3-speckit-parser.md](phase-10/F10.3-speckit-parser.md) |
+| **F10.4** | Dependency inference                       | shipped | [F10.4-dependency-inference.md](phase-10/F10.4-dependency-inference.md) |
+| **F10.5** | Default agent assignment                   | shipped | [F10.5-agent-assignment.md](phase-10/F10.5-agent-assignment.md) |
+| **F10.6** | `yaao convert` command                     | shipped | [F10.6-convert-command.md](phase-10/F10.6-convert-command.md) |
 
 **Key Deliverables:**
 - `yaao-converter` skill: deterministic schema-validated YAML output, infers missing fields, asks for clarification when ambiguous.
