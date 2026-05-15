@@ -1,0 +1,21 @@
+name: yaao-converter
+version: 1
+description: Convert an implementation plan into an execution plan (YAML)
+appliesTo:
+  agents: [claude-code, cursor, copilot, codex, api]
+tools:
+  - read_file
+  - write_file
+  - context_query
+inputs:
+  - name: input
+    description: Path to the implementation plan (markdown or Spec Kit triplet directory)
+    required: true
+  - name: out
+    description: Output path (`.yaao/exec/<slug>.yaml` by default)
+    default: .yaao/exec/
+  - name: split
+    description: Emit one execution plan per source phase
+    default: 'false'
+trigger:
+  manual: true
