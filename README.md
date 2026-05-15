@@ -15,7 +15,7 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 ## Status
 
-**MVP shipped.** Phases 1-6 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, and the merge engine (topological merge with manual / auto / agent conflict modes, PR mode via `gh pr create`, plus `yaao merge` and `yaao clean`). End-to-end, the user can now run `yaao init` → write or generate an execution plan → `yaao validate` it → `yaao run` it across worktrees → `yaao merge` the completed work back into the base branch. Phases 7-14 (ctx-sys integration, skills system, planner/converter skills, TUI, MCP server, distribution, web viewer) build on top. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
+**MVP shipped.** Phases 1-7 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, the merge engine, and the optional ctx-sys integration (detection, auto-spawn, MCP server composition, advisory directive, pre-commit hook). End-to-end, the user can now run `yaao init` → write or generate an execution plan → `yaao validate` it → `yaao run` it across worktrees (optionally with ctx-sys and user-declared MCP servers wired in) → `yaao merge` the completed work back into the base branch. Phases 8-14 (skills system, planner/converter skills, TUI, MCP server, distribution, web viewer) build on top. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
 
 ---
 

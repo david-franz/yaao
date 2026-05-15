@@ -16,7 +16,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 4  | Agent backends              | Backend interface + Claude Code, Cursor, Copilot, Codex, API    | Shipped |
 | 5  | Execution engine            | Scheduler, lifecycle, event bus, `run`, resume, dry-run         | Shipped |
 | 6  | Merge engine                | Topological merge, manual/auto/agent conflict modes, PR mode    | Shipped |
-| 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Planned |
+| 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Shipped |
 | 8  | Skills system               | Source-of-truth format, per-agent emitters, `skills install`    | Planned |
 | 9  | yaao-planner skill          | Plan generation (markdown + Spec Kit), `plan` command           | Planned |
 | 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Planned |
@@ -150,16 +150,16 @@ How completed worktrees come back together — and what happens when they collid
 
 ---
 
-## Phase 7: ctx-sys Integration (optional)
+## Phase 7: ctx-sys Integration (optional) **(shipped)**
 
 Make ctx-sys a first-class context provider for any agent yaao runs, **but completely optional**. yaao never depends on ctx-sys, never installs it, and ships with `ctx-sys.enabled: false` in the default config. When the user opts in, the integration is proactive — not lazy or deferred.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F7.1** | Detection & auto-spawn (when enabled)       | [F7.1-detect-and-spawn.md](phase-7/F7.1-detect-and-spawn.md) |
-| **F7.2** | MCP server registration (ctx-sys + user MCPs) | [F7.2-mcp-injection.md](phase-7/F7.2-mcp-injection.md) |
-| **F7.3** | System-prompt directive (advisory)          | [F7.3-query-enforcement.md](phase-7/F7.3-query-enforcement.md) |
-| **F7.4** | Optional git-hook impact reports            | [F7.4-impact-hook.md](phase-7/F7.4-impact-hook.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F7.1** | Detection & auto-spawn (when enabled)       | shipped | [F7.1-detect-and-spawn.md](phase-7/F7.1-detect-and-spawn.md) |
+| **F7.2** | MCP server registration (ctx-sys + user MCPs) | shipped | [F7.2-mcp-injection.md](phase-7/F7.2-mcp-injection.md) |
+| **F7.3** | System-prompt directive (advisory)          | shipped | [F7.3-query-enforcement.md](phase-7/F7.3-query-enforcement.md) |
+| **F7.4** | Optional git-hook impact reports            | shipped | [F7.4-impact-hook.md](phase-7/F7.4-impact-hook.md) |
 
 **Key Deliverables:**
 - Default-off in `yaao.config.json`. When `ctx-sys.enabled: true`, yaao detects whether `ctx-sys serve` is running and (if `auto-spawn: true`) spawns it for the run.
