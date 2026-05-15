@@ -4,6 +4,8 @@ import { initCommand } from './commands/init.js';
 import { validateCommand } from './commands/validate.js';
 import { agentsCommand } from './commands/agents.js';
 import { runCommand } from './commands/run.js';
+import { mergeCommand } from './commands/merge.js';
+import { cleanCommand } from './commands/clean.js';
 
 export const COMMAND_MODULES: CommandModule[] = [
   initCommand,
@@ -33,18 +35,8 @@ export const COMMAND_MODULES: CommandModule[] = [
     phase: 'F11',
     args: [{ name: 'run-id', required: false }],
   }),
-  makeStubCommand({
-    name: 'merge',
-    describe: 'Merge completed worktrees',
-    phase: 'F6',
-    args: [{ name: 'run-id', required: false }],
-  }),
-  makeStubCommand({
-    name: 'clean',
-    describe: 'Tear down worktrees and branches',
-    phase: 'F6',
-    args: [{ name: 'run-id', required: false }],
-  }),
+  mergeCommand,
+  cleanCommand,
   agentsCommand,
   makeStubCommand({
     name: 'skills',
