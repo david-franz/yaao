@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, resolve as resolvePath } from 'node:path';
+import { isAbsolute, join, resolve as resolvePath } from 'node:path';
 import type { ResolvedPlan, ResolvedTask } from '../plan/schema/types.js';
 import type { Scheduler } from './scheduler.js';
 import type { WorktreeManager } from '../git/worktree-manager.js';
@@ -104,10 +104,22 @@ export class Lifecycle {
           : {}),
       });
 
-      // Forward agent events into the run bus.
+      // Forward agent events into the run bus + capture per-task output to disk
+      // for `yaao status --task` (F11.4).
+      const outputDir = join(this.opts.runDir, task.id);
+      const outputLog = join(outputDir, 'output.log');
+      const { mkdirSync, appendFileSync } = await import('node:fs');
+      mkdirSync(outputDir, { recursive: true });
       void (async () => {
         for await (const ev of proc.events) {
           this.opts.bus.emit({ type: 'task:agent-event', taskId: task.id, ev });
+          if (ev.type === 'stdout' || ev.type === 'stderr') {
+            try {
+              appendFileSync(outputLog, ev.data.endsWith('\n') ? ev.data : `${ev.data}\n`);
+            } catch {
+              // ignore — log capture is best-effort
+            }
+          }
         }
       })();
 

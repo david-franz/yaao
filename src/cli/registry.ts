@@ -9,25 +9,17 @@ import { cleanCommand } from './commands/clean.js';
 import { skillsCommand } from './commands/skills.js';
 import { planCommand } from './commands/plan.js';
 import { convertCommand } from './commands/convert.js';
+import { viewCommand } from './commands/view.js';
+import { statusCommand } from './commands/status.js';
 
 export const COMMAND_MODULES: CommandModule[] = [
   initCommand,
   planCommand,
   convertCommand,
   validateCommand,
-  makeStubCommand({
-    name: 'view',
-    describe: 'Static plan viewer (TUI)',
-    phase: 'F11',
-    args: [{ name: 'exec-plan' }],
-  }),
+  viewCommand,
   runCommand,
-  makeStubCommand({
-    name: 'status',
-    describe: 'Inspect a run',
-    phase: 'F11',
-    args: [{ name: 'run-id', required: false }],
-  }),
+  statusCommand,
   mergeCommand,
   cleanCommand,
   agentsCommand,

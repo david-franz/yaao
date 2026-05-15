@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { runCli } from '../../helpers/cli.js';
 
 const STUB_COMMANDS: { argv: string[]; phase: string }[] = [
-  { argv: ['view', 'a-plan.yaml'], phase: 'F11' },
-  { argv: ['status'], phase: 'F11' },
   { argv: ['doctor'], phase: 'F13' },
   { argv: ['serve'], phase: 'F12' },
 ];
