@@ -1,0 +1,25 @@
+name: yaao-planner
+version: 1
+description: Generate an implementation plan from a description
+appliesTo:
+  agents: [claude-code, cursor, copilot, codex, api]
+tools:
+  - read_file
+  - write_file
+  - list_files
+  - context_query
+inputs:
+  - name: description
+    description: What to plan
+    required: true
+  - name: scope
+    description: feature | project
+    default: feature
+  - name: format
+    description: markdown | speckit | both
+    default: markdown
+  - name: out
+    description: Output directory
+    default: .yaao/plans/
+trigger:
+  manual: true

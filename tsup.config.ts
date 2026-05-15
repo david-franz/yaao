@@ -1,5 +1,5 @@
 import { defineConfig } from 'tsup';
-import { readFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -32,5 +32,13 @@ export default defineConfig([
     splitting: false,
     shims: false,
     define,
+    async onSuccess() {
+      // Built-in skills are data files; copy them next to the bundle so the
+      // production binary can resolve them via dist/skills/builtin/<name>/.
+      const src = join(here, 'src', 'skills', 'builtin');
+      const dst = join(here, 'dist', 'skills', 'builtin');
+      mkdirSync(dst, { recursive: true });
+      cpSync(src, dst, { recursive: true });
+    },
   },
 ]);

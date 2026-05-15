@@ -4,6 +4,7 @@ import type { CommandModule } from '../command.js';
 import type { CliContext } from '../context.js';
 import { installSkills, removeSkill } from '../../skills/install.js';
 import { listSkillDirs, loadSkillDir, validateSkill } from '../../skills/format.js';
+import { getBuiltinSkillsDir } from '../../skills/builtin-dir.js';
 import type { AgentName } from '../../config/types.js';
 import { AGENT_NAMES } from '../../config/types.js';
 
@@ -110,12 +111,14 @@ export const skillsCommand: CommandModule = {
 async function runInstall(ctx: CliContext, names: string[], flags: SkillsFlags): Promise<void> {
   const cwd = resolve(ctx.cwd);
   const agent = parseAgent(flags.agent, ctx);
+  const builtinDir = getBuiltinSkillsDir();
   const result = await installSkills({
     cwd,
     config: ctx.config,
     ...(names.length > 0 ? { only: names } : {}),
     ...(agent !== undefined ? { agent } : {}),
     ...(flags.force !== undefined ? { force: flags.force } : {}),
+    ...(builtinDir !== undefined ? { builtinDir } : {}),
   });
   if (ctx.json) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
