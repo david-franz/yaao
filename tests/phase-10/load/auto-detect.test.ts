@@ -48,13 +48,15 @@ describe('loadInputPlan auto-detect', () => {
   });
 
   it('reports missing inputs', () => {
-    project = createTmpProject();
-    expect(() => loadInputPlan({ cwd: project.path, input: 'nope.md' })).toThrow(YaaoError);
+    const p = createTmpProject();
+    project = p;
+    expect(() => loadInputPlan({ cwd: p.path, input: 'nope.md' })).toThrow(YaaoError);
   });
 
   it('refuses a Spec Kit directory without tasks.md', () => {
-    project = createTmpProject();
-    project.write('triplet/spec.md', '# Plan');
-    expect(() => loadInputPlan({ cwd: project.path, input: 'triplet' })).toThrow(YaaoError);
+    const p = createTmpProject();
+    project = p;
+    p.write('triplet/spec.md', '# Plan');
+    expect(() => loadInputPlan({ cwd: p.path, input: 'triplet' })).toThrow(YaaoError);
   });
 });
