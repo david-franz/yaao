@@ -6,6 +6,7 @@ import { agentsCommand } from './commands/agents.js';
 import { runCommand } from './commands/run.js';
 import { mergeCommand } from './commands/merge.js';
 import { cleanCommand } from './commands/clean.js';
+import { skillsCommand } from './commands/skills.js';
 
 export const COMMAND_MODULES: CommandModule[] = [
   initCommand,
@@ -38,12 +39,7 @@ export const COMMAND_MODULES: CommandModule[] = [
   mergeCommand,
   cleanCommand,
   agentsCommand,
-  makeStubCommand({
-    name: 'skills',
-    describe: 'Skill management (install/sync)',
-    phase: 'F8',
-    args: [{ name: 'subcommand', required: false }],
-  }),
+  skillsCommand,
   makeStubCommand({
     name: 'doctor',
     describe: 'Diagnose environment and config',

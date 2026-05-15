@@ -6,7 +6,6 @@ const STUB_COMMANDS: { argv: string[]; phase: string }[] = [
   { argv: ['convert', 'a-plan.md'], phase: 'F10' },
   { argv: ['view', 'a-plan.yaml'], phase: 'F11' },
   { argv: ['status'], phase: 'F11' },
-  { argv: ['skills'], phase: 'F8' },
   { argv: ['doctor'], phase: 'F13' },
   { argv: ['serve'], phase: 'F12' },
 ];
