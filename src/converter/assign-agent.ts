@@ -70,8 +70,8 @@ export function assignAgent(task: ParsedTask, opts: AssignOptions): AssignmentRe
 
 function matches(predicate: MatchPredicate, task: ParsedTask): boolean {
   if (predicate.any) return true;
-  if (predicate['title-regex'] && new RegExp(predicate['title-regex']).test(task.title)) return true;
-  if (predicate['id-regex'] && new RegExp(predicate['id-regex']).test(task.id)) return true;
+  if (predicate['title-regex'] && buildRegex(predicate['title-regex']).test(task.title)) return true;
+  if (predicate['id-regex'] && buildRegex(predicate['id-regex']).test(task.id)) return true;
   if (predicate['files-glob']) {
     const re = globToRegex(predicate['files-glob']);
     if (task.files.some((f) => re.test(f))) return true;
@@ -83,6 +83,16 @@ function matches(predicate: MatchPredicate, task: ParsedTask): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * JavaScript's RegExp doesn't speak inline flag groups. We translate a leading
+ * `(?i)` into a JS `i` flag so the rule format documented in F10.5 still works.
+ */
+function buildRegex(pattern: string): RegExp {
+  const ciMatch = pattern.match(/^\(\?i\)(.*)$/s);
+  if (ciMatch && ciMatch[1] !== undefined) return new RegExp(ciMatch[1], 'i');
+  return new RegExp(pattern);
 }
 
 function describeRule(p: MatchPredicate): string {
