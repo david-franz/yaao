@@ -15,7 +15,7 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 ## Status
 
-**MVP shipped.** Phases 1-10 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, the merge engine, optional ctx-sys integration, the skills system, the yaao-planner skill, and the yaao-converter skill (`yaao convert <plan.md>` turns a markdown or Spec Kit plan into a schema-valid execution YAML, with built-in agent-assignment rules and opt-in dependency inference). End-to-end, the user can now go from a sentence to a runnable, merged tree: `yaao init` → `yaao plan "…"` → `yaao convert` → `yaao validate` → `yaao run` → `yaao merge`. Phases 11-14 (TUI, yaao-as-MCP server, distribution, web viewer) build on top. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
+**MVP shipped.** Phases 1-11 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, the merge engine, optional ctx-sys integration, the skills system, the yaao-planner skill, the yaao-converter skill, and the TUI (text-mode `yaao view` DAG renderer, `yaao status [--watch] [--task]` with per-task output logs captured by the lifecycle). End-to-end, the user can now go from a sentence to a runnable, merged, and observable tree: `yaao init` → `yaao plan "…"` → `yaao convert` → `yaao view` → `yaao run` → `yaao status --watch` → `yaao merge`. Phases 12-14 (yaao-as-MCP server, distribution, web viewer) build on top. The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
 
 ---
 

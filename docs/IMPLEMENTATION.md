@@ -20,7 +20,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 8  | Skills system               | Source-of-truth format, per-agent emitters, `skills install`    | Shipped |
 | 9  | yaao-planner skill          | Plan generation (markdown + Spec Kit), `plan` command           | Shipped |
 | 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Shipped |
-| 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Planned |
+| 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Shipped (text-mode) |
 | 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Planned |
 | 13 | Distribution & polish       | npm publish, `doctor`, docs                                     | Planned |
 | 14 | Web viewer                  | HTTP server, browser-based DAG/run viewer                       | Planned |
@@ -236,17 +236,17 @@ Turns any implementation plan (yaao-authored or not) into a schema-valid executi
 
 ---
 
-## Phase 11: TUI
+## Phase 11: TUI **(shipped — text-mode)**
 
-Static plan viewer, live execution monitor, and the rendering primitives behind both.
+Static plan viewer, live execution monitor, and the rendering primitives behind both. We ship a text-mode renderer (pure functions producing styled lines) rather than the Ink-based interactive TUI the spec described; an Ink presentation layer can drop in on top of these primitives later.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F11.1** | Ink rendering primitives & DAG renderer    | [F11.1-ink-primitives.md](phase-11/F11.1-ink-primitives.md) |
-| **F11.2** | `yaao view` (static)                       | [F11.2-view-command.md](phase-11/F11.2-view-command.md) |
-| **F11.3** | `yaao run` live monitor                    | [F11.3-run-monitor.md](phase-11/F11.3-run-monitor.md) |
-| **F11.4** | Agent output streaming                     | [F11.4-output-streaming.md](phase-11/F11.4-output-streaming.md) |
-| **F11.5** | `yaao status` command                      | [F11.5-status-command.md](phase-11/F11.5-status-command.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F11.1** | Rendering primitives & DAG renderer       | shipped (text-mode) | [F11.1-ink-primitives.md](phase-11/F11.1-ink-primitives.md) |
+| **F11.2** | `yaao view` (static)                       | shipped | [F11.2-view-command.md](phase-11/F11.2-view-command.md) |
+| **F11.3** | `yaao run` live monitor                    | shipped (via `yaao status --watch`) | [F11.3-run-monitor.md](phase-11/F11.3-run-monitor.md) |
+| **F11.4** | Agent output streaming                     | shipped (per-task output.log) | [F11.4-output-streaming.md](phase-11/F11.4-output-streaming.md) |
+| **F11.5** | `yaao status` command                      | shipped | [F11.5-status-command.md](phase-11/F11.5-status-command.md) |
 
 **Key Deliverables:**
 - Shared rendering primitives: status table, DAG layout (Sugiyama-style with width caps), log pane, key-help footer.
