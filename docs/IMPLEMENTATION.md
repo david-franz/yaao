@@ -18,7 +18,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 6  | Merge engine                | Topological merge, manual/auto/agent conflict modes, PR mode    | Shipped |
 | 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Shipped |
 | 8  | Skills system               | Source-of-truth format, per-agent emitters, `skills install`    | Shipped |
-| 9  | yaao-planner skill          | Plan generation (markdown + Spec Kit), `plan` command           | Planned |
+| 9  | yaao-planner skill          | Plan generation (markdown + Spec Kit), `plan` command           | Shipped |
 | 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Planned |
 | 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Planned |
 | 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Planned |
@@ -192,17 +192,17 @@ One source-of-truth skill. The skill is exposed primarily as a yaao MCP tool (`y
 
 ---
 
-## Phase 9: yaao-planner Skill
+## Phase 9: yaao-planner Skill **(shipped)**
 
 The skill that authors implementation plans, plus the CLI driver that invokes it.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F9.1** | Skill design (system prompt, tools, guard-rails) | [F9.1-planner-skill.md](phase-9/F9.1-planner-skill.md) |
-| **F9.2** | Markdown plan format & template             | [F9.2-markdown-format.md](phase-9/F9.2-markdown-format.md) |
-| **F9.3** | Spec Kit format support                     | [F9.3-speckit-format.md](phase-9/F9.3-speckit-format.md) |
-| **F9.4** | Feature vs project scope                    | [F9.4-scope-modes.md](phase-9/F9.4-scope-modes.md) |
-| **F9.5** | `yaao plan` command                         | [F9.5-plan-command.md](phase-9/F9.5-plan-command.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F9.1** | Skill design (system prompt, tools, guard-rails) | shipped | [F9.1-planner-skill.md](phase-9/F9.1-planner-skill.md) |
+| **F9.2** | Markdown plan format & template             | shipped | [F9.2-markdown-format.md](phase-9/F9.2-markdown-format.md) |
+| **F9.3** | Spec Kit format support                     | shipped | [F9.3-speckit-format.md](phase-9/F9.3-speckit-format.md) |
+| **F9.4** | Feature vs project scope                    | shipped | [F9.4-scope-modes.md](phase-9/F9.4-scope-modes.md) |
+| **F9.5** | `yaao plan` command                         | shipped | [F9.5-plan-command.md](phase-9/F9.5-plan-command.md) |
 
 **Key Deliverables:**
 - `yaao-planner` skill: knows the markdown convention, the Spec Kit triplet, when to break a plan into multiple files, and is required to call `context_query` first if ctx-sys is enabled.
