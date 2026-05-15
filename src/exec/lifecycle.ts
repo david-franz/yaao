@@ -5,7 +5,7 @@ import type { Scheduler } from './scheduler.js';
 import type { WorktreeManager } from '../git/worktree-manager.js';
 import type { Git } from '../git/git.js';
 import type { BranchPlan } from '../git/branch-graph.js';
-import type { AgentBackend } from '../agents/backend.js';
+import type { AgentBackend, McpServerConfig } from '../agents/backend.js';
 import type { RunBus } from './bus.js';
 import type { RunJournal } from '../git/journal.js';
 import { writeContextMd, buildContextPrefix, type TaskOutcomeArtifact } from './context.js';
@@ -27,6 +27,10 @@ export interface LifecycleOptions {
   runDir: string;
   /** Default base directory used to resolve `prompt-ref:` paths. */
   promptRefBaseDir?: string;
+  /** MCP servers visible to every spawned agent (F7.2). */
+  mcpServers?: McpServerConfig[];
+  /** Optional system-prompt directive prepended to every task (F7.3). */
+  ctxSysDirective?: string;
 }
 
 export class Lifecycle {
@@ -64,9 +68,7 @@ export class Lifecycle {
         task,
       });
       const prompt = `${prefix}${promptBody}`;
-      const systemPrompt = task.context?.['ctx-sys']?.['require-query']
-        ? 'Before writing or modifying code, call the `context_query` MCP tool to retrieve relevant context from this codebase.'
-        : undefined;
+      const systemPrompt = computeSystemPrompt(task, this.opts.ctxSysDirective);
 
       // 3) Spawn agent
       const backend = this.opts.backendFor(task);
@@ -88,6 +90,9 @@ export class Lifecycle {
         ...(task.skills !== undefined ? { skills: task.skills } : {}),
         env: task.env,
         ...(task.timeout !== undefined ? { timeout: parseDuration(task.timeout) } : {}),
+        ...(this.opts.mcpServers && this.opts.mcpServers.length > 0
+          ? { mcpServers: this.opts.mcpServers }
+          : {}),
         ...(task.api !== undefined
           ? {
               api: {
@@ -261,6 +266,18 @@ function resolvePromptBody(task: ResolvedTask, baseDir: string): string {
   if (!ref) return '';
   const abs = isAbsolute(ref) ? ref : resolvePath(baseDir, ref);
   return existsSync(abs) ? readFileSync(abs, 'utf8') : '';
+}
+
+function computeSystemPrompt(task: ResolvedTask, ctxSysDirective: string | undefined): string | undefined {
+  // Per-task suppression beats the global directive.
+  const taskCtxSys = task.context?.['ctx-sys'];
+  if (taskCtxSys && (taskCtxSys as { directive?: boolean }).directive === false) {
+    return undefined;
+  }
+  if (taskCtxSys?.['require-query']) {
+    return 'Before writing or modifying code, call the `context_query` MCP tool to retrieve relevant context from this codebase.';
+  }
+  return ctxSysDirective;
 }
 
 function parseDuration(d: string): number {

@@ -9,7 +9,7 @@ import { WorktreeManager } from '../git/worktree-manager.js';
 import { planBranches } from '../git/branch-graph.js';
 import { git as defaultGit, type Git } from '../git/git.js';
 import { openJournal, hashPlan, type RunJournal } from '../git/journal.js';
-import type { AgentBackend } from '../agents/backend.js';
+import type { AgentBackend, McpServerConfig } from '../agents/backend.js';
 import { YaaoError, AgentUnavailableError } from '../log/errors.js';
 
 export interface RunOptions {
@@ -28,6 +28,10 @@ export interface RunOptions {
   journalDir?: string;
   /** Override the per-run dir for context.md artifacts. */
   runDir?: string;
+  /** Pre-built MCP server list to pass to every spawn (F7.2). */
+  mcpServers?: McpServerConfig[];
+  /** System-prompt directive injected into every task when ctx-sys is enabled (F7.3). */
+  ctxSysDirective?: string;
 }
 
 export interface RunResult {
@@ -134,6 +138,8 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
     backendFor: opts.backendFor,
     runDir,
     promptRefBaseDir: resolvePath(opts.rootDir),
+    ...(opts.mcpServers !== undefined ? { mcpServers: opts.mcpServers } : {}),
+    ...(opts.ctxSysDirective !== undefined ? { ctxSysDirective: opts.ctxSysDirective } : {}),
   });
 
   const taskById = new Map(opts.plan.tasks.map((t) => [t.id, t]));

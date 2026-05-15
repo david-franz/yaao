@@ -62,6 +62,15 @@ export const ConfigSchema = z
         speckit: z.boolean().default(false),
       })
       .default({}),
+    'mcp-servers': z
+      .record(
+        z.object({
+          command: z.string().min(1),
+          args: z.array(z.string()).default([]),
+          env: z.record(z.string()).default({}),
+        }),
+      )
+      .default({}),
   })
   .strict();
 
