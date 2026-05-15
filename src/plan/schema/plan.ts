@@ -23,6 +23,8 @@ export const TaskContextSchema = z.object({
     .object({
       enabled: z.boolean().optional(),
       'require-query': z.boolean().optional(),
+      /** When false, suppresses the advisory ctx-sys directive for this task (F7.3). */
+      directive: z.boolean().optional(),
     })
     .optional(),
 });
