@@ -7,15 +7,11 @@ import { runCommand } from './commands/run.js';
 import { mergeCommand } from './commands/merge.js';
 import { cleanCommand } from './commands/clean.js';
 import { skillsCommand } from './commands/skills.js';
+import { planCommand } from './commands/plan.js';
 
 export const COMMAND_MODULES: CommandModule[] = [
   initCommand,
-  makeStubCommand({
-    name: 'plan',
-    describe: 'Generate an implementation plan',
-    phase: 'F9',
-    args: [{ name: 'description' }],
-  }),
+  planCommand,
   makeStubCommand({
     name: 'convert',
     describe: 'Convert an implementation plan into an execution plan',
