@@ -17,9 +17,11 @@ describe('renderStatusTable', () => {
       },
     };
     const text = renderStatusTable(summary, { ascii: true });
-    const ids = text.split('\n').filter((l) => /^\w/.test(l) && (l.includes('running') || l.includes('completed') || l.includes('pending')));
-    // 'b' (running) appears before 'a' (completed)
-    expect(ids[0]?.startsWith('b')).toBe(true);
+    const dataRows = text
+      .split('\n')
+      .filter((l) => /^[abc]\b/.test(l)); // only task rows start with a/b/c
+    // 'b' (running) appears before 'a' (completed) before 'c' (pending)
+    expect(dataRows.map((r) => r[0])).toEqual(['b', 'c', 'a']);
     expect(text).toContain('1s');
   });
 });
