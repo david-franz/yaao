@@ -41,6 +41,15 @@
             "worktree-root": {
               "type": "string",
               "default": ".yaao/worktrees"
+            },
+            "permissions": {
+              "type": "string",
+              "enum": [
+                "ask",
+                "allow-edits",
+                "allow-all"
+              ],
+              "default": "allow-all"
             }
           },
           "additionalProperties": false,

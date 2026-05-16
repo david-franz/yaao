@@ -23,18 +23,30 @@ export function resolveClaudeModel(model: string | undefined): string | undefine
 export function buildClaudeArgs(opts: SpawnOptions, mcpConfigPath?: string): string[] {
   // `--verbose` is required by the current `claude` CLI when combining
   // `--print` with `--output-format stream-json`.
-  // `--permission-mode acceptEdits` is needed because non-interactive `--print`
-  // can't prompt the user; without it the agent's file-write tools fail and yaao
-  // ends up with "I need permission to write to ...". The agent runs inside a
-  // worktree (or `.yaao/plans/`) that yaao owns, so auto-accepting edits is the
-  // right contract.
+  //
+  // Permission mode maps to claude's `--permission-mode`:
+  //   ask         → default  (interactive prompts; useless under --print)
+  //   allow-edits → acceptEdits (file writes auto-approved, bash still prompts)
+  //   allow-all   → bypassPermissions (everything auto-approved)
+  //
+  // `acceptEdits` keeps the agent from hanging on file confirmations but it
+  // still gets stuck on bash commands like `npm install`. `yaao run` defaults
+  // tasks to `allow-all` because worktrees are isolated and the user has
+  // already opted in by launching the run; per-task overrides are available
+  // via the plan.
+  const claudeMode =
+    opts.permissions === 'ask'
+      ? 'default'
+      : opts.permissions === 'allow-edits'
+        ? 'acceptEdits'
+        : 'bypassPermissions';
   const args = [
     '--print',
     '--output-format',
     'stream-json',
     '--verbose',
     '--permission-mode',
-    'acceptEdits',
+    claudeMode,
   ];
   const model = resolveClaudeModel(opts.model);
   if (model) {

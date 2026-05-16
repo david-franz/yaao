@@ -68,6 +68,7 @@ export async function convertPlan(opts: ConvertOptions): Promise<ConvertResult> 
       files: t.files,
       env: {},
       retries: 0,
+      setup: [],
       prompt: t.prompt || t.title,
     };
     if (assignment.model) task.model = assignment.model;

@@ -42,6 +42,8 @@ export type ResolvedTask = Omit<Task, 'merge'> & {
   worktree: string;
   merge: ResolvedTaskMerge;
   retries: number;
+  /** Resolved permission mode (task → config default fallback). Always set. */
+  permissions: 'ask' | 'allow-edits' | 'allow-all';
 };
 
 export interface ResolveOptions {
@@ -82,6 +84,7 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
       branch,
       worktree,
       merge,
+      permissions: t.permissions ?? cfg.defaults.permissions,
     };
   });
 

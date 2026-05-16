@@ -19,6 +19,10 @@ export const ConfigSchema = z
         'max-parallel': z.number().int().positive().default(4),
         'base-branch': z.string().default('main'),
         'worktree-root': z.string().default('.yaao/worktrees'),
+        /** Default permission mode for tasks. `allow-all` lets non-interactive
+         * agents run shell commands (e.g. `pnpm install`) without prompting.
+         * Per-task `permissions:` overrides this. */
+        permissions: z.enum(['ask', 'allow-edits', 'allow-all']).default('allow-all'),
       })
       .default({}),
     merge: z

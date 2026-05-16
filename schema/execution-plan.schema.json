@@ -262,6 +262,21 @@
                   "type": "string"
                 },
                 "default": {}
+              },
+              "setup": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              },
+              "permissions": {
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "allow-edits",
+                  "allow-all"
+                ]
               }
             },
             "required": [

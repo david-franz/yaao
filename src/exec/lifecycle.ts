@@ -60,6 +60,21 @@ export class Lifecycle {
         worktreeRoot: this.opts.plan.config['worktree-root'],
       });
 
+      // 1.5) Pre-task setup: run any shell commands declared in `task.setup`
+      // inside the worktree. Lets a plan bootstrap dependencies (pnpm install,
+      // docker compose up -d, etc.) before the agent ever spawns, so the
+      // agent doesn't waste turns trying to ask for permission to do so.
+      for (const cmd of task.setup ?? []) {
+        // eslint-disable-next-line no-await-in-loop -- setup commands run sequentially
+        const r = await this.runShell(cmd, wt.path);
+        if (r.exitCode !== 0) {
+          throw new YaaoError({
+            code: 'YAAO_TASK_SETUP_FAILED',
+            message: `setup command failed for ${task.id}: \`${cmd}\` exited ${r.exitCode}`,
+          });
+        }
+      }
+
       // 2) Resolve prompt body (inline or from prompt-ref) and prepend context prefix.
       const promptBody = resolvePromptBody(task, this.opts.promptRefBaseDir ?? this.opts.rootDir);
       const { prefix } = buildContextPrefix({
@@ -89,6 +104,7 @@ export class Lifecycle {
         ...(task.model !== undefined ? { model: task.model } : {}),
         ...(task.skills !== undefined ? { skills: task.skills } : {}),
         env: task.env,
+        permissions: task.permissions,
         ...(task.timeout !== undefined ? { timeout: parseDuration(task.timeout) } : {}),
         ...(this.opts.mcpServers && this.opts.mcpServers.length > 0
           ? { mcpServers: this.opts.mcpServers }

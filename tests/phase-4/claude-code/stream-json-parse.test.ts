@@ -49,9 +49,11 @@ describe('buildClaudeArgs', () => {
     expect(args).toContain('stream-json');
     // `claude` requires --verbose when --print + --output-format stream-json are used.
     expect(args).toContain('--verbose');
-    // Non-interactive runs can't accept permission prompts, so we auto-accept edits.
+    // Default (no `permissions` set) maps to bypassPermissions so the agent
+    // can run install commands etc. inside the isolated worktree without
+    // hanging on confirmation prompts under `--print`.
     expect(args).toContain('--permission-mode');
-    expect(args).toContain('acceptEdits');
+    expect(args).toContain('bypassPermissions');
     expect(args).toContain('--model');
     expect(args).toContain('claude-sonnet-4-6');
     expect(args).toContain('--mcp-config');
@@ -64,6 +66,15 @@ describe('buildClaudeArgs', () => {
     const args = buildClaudeArgs({ cwd: '/x', prompt: 'p', skills: ['a', 'b', 'c'] });
     expect(args).not.toContain('--skill');
     expect(args).not.toContain('a');
+  });
+
+  it('maps permissions to claude --permission-mode', () => {
+    const ask = buildClaudeArgs({ cwd: '/x', prompt: 'p', permissions: 'ask' });
+    expect(ask).toContain('default');
+    const edits = buildClaudeArgs({ cwd: '/x', prompt: 'p', permissions: 'allow-edits' });
+    expect(edits).toContain('acceptEdits');
+    const all = buildClaudeArgs({ cwd: '/x', prompt: 'p', permissions: 'allow-all' });
+    expect(all).toContain('bypassPermissions');
   });
 });
 

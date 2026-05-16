@@ -97,10 +97,14 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
   const before = snapshot(outDir);
 
   // Spawn the agent. The skill prompt instructs it to write the plan file(s) to outDir.
+  // `allow-all` matches the runner default: non-interactive `--print` runs can't
+  // prompt for confirmation, and the planner only writes to outDir (which we
+  // just mkdir'd) so unattended file writes are the contract here.
   const spawnOpts: SpawnOptions = {
     cwd,
     prompt,
     skills: ['yaao-planner'],
+    permissions: 'allow-all',
   };
   const startedAt = Date.now();
   opts.onProgress?.({ type: 'spawn', agent: opts.backend.name });

@@ -17,6 +17,19 @@ export interface McpToolCall {
   durationMs?: number;
 }
 
+/**
+ * Permission mode for a task's agent run.
+ *
+ * - `ask` — backend uses its default interactive permission model. Non-interactive
+ *   agents (claude --print) will get stuck on bash/install confirmations.
+ * - `allow-edits` — file edits in the worktree are auto-approved; shell commands
+ *   still need confirmation. Safe but blocks `npm install` and similar.
+ * - `allow-all` — everything is auto-approved. Right answer for autonomous
+ *   `yaao run`, where the agent runs in an isolated worktree on its own branch
+ *   and the user has already opted in to "run this plan to completion".
+ */
+export type PermissionMode = 'ask' | 'allow-edits' | 'allow-all';
+
 export interface SpawnOptions {
   cwd: string;
   prompt: string;
@@ -29,6 +42,9 @@ export interface SpawnOptions {
   signal?: AbortSignal;
   /** Provider/model binding for the API backend; ignored by CLI backends. */
   api?: { provider: 'anthropic' | 'openai' | 'openrouter'; model: string; baseUrl?: string };
+  /** How permissively the agent should treat tool calls. Backends translate this
+   * to their native flag (e.g. claude's `--permission-mode`). */
+  permissions?: PermissionMode;
 }
 
 export interface AgentEvent {

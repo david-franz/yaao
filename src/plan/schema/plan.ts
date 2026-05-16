@@ -18,6 +18,8 @@ export const ValidationSchema = z.object({
   'must-pass': z.boolean().default(true),
 });
 
+export const PermissionModeSchema = z.enum(['ask', 'allow-edits', 'allow-all']);
+
 export const MergeStrategySchema = z.enum(['auto', 'pr', 'manual', 'none']);
 
 /**
@@ -71,6 +73,12 @@ export const TaskSchema = z
     merge: TaskMergeSchema.optional(),
     context: TaskContextSchema.optional(),
     env: z.record(z.string()).default({}),
+    /** Shell commands run inside the worktree before spawning the agent.
+     * Use for environment bootstrap (e.g. `pnpm install`, `docker compose up -d postgres`).
+     * Each command runs sequentially via `sh -c`; failures fail the task. */
+    setup: z.array(z.string()).default([]),
+    /** Override the per-agent permission mode for this task. */
+    permissions: PermissionModeSchema.optional(),
   })
   .strict()
   .refine(
