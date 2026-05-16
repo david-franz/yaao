@@ -176,14 +176,17 @@ export async function convertPlans(opts: ConvertOptions & { outDir?: string }): 
 export function inferSetupFromValidation(cmd: string): string[] {
   const setup: string[] = [];
   const trimmed = cmd.trim();
-  // Package manager → install. Detect from the command prefix so we use the
-  // same manager the validation does.
+  // Package manager → install, but only if there's a package.json to install
+  // against. Scaffold/bootstrap tasks legitimately start from an empty
+  // worktree and create package.json themselves; an unconditional install
+  // would fail before the agent ever spawned.
   const pmMatch = trimmed.match(/^(pnpm|npm|yarn|bun)\b/);
   if (pmMatch) {
     const pm = pmMatch[1];
-    setup.push(`${pm} install`);
+    setup.push(`if [ -f package.json ]; then ${pm} install; fi`);
   }
-  // Prisma migrations need a live database and a populated .env.
+  // Prisma migrations need a live database and a populated .env — both are
+  // declared as best-effort (already prefixed with `|| true`).
   if (/\bprisma\s+migrate\b/.test(trimmed)) {
     setup.push('docker compose up -d postgres 2>/dev/null || true');
     setup.push('cp -n .env.example .env 2>/dev/null || true');
