@@ -7,6 +7,7 @@ const ICONS: Record<string, string> = {
   completed: '✔',
   failed: '✘',
   skipped: '⊘',
+  blocked: '⛔',
 };
 
 export interface StatusTableOptions {
@@ -19,9 +20,15 @@ export function renderStatusTable(summary: RunSummary, opts: StatusTableOptions 
   const columns = opts.columns ?? ['id', 'status', 'agent', 'branch', 'duration'];
   const rows: Record<string, string>[] = [];
   for (const [id, t] of Object.entries(summary.tasks)) {
+    // A cascade-skip ("blocked") is semantically different from a user-skip:
+    // it means an upstream task failed and this one never got a chance, not
+    // that the user told us to leave it out. Surface that distinction in the
+    // status column so it's obvious why something didn't run.
+    const isBlocked = t.status === 'skipped' && t.skipReason === 'depFailed';
+    const display = isBlocked ? 'blocked' : t.status;
     rows.push({
       id,
-      status: (opts.ascii ? '' : (ICONS[t.status] ?? '')) + ' ' + t.status,
+      status: (opts.ascii ? '' : (ICONS[display] ?? '')) + ' ' + display,
       agent: t.agent ?? '',
       branch: t.branch ?? '',
       duration: formatDuration(t.durationMs),
@@ -34,11 +41,17 @@ export function renderStatusTable(summary: RunSummary, opts: StatusTableOptions 
     pending: 2,
     completed: 3,
     skipped: 4,
-    failed: 5,
+    blocked: 5,
+    failed: 6,
+  };
+  const displayStatusOf = (id: string): string => {
+    const t = summary.tasks[id];
+    if (!t) return 'pending';
+    return t.status === 'skipped' && t.skipReason === 'depFailed' ? 'blocked' : t.status;
   };
   rows.sort((a, b) => {
-    const at = (summary.tasks[a['id'] as string]?.status ?? 'pending') as string;
-    const bt = (summary.tasks[b['id'] as string]?.status ?? 'pending') as string;
+    const at = displayStatusOf(a['id'] as string);
+    const bt = displayStatusOf(b['id'] as string);
     return (order[at] ?? 9) - (order[bt] ?? 9) || (a['id'] ?? '').localeCompare(b['id'] ?? '');
   });
 

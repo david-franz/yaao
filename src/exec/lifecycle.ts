@@ -365,6 +365,7 @@ export class Lifecycle {
         durationMs,
         filesChanged: diffStats.filesChanged,
         commit: commitOutcome.commit ?? '',
+        agent: backend.name,
       });
       return { ok: true };
     } catch (err) {

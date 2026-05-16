@@ -15,7 +15,19 @@ export type JournalEvent =
   | { t: 'task:ready'; time: string; taskId: string }
   | { t: 'task:running'; time: string; taskId: string; agent: string; model?: string; worktree: string; branch: string; pid: number }
   | { t: 'task:output'; time: string; taskId: string; stream: 'stdout' | 'stderr'; chunk: string }
-  | { t: 'task:completed'; time: string; taskId: string; durationMs: number; filesChanged: number; commit: string }
+  | {
+      t: 'task:completed';
+      time: string;
+      taskId: string;
+      durationMs: number;
+      filesChanged: number;
+      commit: string;
+      /** Agent that produced the completion. Lets the summary show who actually
+       * did the work even when a later (failed) attempt was run with a
+       * different agent — the sticky-completion replay then preserves both
+       * status and the completing agent. */
+      agent?: string;
+    }
   | {
       t: 'task:failed';
       time: string;
@@ -61,6 +73,10 @@ export interface RunSummary {
       validation?: { command: string; stdoutTail?: string; stderrTail?: string };
       /** Attempts consumed by this task, including retries. */
       attempts?: number;
+      /** When skipped, why: cascade from a failed dep, or filtered out via
+       * --only / --skip. Lets the status table distinguish "blocked" tasks
+       * from user-requested skips. */
+      skipReason?: 'depFailed' | 'filtered';
     }
   >;
 }
@@ -217,6 +233,11 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
         ...(next.tasks[ev.taskId] ?? { status: 'completed' }),
         status: 'completed',
         durationMs: ev.durationMs,
+        // Lock the agent in to the one that produced the completion. A later
+        // task:running (which is ignored by sticky-completion) won't overwrite
+        // it, so the status table reports who actually did the work — not who
+        // was reassigned and crashed.
+        ...(ev.agent !== undefined ? { agent: ev.agent } : {}),
       };
       return next;
     case 'task:failed':
@@ -239,7 +260,11 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
       return next;
     case 'task:skipped':
       if (next.tasks[ev.taskId]?.status === 'completed') return next;
-      next.tasks[ev.taskId] = { ...(next.tasks[ev.taskId] ?? { status: 'skipped' }), status: 'skipped' };
+      next.tasks[ev.taskId] = {
+        ...(next.tasks[ev.taskId] ?? { status: 'skipped' }),
+        status: 'skipped',
+        skipReason: ev.reason,
+      };
       return next;
     case 'run:end':
       next.endedAt = ev.time;
