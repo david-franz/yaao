@@ -59,7 +59,10 @@ describe('yaao convert end-to-end', () => {
       '.yaao/plans/oauth.md',
     ]);
     expect(r.exitCode).toBe(0);
-    const out = JSON.parse(r.stdout) as { outPath: string; tasks: number };
+    const wrapped = JSON.parse(r.stdout) as { results: { outPath: string; tasks: number }[] };
+    const out = wrapped.results[0];
+    expect(out).toBeDefined();
+    if (!out) return;
     expect(out.tasks).toBe(4);
     expect(existsSync(out.outPath)).toBe(true);
     const yaml = parseYaml(readFileSync(out.outPath, 'utf8'));

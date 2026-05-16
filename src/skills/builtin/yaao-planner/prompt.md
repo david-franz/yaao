@@ -31,7 +31,14 @@ You MUST NOT:
 4. For each task: id, title, prompt, depends, suggested agent (optional).
 5. Write the file(s) to `{{out}}` and print only the path(s) on stdout.
 
-## Output template (markdown)
+## Output format
+
+The `{{format}}` value above is one of: `markdown`, `speckit`, `both`. Follow the
+matching template below. Do **not** silently fall back to a different format.
+
+### If `{{format}} == markdown` (or `both`)
+
+Write a single file at `{{out}}/<plan-slug>.md`:
 
 ```markdown
 # <Plan Title>
@@ -76,6 +83,60 @@ You MUST NOT:
 <prose>
 ```
 
+### If `{{format}} == speckit` (or `both`)
+
+Write a **triplet of three files inside a single directory** at
+`{{out}}/<plan-slug>/`:
+
+- `spec.md` — the requirements / what we're building (problem statement, scope,
+  constraints, success criteria). 1-3 short sections under H2 headings.
+- `plan.md` — the implementation approach (architecture, data model, key
+  technical decisions, risks).
+- `tasks.md` — the executable task list. Use the exact shape below; this is
+  what `yaao convert` parses.
+
+`tasks.md`:
+
+```markdown
+# <Plan Title> — Tasks
+
+- [ ] **scaffold** — Scaffold project
+  - depends:
+  - agent: claude-code
+  - model: opus
+  - files: package.json, tsconfig.json, src/index.ts
+  - validation: `npx tsc --noEmit`
+
+  Set up the project skeleton with TypeScript + tests wired up.
+
+- [ ] **api** — REST API
+  - depends: scaffold
+  - agent: claude-code
+
+  Implement the REST API endpoints behind /v1/...
+
+- [ ] **ui** — UI
+  - depends: scaffold
+  - agent: cursor
+
+  Build the front-end pages.
+
+- [ ] **tests** — End-to-end tests
+  - depends: api, ui
+  - agent: codex
+
+  Cover the happy path through every documented flow.
+```
+
+Every task starts with `- [ ] **<id>** — <title>`. Sub-bullets use the keys
+`depends`, `agent`, `model`, `files`, `validation`. Free-form prose for the
+task body goes after the sub-bullets, indented two spaces.
+
+### If `{{format}} == both`
+
+Write both: the markdown plan at `{{out}}/<plan-slug>.md` AND the Spec Kit
+triplet at `{{out}}/<plan-slug>/spec.md|plan.md|tasks.md`.
+
 ## Constraints
 
 - Task IDs must match `[a-z][a-z0-9-_]*` and be unique across the plan.
@@ -89,5 +150,5 @@ The user's description for this plan is:
 
 {{description}}
 
-Write the plan to `{{out}}`. After writing the file(s), output only the path(s) — no
-preamble, no commentary.
+Write the plan to `{{out}}` using the `{{format}}` shape above. After writing the
+file(s), output only the path(s) — no preamble, no commentary.

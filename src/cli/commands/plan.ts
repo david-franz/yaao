@@ -44,13 +44,18 @@ export const planCommand: CommandModule = {
         const isTty = process.stderr.isTTY === true;
         const isDryRun = Boolean(flags.dryRun);
         const reporter = !ctx.json && !isDryRun ? makeProgressReporter(isTty) : undefined;
+        // Resolve plan output dir: CLI --out wins; otherwise fall back to
+        // plan.out-dir from yaao.config.json. Both are resolved against cwd.
+        const outDir = resolve(cwd, flags.out ?? ctx.config.plan['out-dir']);
+        // Honor plan.format from config when --format is omitted.
+        const format = flags.format ?? ctx.config.plan.format;
         const result = await runPlanner({
           cwd,
           config: ctx.config,
           description,
           ...(flags.scope !== undefined ? { scope: flags.scope } : {}),
-          ...(flags.format !== undefined ? { format: flags.format } : {}),
-          ...(flags.out !== undefined ? { outDir: flags.out } : {}),
+          format,
+          outDir,
           ...(flags.dryRun !== undefined ? { dryRun: flags.dryRun } : {}),
           backend,
           ...(reporter !== undefined ? { onProgress: reporter } : {}),

@@ -214,6 +214,14 @@
             "speckit": {
               "type": "boolean",
               "default": false
+            },
+            "out-dir": {
+              "type": "string",
+              "default": ".yaao/plans"
+            },
+            "exec-dir": {
+              "type": "string",
+              "default": ".yaao/exec"
             }
           },
           "additionalProperties": false,

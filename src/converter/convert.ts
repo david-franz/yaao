@@ -3,7 +3,7 @@ import { dirname, join, resolve, basename, extname } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import type { YaaoConfig } from '../config/types.js';
 import { PlanSchema, type Plan, type Task } from '../plan/schema/plan.js';
-import { loadInputPlan, type PlanInputFormat } from './load-plan.js';
+import { loadInputPlan, discoverPlans, type PlanInputFormat } from './load-plan.js';
 import { assignAgent, type AgentRule } from './assign-agent.js';
 import { inferDependencies, type InferMode } from './infer-deps.js';
 import { PlanValidationError } from '../log/errors.js';
@@ -110,6 +110,60 @@ function resolveOutPath(cwd: string, out: string | undefined, planName: string):
   const abs = resolve(cwd, out);
   if (out.endsWith('.yaml') || out.endsWith('.yml')) return abs;
   return join(abs, `${planName}.yaml`);
+}
+
+/**
+ * Convert one or many plans. When `input` is a directory of plans (not itself a
+ * Spec Kit triplet), walks recursively and emits one execution YAML per plan
+ * into `outDir` (default `.yaao/exec/`).
+ */
+export async function convertPlans(opts: ConvertOptions & { outDir?: string }): Promise<ConvertResult[]> {
+  const cwd = resolve(opts.cwd);
+  const discovered = discoverPlans({ cwd, input: opts.input });
+  // If only one entry, behave like the single-plan path so users keep the
+  // friendly "wrote .yaao/exec/<slug>.yaml" experience. We pass the discovered
+  // plan's path explicitly so a single-plan directory input still works.
+  if (discovered.length === 1) {
+    const only = discovered[0];
+    if (!only) return [];
+    // Use the same slug-based output path as multi-plan mode, so directory and
+    // single-file inputs are consistent: `<outRoot>/<slug>.yaml`.
+    const outRoot = opts.outDir
+      ? resolve(cwd, opts.outDir)
+      : opts.out
+        ? resolve(cwd, opts.out)
+        : join(cwd, '.yaao', 'exec');
+    const slugOut = opts.out && (opts.out.endsWith('.yaml') || opts.out.endsWith('.yml'))
+      ? resolve(cwd, opts.out)
+      : join(outRoot, `${only.slug}.yaml`);
+    const single = await convertPlan({
+      ...opts,
+      input: only.path,
+      out: slugOut,
+      format: only.format,
+    });
+    return [single];
+  }
+  const results: ConvertResult[] = [];
+  const outRoot = opts.outDir
+    ? resolve(cwd, opts.outDir)
+    : opts.out
+      ? resolve(cwd, opts.out)
+      : join(cwd, '.yaao', 'exec');
+  for (const d of discovered) {
+    const slugOut = join(outRoot, `${d.slug}.yaml`);
+    // eslint-disable-next-line no-await-in-loop -- serial keeps stderr ordering sane
+    const r = await convertPlan({
+      ...opts,
+      input: d.path,
+      out: slugOut,
+      // Force the format hint when we already know it (auto-detect would
+      // otherwise re-classify a Spec Kit dir as a directory walk and loop).
+      format: d.format,
+    });
+    results.push(r);
+  }
+  return results;
 }
 
 function slugify(text: string): string {

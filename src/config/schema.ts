@@ -60,6 +60,11 @@ export const ConfigSchema = z
       .object({
         format: z.enum(['markdown', 'speckit', 'both']).default('markdown'),
         speckit: z.boolean().default(false),
+        /** Default directory `yaao plan` writes generated plans to. Override per
+         * invocation with `--out`. Relative paths resolve against the project root. */
+        'out-dir': z.string().default('.yaao/plans'),
+        /** Default directory `yaao convert` writes execution YAML to. Override with `--out`. */
+        'exec-dir': z.string().default('.yaao/exec'),
       })
       .default({}),
     'mcp-servers': z
