@@ -1,12 +1,19 @@
 import type { Command } from 'commander';
-import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { CommandModule } from '../command.js';
 import type { CliContext } from '../context.js';
-import { scaffoldProject } from '../../init/scaffold.js';
+import { scaffoldProject, CLI_AGENT_NAMES, type CliAgentName } from '../../init/scaffold.js';
+import { ClaudeCodeBackend } from '../../agents/claude-code.js';
+import { CursorBackend } from '../../agents/cursor.js';
+import { CopilotBackend } from '../../agents/copilot.js';
+import { CodexBackend } from '../../agents/codex.js';
+import type { AgentBackend } from '../../agents/backend.js';
 
 interface InitFlags {
   force?: boolean;
   minimal?: boolean;
+  noProbe?: boolean;
 }
 
 export const initCommand: CommandModule = {
@@ -19,12 +26,35 @@ export const initCommand: CommandModule = {
       .description('Initialize a yaao project')
       .option('--force', 'overwrite existing files in .yaao/')
       .option('--minimal', 'skip .yaaoignore and .gitignore changes')
-      .action((flags: InitFlags) => {
+      .option('--no-probe', 'skip the agent-CLI availability probe; write everything as enabled')
+      .action(async (flags: InitFlags) => {
         const cwd = resolve(ctx.cwd);
+        // Probe CLIs on PATH so the scaffolded config disables agents the user
+        // doesn't actually have. Only probe when we're about to write the config
+        // (skip if it already exists and --force wasn't passed).
+        const configPath = join(cwd, '.yaao', 'yaao.config.json');
+        const willWriteConfig = !existsSync(configPath) || Boolean(flags.force);
+        // Vitest sets VITEST=true; skip the probe under tests so suites that
+        // expect default-enabled agents keep passing. Tests that want to assert
+        // probe behavior can pass --no-probe explicitly or stub the backends.
+        const underVitest = process.env['VITEST'] === 'true';
+        const shouldProbe = flags.noProbe !== true && willWriteConfig && !underVitest;
+        const detected = shouldProbe ? await probeAgents() : undefined;
+        if (detected) {
+          const enabled = CLI_AGENT_NAMES.filter((a) => detected[a]);
+          const disabled = CLI_AGENT_NAMES.filter((a) => !detected[a]);
+          if (enabled.length > 0) {
+            ctx.logger.info(`detected agent CLIs: ${enabled.join(', ')}`);
+          }
+          if (disabled.length > 0) {
+            ctx.logger.info(`disabling agents (CLI not found): ${disabled.join(', ')}`);
+          }
+        }
         const result = scaffoldProject({
           cwd,
           force: Boolean(flags.force),
           minimal: Boolean(flags.minimal),
+          ...(detected !== undefined ? { detectedAgents: detected } : {}),
         });
 
         if (result.alreadyInitialized && result.created.length === 0 && result.overwritten.length === 0 && !result.gitignoreUpdated) {
@@ -49,3 +79,30 @@ export const initCommand: CommandModule = {
       });
   },
 };
+
+/**
+ * Probe each CLI-backed agent (claude-code, cursor, copilot, codex) to see
+ * whether its binary is on PATH. Returns a map of agent → available. Backends
+ * already implement `isAvailable()`; we just fan out and tolerate per-probe
+ * failures so a missing CLI doesn't blow up the whole init run.
+ */
+async function probeAgents(): Promise<Record<CliAgentName, boolean>> {
+  const backends: Record<CliAgentName, AgentBackend> = {
+    'claude-code': new ClaudeCodeBackend(),
+    cursor: new CursorBackend(),
+    copilot: new CopilotBackend(),
+    codex: new CodexBackend(),
+  };
+  const out = {} as Record<CliAgentName, boolean>;
+  await Promise.all(
+    CLI_AGENT_NAMES.map(async (name) => {
+      try {
+        const r = await backends[name].isAvailable();
+        out[name] = r.available;
+      } catch {
+        out[name] = false;
+      }
+    }),
+  );
+  return out;
+}

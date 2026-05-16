@@ -1,32 +1,44 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { InitWriteError } from '../log/errors.js';
+import type { AgentName } from '../config/types.js';
 
-export const DEFAULT_CONFIG_JSON = `${JSON.stringify(
-  {
-    $schema: 'https://yaao.dev/schema/config.json',
-    version: 1,
-    defaults: {
-      agent: 'claude-code',
-      model: 'opus',
-      'max-parallel': 4,
-      'base-branch': 'main',
-      'worktree-root': '.yaao/worktrees',
+export type CliAgentName = Exclude<AgentName, 'api'>;
+
+export const CLI_AGENT_NAMES: CliAgentName[] = ['claude-code', 'cursor', 'copilot', 'codex'];
+
+export function buildDefaultConfigJson(
+  enabledByAgent?: Partial<Record<CliAgentName, boolean>>,
+): string {
+  const flag = (a: CliAgentName): boolean => enabledByAgent?.[a] ?? true;
+  return `${JSON.stringify(
+    {
+      $schema: 'https://yaao.dev/schema/config.json',
+      version: 1,
+      defaults: {
+        agent: 'claude-code',
+        model: 'opus',
+        'max-parallel': 4,
+        'base-branch': 'main',
+        'worktree-root': '.yaao/worktrees',
+      },
+      merge: { strategy: 'auto', 'on-conflict': 'manual' },
+      agents: {
+        'claude-code': { enabled: flag('claude-code') },
+        cursor: { enabled: flag('cursor') },
+        copilot: { enabled: flag('copilot') },
+        codex: { enabled: flag('codex') },
+        api: { providers: {} },
+      },
+      'ctx-sys': { enabled: false, 'auto-spawn': true, 'require-query': false },
+      plan: { format: 'markdown', speckit: false },
     },
-    merge: { strategy: 'auto', 'on-conflict': 'manual' },
-    agents: {
-      'claude-code': { enabled: true },
-      cursor: { enabled: true },
-      copilot: { enabled: true },
-      codex: { enabled: true },
-      api: { providers: {} },
-    },
-    'ctx-sys': { enabled: false, 'auto-spawn': true, 'require-query': false },
-    plan: { format: 'markdown', speckit: false },
-  },
-  null,
-  2,
-)}\n`;
+    null,
+    2,
+  )}\n`;
+}
+
+export const DEFAULT_CONFIG_JSON = buildDefaultConfigJson();
 
 export const DEFAULT_SECRETS_JSON = `${JSON.stringify(
   { agents: { api: { providers: {} } } },
@@ -61,6 +73,10 @@ export interface ScaffoldOptions {
   cwd: string;
   force: boolean;
   minimal: boolean;
+  /** Per-CLI availability detected by `init`. When provided, the scaffolded
+   * `yaao.config.json` writes `enabled: false` for agents whose CLI we couldn't
+   * find on PATH. Omitting this flag falls back to "everything enabled". */
+  detectedAgents?: Partial<Record<CliAgentName, boolean>>;
 }
 
 export interface ScaffoldResult {
@@ -90,10 +106,12 @@ const DIRS: DirSpec[] = [
   { rel: '.yaao/runs', gitkeep: true },
 ];
 
-const FILES: FileSpec[] = [
-  { rel: '.yaao/yaao.config.json', contents: DEFAULT_CONFIG_JSON },
-  { rel: '.yaao/secrets.local.json', contents: DEFAULT_SECRETS_JSON },
-];
+function filesFor(opts: ScaffoldOptions): FileSpec[] {
+  return [
+    { rel: '.yaao/yaao.config.json', contents: buildDefaultConfigJson(opts.detectedAgents) },
+    { rel: '.yaao/secrets.local.json', contents: DEFAULT_SECRETS_JSON },
+  ];
+}
 
 function ensureDir(absPath: string, created: string[], rel: string): void {
   if (existsSync(absPath)) {
@@ -151,7 +169,7 @@ export function scaffoldProject(opts: ScaffoldOptions): ScaffoldResult {
     }
   }
 
-  for (const f of FILES) {
+  for (const f of filesFor(opts)) {
     const abs = join(opts.cwd, f.rel);
     if (existsSync(abs)) {
       if (opts.force) {
