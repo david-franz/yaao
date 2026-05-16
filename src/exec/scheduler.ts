@@ -123,15 +123,11 @@ export class Scheduler {
     const state = this.tasks.get(id);
     if (!state) throw new Error(`unknown task: ${id}`);
     this.active.delete(id);
-    if (state.task.retries > state.attempt) {
-      // Park the task in `pending`. `retryTask` is the explicit ack that makes it ready.
-      state.status = 'pending';
-      state.attempt += 1;
-      return;
-    }
+    // Retry policy is owned by the lifecycle; by the time the scheduler is told
+    // a task failed, all retries (if any) have been exhausted, so we always
+    // mark failed and cascade-skip downstream tasks.
     state.status = 'failed';
     this.emit({ type: 'task:failed', taskId: id, error });
-    // Cascade-skip downstream tasks.
     for (const child of this.children.get(id) ?? []) this.cascadeSkip(child, 'depFailed');
   }
 

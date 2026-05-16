@@ -8,7 +8,8 @@ import { createRunBus, type RunBus, type RunEvent } from './bus.js';
 import { WorktreeManager } from '../git/worktree-manager.js';
 import { planBranches } from '../git/branch-graph.js';
 import { git as defaultGit, type Git } from '../git/git.js';
-import { openJournal, hashPlan, type RunJournal } from '../git/journal.js';
+import { openJournal, hashPlan, loadRun, type RunJournal } from '../git/journal.js';
+import type { PriorFailureContext } from './lifecycle.js';
 import type { AgentBackend, McpServerConfig } from '../agents/backend.js';
 import { YaaoError, AgentUnavailableError } from '../log/errors.js';
 
@@ -35,6 +36,9 @@ export interface RunOptions {
   /** Live progress callback. Receives every event from the run bus so the CLI
    * can render task transitions and agent activity to stderr. */
   onProgress?: (ev: RunEvent) => void;
+  /** When true, look up the prior summary for `runId` and treat completed
+   * tasks as already-done, retrying failed tasks with their captured context. */
+  resume?: boolean;
 }
 
 export interface RunResult {
@@ -151,6 +155,34 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
 
   const taskById = new Map(opts.plan.tasks.map((t) => [t.id, t]));
 
+  // Resume: mark previously-completed tasks as done and stash failure context
+  // for tasks that need re-running. Done after lifecycle construction so the
+  // scheduler is fully wired before we synthesize events into it.
+  const priorFailures = new Map<string, PriorFailureContext>();
+  if (opts.resume) {
+    try {
+      const { summary: priorSummary } = await loadRun(opts.runId, journalDir);
+      for (const [id, task] of Object.entries(priorSummary.tasks)) {
+        if (!taskById.has(id)) continue;
+        if (task.status === 'completed') {
+          // Synthesize completion so downstream tasks unblock without re-running.
+          scheduler.startTask(id);
+          scheduler.completeTask(id, {
+            ...(task.durationMs !== undefined ? { durationMs: task.durationMs } : {}),
+          });
+        } else if (task.status === 'failed') {
+          priorFailures.set(id, {
+            attempt: task.attempts ?? 1,
+            errorMessage: task.error?.message ?? 'previous attempt failed',
+            ...(task.validation !== undefined ? { validation: task.validation } : {}),
+          });
+        }
+      }
+    } catch {
+      // No prior journal — proceed as a fresh run, ignoring the resume flag.
+    }
+  }
+
   const inFlight: Promise<void>[] = [];
   while (!scheduler.done()) {
     const ready = scheduler.readyTasks();
@@ -163,7 +195,10 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
       const task = taskById.get(id);
       if (!task) continue;
       scheduler.startTask(id);
-      const promise = lifecycle.runTask(task).finally(() => {
+      const priorFailure = priorFailures.get(id);
+      const promise = lifecycle
+        .runTask(task, priorFailure ? { priorFailure } : {})
+        .finally(() => {
         const idx = inFlight.indexOf(promise);
         if (idx >= 0) inFlight.splice(idx, 1);
       });

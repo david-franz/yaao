@@ -143,6 +143,12 @@ triplet at `{{out}}/<plan-slug>/spec.md|plan.md|tasks.md`.
 - A `feature` plan has 3-12 tasks; a `project` plan caps at 60 across all phases.
 - Do not invent dependencies — only declare a dep if the task literally cannot
   start until the other completes.
+- When the plan recommends specific dependencies (e.g. Prisma, Next.js,
+  Tailwind), prefer caret ranges pinned to the current stable major
+  (`prisma@^6`, `next@^14`, etc.) over `latest` or unpinned strings. Newer
+  majors may have breaking API changes that downstream tasks haven't been
+  written to handle. Document the chosen major in the task prose so the
+  executing agent doesn't second-guess it.
 
 ---
 

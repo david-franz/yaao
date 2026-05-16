@@ -108,6 +108,7 @@ export const runCommand: CommandModule = {
         };
         if (filter !== undefined) opts.filter = filter;
         if (flags.trial) opts.trial = true;
+        if (flags.resume) opts.resume = true;
         // No-TUI mode and JSON mode both suppress the live reporter: JSON wants a
         // single structured line on stdout, --no-tui leaves journal tailing to the
         // user. Otherwise stream progress to stderr.
@@ -343,6 +344,19 @@ function makeRunProgressReporter(totalTasks: number, isTty: boolean): (ev: RunEv
         active = Math.max(0, active - 1);
         failed += 1;
         writeLine(`  ✖ ${ev.taskId}: failed — ${ev.error.message}`);
+        // If we captured output from a failing shell command, show the last few
+        // lines so the user can diagnose without `cat`-ing the journal.
+        {
+          const err = ev.error as unknown as { stdoutTail?: string; stderrTail?: string };
+          const stderr = (err.stderrTail ?? '').trim();
+          const stdout = (err.stdoutTail ?? '').trim();
+          const tailText = stderr || stdout;
+          if (tailText) {
+            for (const line of tailText.split('\n').slice(-10)) {
+              writeLine(`      | ${line}`);
+            }
+          }
+        }
         return;
       case 'task:skipped':
         skipped += 1;

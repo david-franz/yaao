@@ -16,7 +16,24 @@ export type JournalEvent =
   | { t: 'task:running'; time: string; taskId: string; agent: string; model?: string; worktree: string; branch: string; pid: number }
   | { t: 'task:output'; time: string; taskId: string; stream: 'stdout' | 'stderr'; chunk: string }
   | { t: 'task:completed'; time: string; taskId: string; durationMs: number; filesChanged: number; commit: string }
-  | { t: 'task:failed'; time: string; taskId: string; durationMs: number; error: { code: string; message: string } }
+  | {
+      t: 'task:failed';
+      time: string;
+      taskId: string;
+      durationMs: number;
+      error: { code: string; message: string };
+      /** Captured tails from the failing command, when available. Useful for
+       * post-mortem inspection and for `--resume` to feed back into the agent. */
+      validation?: { command: string; stdoutTail?: string; stderrTail?: string };
+    }
+  | {
+      t: 'task:retry-attempt';
+      time: string;
+      taskId: string;
+      attempt: number;
+      error: { code: string; message: string };
+      validation?: { command: string; stdoutTail?: string; stderrTail?: string };
+    }
   | { t: 'task:skipped'; time: string; taskId: string; reason: 'depFailed' | 'filtered' }
   | { t: 'merge:start'; time: string; taskId: string; into: string }
   | { t: 'merge:conflict'; time: string; taskId: string; files: string[] }
@@ -39,6 +56,11 @@ export interface RunSummary {
       worktree?: string;
       durationMs?: number;
       error?: { code: string; message: string };
+      /** Last captured validation tails — used by `--resume` to seed the next
+       * attempt's prompt with the prior failure context. */
+      validation?: { command: string; stdoutTail?: string; stderrTail?: string };
+      /** Attempts consumed by this task, including retries. */
+      attempts?: number;
     }
   >;
 }
@@ -192,6 +214,14 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
         status: 'failed',
         durationMs: ev.durationMs,
         error: ev.error,
+        ...(ev.validation !== undefined ? { validation: ev.validation } : {}),
+      };
+      return next;
+    case 'task:retry-attempt':
+      next.tasks[ev.taskId] = {
+        ...(next.tasks[ev.taskId] ?? { status: 'running' }),
+        attempts: ev.attempt,
+        ...(ev.validation !== undefined ? { validation: ev.validation } : {}),
       };
       return next;
     case 'task:skipped':

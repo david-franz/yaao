@@ -68,7 +68,7 @@ export async function convertPlan(opts: ConvertOptions): Promise<ConvertResult> 
       files: t.files,
       env: {},
       retries: 0,
-      setup: [],
+      setup: t.validation ? inferSetupFromValidation(t.validation) : [],
       prompt: t.prompt || t.title,
     };
     if (assignment.model) task.model = assignment.model;
@@ -165,6 +165,30 @@ export async function convertPlans(opts: ConvertOptions & { outDir?: string }): 
     results.push(r);
   }
   return results;
+}
+
+/**
+ * Best-effort heuristic that turns a validation command into the shell-level
+ * environment bootstrap it implies. Conservative: only emits commands that are
+ * idempotent / no-op when already done (install, compose up, env copy with
+ * `cp -n`). Users can override or extend by hand-editing the `setup:` list.
+ */
+export function inferSetupFromValidation(cmd: string): string[] {
+  const setup: string[] = [];
+  const trimmed = cmd.trim();
+  // Package manager → install. Detect from the command prefix so we use the
+  // same manager the validation does.
+  const pmMatch = trimmed.match(/^(pnpm|npm|yarn|bun)\b/);
+  if (pmMatch) {
+    const pm = pmMatch[1];
+    setup.push(`${pm} install`);
+  }
+  // Prisma migrations need a live database and a populated .env.
+  if (/\bprisma\s+migrate\b/.test(trimmed)) {
+    setup.push('docker compose up -d postgres 2>/dev/null || true');
+    setup.push('cp -n .env.example .env 2>/dev/null || true');
+  }
+  return setup;
 }
 
 function slugify(text: string): string {

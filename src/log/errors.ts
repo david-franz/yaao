@@ -202,10 +202,27 @@ export class AgentCancelledError extends YaaoError {
 export class AgentNonZeroExitError extends YaaoError {
   readonly agent: string;
   readonly exitCode: number;
-  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { agent: string; exitCode: number }) {
+  /** Shell command (e.g. validation command) whose failure produced this error. */
+  readonly command?: string;
+  /** Tail of stdout from the failing command — useful for retry context and CLI surfacing. */
+  readonly stdoutTail?: string;
+  /** Tail of stderr from the failing command. */
+  readonly stderrTail?: string;
+  constructor(
+    opts: Omit<YaaoErrorOptions, 'code'> & {
+      agent: string;
+      exitCode: number;
+      command?: string;
+      stdoutTail?: string;
+      stderrTail?: string;
+    },
+  ) {
     super({ ...opts, code: 'YAAO_AGENT_NONZERO' });
     this.agent = opts.agent;
     this.exitCode = opts.exitCode;
+    if (opts.command !== undefined) this.command = opts.command;
+    if (opts.stdoutTail !== undefined) this.stdoutTail = opts.stdoutTail;
+    if (opts.stderrTail !== undefined) this.stderrTail = opts.stderrTail;
   }
 }
 

@@ -11,6 +11,21 @@ import type { RunJournal } from '../git/journal.js';
 import { writeContextMd, buildContextPrefix, type TaskOutcomeArtifact } from './context.js';
 import { YaaoError, AgentNonZeroExitError } from '../log/errors.js';
 
+/**
+ * Captured context from a prior failed attempt of a task. Surfaced to the
+ * agent on the next attempt so it has the failure to react to, and consumed
+ * by `--resume` to seed a follow-up run with the right context.
+ */
+export interface PriorFailureContext {
+  attempt: number;
+  errorMessage: string;
+  validation?: { command: string; stdoutTail?: string; stderrTail?: string };
+}
+
+type RunAttemptResult =
+  | { ok: true }
+  | { ok: false; error: YaaoError; failure: PriorFailureContext };
+
 export interface LifecycleOptions {
   runId: string;
   plan: ResolvedPlan;
@@ -36,7 +51,7 @@ export interface LifecycleOptions {
 export class Lifecycle {
   constructor(private readonly opts: LifecycleOptions) {}
 
-  async runTask(task: ResolvedTask): Promise<void> {
+  async runTask(task: ResolvedTask, opts: { priorFailure?: PriorFailureContext } = {}): Promise<void> {
     const start = Date.now();
     const branchEntry = this.opts.branchPlan.byTask.get(task.id);
     if (!branchEntry) {
@@ -47,18 +62,75 @@ export class Lifecycle {
       return;
     }
 
+    // Retries: try up to `task.retries + 1` times in a row. On every failed
+    // attempt, capture the failure context (validation tails / agent error) and
+    // prepend it to the next attempt's prompt so the agent can react to what
+    // went wrong instead of redoing the task from scratch.
+    const maxAttempts = (task.retries ?? 0) + 1;
+    let prevFailure: PriorFailureContext | undefined = opts.priorFailure;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const result = await this.runAttempt(task, branchEntry, attempt, prevFailure, start);
+      if (result.ok) return;
+      if (attempt < maxAttempts) {
+        prevFailure = result.failure;
+        this.opts.bus.emit({
+          type: 'task:retry-attempt',
+          taskId: task.id,
+          attempt,
+          error: result.error,
+          outcome: undefined,
+        });
+        await this.opts.journal.append({
+          t: 'task:retry-attempt',
+          time: new Date().toISOString(),
+          taskId: task.id,
+          attempt,
+          error: { code: result.error.code, message: result.error.message },
+          ...(result.failure.validation !== undefined ? { validation: result.failure.validation } : {}),
+        });
+        continue;
+      }
+      // Final failure — record it and let the scheduler cascade-skip downstream.
+      const durationMs = Date.now() - start;
+      this.opts.scheduler.failTask(task.id, result.error);
+      await this.opts.journal.append({
+        t: 'task:failed',
+        time: new Date().toISOString(),
+        taskId: task.id,
+        durationMs,
+        error: { code: result.error.code, message: result.error.message },
+        ...(result.failure.validation !== undefined ? { validation: result.failure.validation } : {}),
+      });
+      return;
+    }
+  }
+
+  private async runAttempt(
+    task: ResolvedTask,
+    branchEntry: NonNullable<ReturnType<LifecycleOptions['branchPlan']['byTask']['get']>>,
+    attempt: number,
+    prevFailure: PriorFailureContext | undefined,
+    start: number,
+  ): Promise<RunAttemptResult> {
     let stdout = '';
     try {
-      // 1) Provision worktree
-      const wt = await this.opts.worktreeManager.create({
-        runId: this.opts.runId,
-        taskId: task.id,
-        branch: branchEntry.branch,
-        baseBranch: branchEntry.baseBranch,
-        parentBranches: branchEntry.parentBranches,
-        rootDir: this.opts.rootDir,
-        worktreeRoot: this.opts.plan.config['worktree-root'],
-      });
+      // 1) Provision worktree. On a retry attempt OR a `--resume` run, the
+      // worktree from the prior attempt is still on disk (yaao leaves it
+      // intact for inspection), so we reuse it. Setup commands re-run
+      // idempotently and the agent gets the failure context in its prompt.
+      const reuseExisting = attempt > 1 || prevFailure !== undefined;
+      const existing = reuseExisting ? await this.opts.worktreeManager.get(task.id) : undefined;
+      const wt =
+        existing ??
+        (await this.opts.worktreeManager.create({
+          runId: this.opts.runId,
+          taskId: task.id,
+          branch: branchEntry.branch,
+          baseBranch: branchEntry.baseBranch,
+          parentBranches: branchEntry.parentBranches,
+          rootDir: this.opts.rootDir,
+          worktreeRoot: this.opts.plan.config['worktree-root'],
+        }));
 
       // 1.5) Pre-task setup: run any shell commands declared in `task.setup`
       // inside the worktree. Lets a plan bootstrap dependencies (pnpm install,
@@ -82,7 +154,8 @@ export class Lifecycle {
         plan: this.opts.plan,
         task,
       });
-      const prompt = `${prefix}${promptBody}`;
+      const priorFailurePrefix = prevFailure ? buildPriorFailurePrefix(prevFailure) : '';
+      const prompt = `${priorFailurePrefix}${prefix}${promptBody}`;
       const systemPrompt = computeSystemPrompt(task, this.opts.ctxSysDirective);
 
       // 3) Spawn agent
@@ -146,10 +219,15 @@ export class Lifecycle {
       if (task.validation?.command) {
         const v = await this.runShell(task.validation.command, wt.path);
         if (v.exitCode !== 0 && task.validation['must-pass']) {
+          const stdoutTail = tail(v.stdout, 30);
+          const stderrTail = tail(v.stderr, 30);
           throw new AgentNonZeroExitError({
             message: `validation failed for ${task.id}: ${task.validation.command} exited ${v.exitCode}`,
             agent: backend.name,
             exitCode: v.exitCode,
+            command: task.validation.command,
+            stdoutTail,
+            stderrTail,
           });
         }
       }
@@ -203,8 +281,8 @@ export class Lifecycle {
         filesChanged: diffStats.filesChanged,
         commit: commitOutcome.commit ?? '',
       });
+      return { ok: true };
     } catch (err) {
-      const durationMs = Date.now() - start;
       const yerr =
         err instanceof YaaoError
           ? err
@@ -213,19 +291,12 @@ export class Lifecycle {
               message: (err as Error).message,
               cause: err,
             });
-      // We intentionally do NOT tear down the worktree/branch here. Leaving
-      // them on disk lets the user inspect what the agent produced and cherry-
-      // pick anything worth keeping. `yaao clean <run-id>` is the documented
-      // way to reclaim that state once the user is done. `yaao run --force`
-      // also offers an opt-in shortcut to wipe colliding leftovers on retry.
-      this.opts.scheduler.failTask(task.id, yerr);
-      await this.opts.journal.append({
-        t: 'task:failed',
-        time: new Date().toISOString(),
-        taskId: task.id,
-        durationMs,
-        error: { code: yerr.code, message: yerr.message },
-      });
+      // Worktree/branch are intentionally preserved on failure so the user can
+      // inspect what the agent produced and so a retry attempt can build on it.
+      // `yaao clean <run-id>` reclaims state once the user is done; `yaao run
+      // --force` clears collisions before a fresh start.
+      const failure = extractPriorFailureContext(yerr);
+      return { ok: false, error: yerr, failure };
     }
   }
 
@@ -412,6 +483,71 @@ function computeSystemPrompt(task: ResolvedTask, ctxSysDirective: string | undef
     return 'Before writing or modifying code, call the `context_query` MCP tool to retrieve relevant context from this codebase.';
   }
   return ctxSysDirective;
+}
+
+/**
+ * Pull retry-relevant context off a failure error. Recognises
+ * AgentNonZeroExitError (validation/agent shell failures) and gracefully
+ * degrades for plain YaaoErrors.
+ */
+function extractPriorFailureContext(err: YaaoError, attempt = 1): PriorFailureContext {
+  const ctx: PriorFailureContext = {
+    attempt,
+    errorMessage: err.message,
+  };
+  const ne = err as unknown as {
+    command?: string;
+    stdoutTail?: string;
+    stderrTail?: string;
+  };
+  if (ne.command) {
+    ctx.validation = {
+      command: ne.command,
+      ...(ne.stdoutTail !== undefined ? { stdoutTail: ne.stdoutTail } : {}),
+      ...(ne.stderrTail !== undefined ? { stderrTail: ne.stderrTail } : {}),
+    };
+  }
+  return ctx;
+}
+
+/**
+ * Turn captured prior-failure context into a prompt prefix the agent can
+ * read on a retry/resume attempt. Kept short to leave room for the actual
+ * task prompt; tails are already truncated to ~30 lines upstream.
+ */
+function buildPriorFailurePrefix(failure: PriorFailureContext): string {
+  const lines: string[] = [];
+  lines.push('## Previous attempt failed — please address the failure');
+  lines.push('');
+  lines.push(`Attempt: ${failure.attempt}`);
+  lines.push(`Error: ${failure.errorMessage}`);
+  if (failure.validation) {
+    lines.push(`Validation command: \`${failure.validation.command}\``);
+    if (failure.validation.stderrTail?.trim()) {
+      lines.push('Stderr (tail):');
+      lines.push('```');
+      lines.push(failure.validation.stderrTail.trim());
+      lines.push('```');
+    }
+    if (failure.validation.stdoutTail?.trim()) {
+      lines.push('Stdout (tail):');
+      lines.push('```');
+      lines.push(failure.validation.stdoutTail.trim());
+      lines.push('```');
+    }
+  }
+  lines.push('');
+  lines.push('The worktree is preserved from your previous attempt — fix the issue and let the validation command pass.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  return lines.join('\n');
+}
+
+function tail(s: string, lines: number): string {
+  if (!s) return '';
+  const all = s.split(/\r?\n/);
+  return all.slice(-lines).join('\n');
 }
 
 function parseDuration(d: string): number {
