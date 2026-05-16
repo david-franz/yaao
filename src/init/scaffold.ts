@@ -22,7 +22,7 @@ export function buildDefaultConfigJson(
         'base-branch': 'main',
         'worktree-root': '.yaao/worktrees',
       },
-      merge: { strategy: 'auto', 'on-conflict': 'manual' },
+      merge: { strategy: 'auto', 'on-conflict': 'agent', history: 'merge' },
       agents: {
         'claude-code': { enabled: flag('claude-code') },
         cursor: { enabled: flag('cursor') },
