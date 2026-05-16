@@ -218,6 +218,9 @@
                       },
                       "require-query": {
                         "type": "boolean"
+                      },
+                      "directive": {
+                        "type": "boolean"
                       }
                     },
                     "additionalProperties": false

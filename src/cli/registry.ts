@@ -11,6 +11,7 @@ import { planCommand } from './commands/plan.js';
 import { convertCommand } from './commands/convert.js';
 import { viewCommand } from './commands/view.js';
 import { statusCommand } from './commands/status.js';
+import { serveCommand } from './commands/serve.js';
 
 export const COMMAND_MODULES: CommandModule[] = [
   initCommand,
@@ -29,9 +30,5 @@ export const COMMAND_MODULES: CommandModule[] = [
     describe: 'Diagnose environment and config',
     phase: 'F13',
   }),
-  makeStubCommand({
-    name: 'serve',
-    describe: 'Start the yaao MCP server',
-    phase: 'F12',
-  }),
+  serveCommand,
 ];

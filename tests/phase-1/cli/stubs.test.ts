@@ -3,7 +3,6 @@ import { runCli } from '../../helpers/cli.js';
 
 const STUB_COMMANDS: { argv: string[]; phase: string }[] = [
   { argv: ['doctor'], phase: 'F13' },
-  { argv: ['serve'], phase: 'F12' },
 ];
 
 describe('non-init stub commands', () => {
