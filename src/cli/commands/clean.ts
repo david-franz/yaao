@@ -27,7 +27,7 @@ export const cleanCommand: CommandModule = {
       .option('--all', 'clean every finished run')
       .option('--worktrees-only', 'only remove worktrees (leave branches)')
       .option('--branches-only', 'only remove branches (leave worktrees)')
-      .option('--keep-failed', 'do not touch worktrees from failed/cancelled runs (default true)')
+      .option('--keep-failed', 'with --all, skip failed/cancelled runs (so they remain resumable)')
       .option('--force', 'override the unmerged-work safety net')
       .option('--runs <days>', 'also prune journals older than N days')
       .action(async (runId: string | undefined, flags: CleanFlags) => {
@@ -46,7 +46,11 @@ export const cleanCommand: CommandModule = {
           return;
         }
 
-        const keepFailed = flags.keepFailed !== false; // default true
+        // An explicit run-id is treated as explicit consent: clean it even if
+        // it failed/cancelled. The --keep-failed flag only fences off failed
+        // runs in --all mode, where the user hasn't named the run.
+        const explicitRunId = runId !== undefined && !flags.all;
+        const keepFailed = !explicitRunId && Boolean(flags.keepFailed);
         const removeWorktrees = !flags.branchesOnly;
         const removeBranches = !flags.worktreesOnly;
         const summary = { worktreesRemoved: 0, branchesRemoved: 0, journalsRemoved: 0 };
@@ -73,8 +77,12 @@ export const cleanCommand: CommandModule = {
             worktreeRoot: '.yaao/worktrees',
           });
           if (removeWorktrees) {
+            // Keep every other run's worktrees intact so a targeted clean
+            // doesn't nuke unrelated runs. Only the target run's stamped
+            // worktrees fall outside this active set and get pruned.
+            const active = new Set(summaries.map((s) => s.runId).filter((id) => id !== target.runId));
             // eslint-disable-next-line no-await-in-loop -- per-run cleanup is sequential
-            const removed = await wtManager.pruneOrphans(new Set([])); // remove all known stamps
+            const removed = await wtManager.pruneOrphans(active);
             summary.worktreesRemoved += removed.length;
           }
           if (removeBranches) {

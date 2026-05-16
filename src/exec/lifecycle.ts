@@ -189,6 +189,15 @@ export class Lifecycle {
               message: (err as Error).message,
               cause: err,
             });
+      // Tear down any worktree/branch we created before failing so the next
+      // run doesn't collide on "branch already exists" or a stale stamped dir.
+      // Best-effort: any teardown error is swallowed so we don't mask the
+      // original failure reason for the user.
+      try {
+        await this.opts.worktreeManager.remove(task.id, { force: true, deleteBranch: true });
+      } catch {
+        // ignore — we're already failing this task
+      }
       this.opts.scheduler.failTask(task.id, yerr);
       await this.opts.journal.append({
         t: 'task:failed',
