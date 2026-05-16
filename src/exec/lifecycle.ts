@@ -114,12 +114,11 @@ export class Lifecycle {
   ): Promise<RunAttemptResult> {
     let stdout = '';
     try {
-      // 1) Provision worktree. On a retry attempt OR a `--resume` run, the
-      // worktree from the prior attempt is still on disk (yaao leaves it
-      // intact for inspection), so we reuse it. Setup commands re-run
-      // idempotently and the agent gets the failure context in its prompt.
-      const reuseExisting = attempt > 1 || prevFailure !== undefined;
-      const existing = reuseExisting ? await this.opts.worktreeManager.get(task.id) : undefined;
+      // 1) Provision worktree. yaao leaves worktrees on disk through retries,
+      // resumes, and interrupted runs, so always check for an existing stamped
+      // worktree first and reuse it. Only create a fresh one when nothing is
+      // there. Setup commands re-run idempotently in either case.
+      const existing = await this.opts.worktreeManager.get(task.id);
       // When the plan's on-conflict mode is `agent`, dep-branch merge conflicts
       // are left in place for the agent to resolve rather than aborting the
       // task — see WorktreeRequest.onConflict.

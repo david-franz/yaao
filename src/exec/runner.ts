@@ -155,9 +155,11 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
 
   const taskById = new Map(opts.plan.tasks.map((t) => [t.id, t]));
 
-  // Resume: mark previously-completed tasks as done and stash failure context
-  // for tasks that need re-running. Done after lifecycle construction so the
-  // scheduler is fully wired before we synthesize events into it.
+  // Resume: mark previously-completed tasks as done, stash failure context
+  // for tasks that need re-running with context, and let interrupted (still
+  // "running" in the prior journal) tasks fall through to be re-launched on
+  // the existing worktree. Done after lifecycle construction so the scheduler
+  // is fully wired before we synthesize events into it.
   const priorFailures = new Map<string, PriorFailureContext>();
   if (opts.resume) {
     try {
@@ -165,10 +167,23 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
       for (const [id, task] of Object.entries(priorSummary.tasks)) {
         if (!taskById.has(id)) continue;
         if (task.status === 'completed') {
-          // Synthesize completion so downstream tasks unblock without re-running.
+          // Synthesise completion so downstream tasks unblock without re-running.
           scheduler.startTask(id);
           scheduler.completeTask(id, {
             ...(task.durationMs !== undefined ? { durationMs: task.durationMs } : {}),
+          });
+          // Also persist the completion in the new run's journal so the NEXT
+          // resume sees it. Without this, synthesised completions live only in
+          // the scheduler's memory and are lost across runs — leading the next
+          // resume to try to re-run the task and trip the worktree collision.
+          // eslint-disable-next-line no-await-in-loop -- sequential resume bootstrap
+          await journal.append({
+            t: 'task:completed',
+            time: new Date().toISOString(),
+            taskId: id,
+            durationMs: task.durationMs ?? 0,
+            filesChanged: 0,
+            commit: '',
           });
         } else if (task.status === 'failed') {
           priorFailures.set(id, {
@@ -177,6 +192,9 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
             ...(task.validation !== undefined ? { validation: task.validation } : {}),
           });
         }
+        // 'running' or 'pending' tasks (interrupted mid-run) fall through —
+        // the scheduler picks them up in its normal flow, and the lifecycle's
+        // idempotent worktree-get-or-create reuses the existing worktree.
       }
     } catch {
       // No prior journal — proceed as a fresh run, ignoring the resume flag.
