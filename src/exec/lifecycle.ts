@@ -176,8 +176,13 @@ export class Lifecycle {
       const prompt = `${priorFailurePrefix}${conflictPrefix}${prefix}${promptBody}`;
       const systemPrompt = computeSystemPrompt(task, this.opts.ctxSysDirective);
 
-      // 3) Spawn agent
+      // 3) Spawn agent. Snapshot HEAD first so we can later tell whether this
+      // attempt produced any new work — a leftover-worktree scenario (the
+      // agent crashed instantly but prior runs left commits on the branch)
+      // would otherwise sail past validation against stale state and get
+      // falsely marked completed.
       const backend = this.opts.backendFor(task);
+      const headBeforeSpawn = await this.opts.git.revParse('HEAD', wt.path).catch(() => '');
       await this.opts.journal.append({
         t: 'task:running',
         time: new Date().toISOString(),
@@ -275,6 +280,31 @@ export class Lifecycle {
             command: hook.command,
             stdoutTail: tail(h.stdout, 30),
             stderrTail: tail(h.stderr, 30),
+          });
+        }
+      }
+
+      // 4.7) Empty-work guard. Validation + hooks passed — but did the agent
+      // actually do anything *this* attempt? A reused worktree (with commits
+      // from a prior run) could sail past validation against stale state when
+      // the current agent invocation crashed instantly (e.g. copilot
+      // "Invalid command format"). If HEAD is unchanged AND nothing's dirty
+      // (ignoring yaao's own .yaao/.task bookkeeping), the agent did nothing
+      // — fail so the retry loop respawns with the captured stderr as
+      // context.
+      if (task.validation?.command) {
+        const headAfterSpawn = await this.opts.git.revParse('HEAD', wt.path).catch(() => '');
+        const status = await this.opts.git.status(wt.path);
+        const realUntracked = status.untracked.filter((p) => !p.startsWith('.yaao/'));
+        const dirty = status.files.length > 0 || realUntracked.length > 0;
+        const newCommits = headBeforeSpawn !== '' && headAfterSpawn !== headBeforeSpawn;
+        if (!dirty && !newCommits) {
+          throw new AgentNonZeroExitError({
+            message: `agent '${backend.name}' produced no new work this attempt — exit code ${result.exitCode}; the worktree is unchanged. Validation passed against stale state (probably commits from an earlier run). Check the output log; the CLI likely crashed before doing real work.`,
+            agent: backend.name,
+            exitCode: result.exitCode,
+            stdoutTail: tail(stdout, 30),
+            stderrTail: tail(result.stderr, 30),
           });
         }
       }
