@@ -89,6 +89,11 @@ export const TaskSchema = z
     setup: z.array(z.string()).default([]),
     /** Override the per-agent permission mode for this task. */
     permissions: PermissionModeSchema.optional(),
+    /** When false, the lifecycle does NOT prepend `context.md` summaries from
+     * this task's deps onto the prompt. Default true — most tasks benefit
+     * from the upstream story; e2e/integration tasks that only need the code
+     * (already merged in from dep branches) can opt out to save prompt budget. */
+    'inherit-dep-context': z.boolean().optional(),
   })
   .strict()
   .refine(
@@ -109,6 +114,16 @@ export const PlanConfigSchema = z
       .object({
         strategy: z.enum(['auto', 'pr', 'manual']).optional(),
         'on-conflict': z.enum(['manual', 'agent']).optional(),
+      })
+      .strict()
+      .optional(),
+    /** Token budgets for the upstream-context preamble prepended to a task's
+     * prompt. Both are approximate (4 chars/token). When omitted, the lifecycle
+     * uses sensible defaults (2000 per dep, 12000 total). */
+    context: z
+      .object({
+        'per-dep-budget': z.number().int().positive().optional(),
+        'total-budget': z.number().int().positive().optional(),
       })
       .strict()
       .optional(),

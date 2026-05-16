@@ -154,11 +154,21 @@ export class Lifecycle {
 
       // 2) Resolve prompt body (inline or from prompt-ref) and prepend context prefix.
       const promptBody = resolvePromptBody(task, this.opts.promptRefBaseDir ?? this.opts.rootDir);
-      const { prefix } = buildContextPrefix({
-        runDir: this.opts.runDir,
-        plan: this.opts.plan,
-        task,
-      });
+      const inheritDepContext = task['inherit-dep-context'] !== false;
+      const ctxBudgets = this.opts.plan.config.context;
+      const { prefix } = inheritDepContext
+        ? buildContextPrefix({
+            runDir: this.opts.runDir,
+            plan: this.opts.plan,
+            task,
+            ...(ctxBudgets['per-dep-budget'] !== undefined
+              ? { perDepBudget: ctxBudgets['per-dep-budget'] }
+              : {}),
+            ...(ctxBudgets['total-budget'] !== undefined
+              ? { totalBudget: ctxBudgets['total-budget'] }
+              : {}),
+          })
+        : { prefix: '' };
       const priorFailurePrefix = prevFailure ? buildPriorFailurePrefix(prevFailure) : '';
       const conflictPrefix = wt.unresolvedConflicts?.length
         ? buildConflictResolutionPrefix(wt.unresolvedConflicts, wt.conflictingParent, wt.deferredParents)

@@ -58,6 +58,20 @@
                 }
               },
               "additionalProperties": false
+            },
+            "context": {
+              "type": "object",
+              "properties": {
+                "per-dep-budget": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                },
+                "total-budget": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -280,6 +294,9 @@
                   "allow-edits",
                   "allow-all"
                 ]
+              },
+              "inherit-dep-context": {
+                "type": "boolean"
               }
             },
             "required": [

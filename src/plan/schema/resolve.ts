@@ -21,6 +21,10 @@ export interface ResolvedPlanConfig {
     strategy: 'auto' | 'pr' | 'manual';
     'on-conflict': 'manual' | 'agent';
   };
+  context: {
+    'per-dep-budget'?: number;
+    'total-budget'?: number;
+  };
 }
 
 export interface ResolvedPlanContext {
@@ -56,6 +60,7 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
   const planMerge = planCfg.merge ?? {};
   const ctxSys = plan.context?.['ctx-sys'] ?? {};
 
+  const planContext = planCfg.context ?? {};
   const resolvedConfig: ResolvedPlanConfig = {
     'base-branch': planCfg['base-branch'] ?? cfg.defaults['base-branch'],
     'max-parallel': planCfg['max-parallel'] ?? cfg.defaults['max-parallel'],
@@ -63,6 +68,14 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
     merge: {
       strategy: planMerge.strategy ?? cfg.merge.strategy,
       'on-conflict': planMerge['on-conflict'] ?? cfg.merge['on-conflict'],
+    },
+    context: {
+      ...(planContext['per-dep-budget'] !== undefined
+        ? { 'per-dep-budget': planContext['per-dep-budget'] }
+        : {}),
+      ...(planContext['total-budget'] !== undefined
+        ? { 'total-budget': planContext['total-budget'] }
+        : {}),
     },
   };
 
