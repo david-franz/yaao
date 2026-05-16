@@ -194,6 +194,9 @@
                   "must-pass": {
                     "type": "boolean",
                     "default": true
+                  },
+                  "cwd": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false

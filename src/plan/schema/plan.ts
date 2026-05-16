@@ -16,6 +16,10 @@ export const ApiBindingSchema = z.object({
 export const ValidationSchema = z.object({
   command: z.string().min(1).optional(),
   'must-pass': z.boolean().default(true),
+  /** Subdirectory of the worktree to run the validation command in. Useful
+   * for monorepos where a task owns one workspace but the worktree root holds
+   * the whole repo. Relative paths only; resolved against the worktree root. */
+  cwd: z.string().optional(),
 });
 
 export const PermissionModeSchema = z.enum(['ask', 'allow-edits', 'allow-all']);

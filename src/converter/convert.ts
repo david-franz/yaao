@@ -68,11 +68,19 @@ export async function convertPlan(opts: ConvertOptions): Promise<ConvertResult> 
       files: t.files,
       env: {},
       retries: 0,
-      setup: t.validation ? inferSetupFromValidation(t.validation) : [],
+      setup: [],
       prompt: t.prompt || t.title,
     };
     if (assignment.model) task.model = assignment.model;
-    if (t.validation) task.validation = { command: t.validation, 'must-pass': true };
+    if (t.validation) {
+      const { command, cwd } = extractValidationCwd(t.validation);
+      task.validation = {
+        command,
+        'must-pass': true,
+        ...(cwd !== undefined ? { cwd } : {}),
+      };
+      task.setup = inferSetupFromValidation(command);
+    }
     return task;
   });
 
@@ -173,6 +181,19 @@ export async function convertPlans(opts: ConvertOptions & { outDir?: string }): 
  * idempotent / no-op when already done (install, compose up, env copy with
  * `cp -n`). Users can override or extend by hand-editing the `setup:` list.
  */
+/**
+ * Pull a leading `cd <subdir> && ` off a validation command and surface it as
+ * a structured `validation.cwd`. The planner skill recommends this shape for
+ * monorepo packages so each task's validation runs in the right workspace;
+ * the converter normalises it to the structured form so the lifecycle picks
+ * the cwd up directly.
+ */
+export function extractValidationCwd(raw: string): { command: string; cwd?: string } {
+  const m = raw.trim().match(/^cd\s+([^\s&;]+)\s*&&\s*(.+)$/s);
+  if (m && m[1] && m[2]) return { command: m[2].trim(), cwd: m[1] };
+  return { command: raw };
+}
+
 export function inferSetupFromValidation(cmd: string): string[] {
   const setup: string[] = [];
   const trimmed = cmd.trim();

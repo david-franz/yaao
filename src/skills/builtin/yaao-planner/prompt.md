@@ -149,6 +149,19 @@ triplet at `{{out}}/<plan-slug>/spec.md|plan.md|tasks.md`.
   majors may have breaking API changes that downstream tasks haven't been
   written to handle. Document the chosen major in the task prose so the
   executing agent doesn't second-guess it.
+- **Monorepo validation commands MUST be scoped to the package the task owns.**
+  Validation runs from the worktree root. A blanket `pnpm build` or
+  `pnpm prisma migrate dev` from root will: (a) try to build sibling packages
+  that the current task didn't touch and may not have generated artefacts for,
+  or (b) miss the workspace where the relevant config lives. Two correct
+  shapes:
+  - Prefix with `cd <subdir> &&`: `cd apps/api && pnpm prisma migrate dev`.
+    yaao parses this into a structured `validation.cwd` automatically.
+  - Use a workspace filter when the package manager supports it:
+    `pnpm --filter @app/web build`, `npm -w @app/api run typecheck`.
+  Sibling tasks (e.g. `landing-ui` and `db-schema`) run in parallel worktrees
+  and do NOT share artefacts; never write a validation that depends on a
+  sibling's outputs (e.g. don't build the API from the web task).
 
 ---
 

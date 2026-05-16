@@ -217,7 +217,10 @@ export class Lifecycle {
 
       // 4) Validation command (optional)
       if (task.validation?.command) {
-        const v = await this.runShell(task.validation.command, wt.path);
+        const validationCwd = task.validation.cwd
+          ? resolvePath(wt.path, task.validation.cwd)
+          : wt.path;
+        const v = await this.runShell(task.validation.command, validationCwd);
         if (v.exitCode !== 0 && task.validation['must-pass']) {
           const stdoutTail = tail(v.stdout, 30);
           const stderrTail = tail(v.stderr, 30);

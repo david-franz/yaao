@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { inferSetupFromValidation } from '../../../src/converter/convert.js';
+import { extractValidationCwd, inferSetupFromValidation } from '../../../src/converter/convert.js';
 
 describe('inferSetupFromValidation', () => {
   it('prepends a conditional install when validation uses a package manager', () => {
@@ -47,5 +47,22 @@ describe('inferSetupFromValidation', () => {
   it('returns nothing for shell validations that do not match a known pattern', () => {
     expect(inferSetupFromValidation('./scripts/check.sh')).toEqual([]);
     expect(inferSetupFromValidation('grep -q OK out.txt')).toEqual([]);
+  });
+});
+
+describe('extractValidationCwd', () => {
+  it('strips leading `cd <dir> &&` into a structured cwd', () => {
+    expect(extractValidationCwd('cd apps/api && pnpm prisma migrate dev')).toEqual({
+      command: 'pnpm prisma migrate dev',
+      cwd: 'apps/api',
+    });
+    expect(extractValidationCwd('cd packages/db && yarn migrate')).toEqual({
+      command: 'yarn migrate',
+      cwd: 'packages/db',
+    });
+  });
+
+  it('leaves plain commands alone', () => {
+    expect(extractValidationCwd('pnpm build')).toEqual({ command: 'pnpm build' });
   });
 });
