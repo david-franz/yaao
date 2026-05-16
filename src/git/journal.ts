@@ -192,12 +192,18 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
       next.status = 'running';
       return next;
     case 'task:queued':
+      // Once a task completed, transient state events from later runs don't
+      // unwind that — completion is sticky across replays so a bug or a
+      // skipped follow-up run can't erase real progress.
+      if (next.tasks[ev.taskId]?.status === 'completed') return next;
       next.tasks[ev.taskId] = { ...(next.tasks[ev.taskId] ?? { status: 'pending' }), status: 'pending' };
       return next;
     case 'task:ready':
+      if (next.tasks[ev.taskId]?.status === 'completed') return next;
       next.tasks[ev.taskId] = { ...(next.tasks[ev.taskId] ?? { status: 'ready' }), status: 'ready' };
       return next;
     case 'task:running':
+      if (next.tasks[ev.taskId]?.status === 'completed') return next;
       next.tasks[ev.taskId] = {
         ...(next.tasks[ev.taskId] ?? { status: 'running' }),
         status: 'running',
@@ -214,6 +220,7 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
       };
       return next;
     case 'task:failed':
+      if (next.tasks[ev.taskId]?.status === 'completed') return next;
       next.tasks[ev.taskId] = {
         ...(next.tasks[ev.taskId] ?? { status: 'failed' }),
         status: 'failed',
@@ -223,6 +230,7 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
       };
       return next;
     case 'task:retry-attempt':
+      if (next.tasks[ev.taskId]?.status === 'completed') return next;
       next.tasks[ev.taskId] = {
         ...(next.tasks[ev.taskId] ?? { status: 'running' }),
         attempts: ev.attempt,
@@ -230,6 +238,7 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
       };
       return next;
     case 'task:skipped':
+      if (next.tasks[ev.taskId]?.status === 'completed') return next;
       next.tasks[ev.taskId] = { ...(next.tasks[ev.taskId] ?? { status: 'skipped' }), status: 'skipped' };
       return next;
     case 'run:end':
