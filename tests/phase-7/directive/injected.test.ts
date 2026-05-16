@@ -51,7 +51,7 @@ describe('ctx-sys directive injection', () => {
     expect(captured[0]?.systemPrompt).toContain('context_query');
   });
 
-  it('omits the directive when ctxSysDirective is not provided', async () => {
+  it('omits the ctx-sys directive when ctxSysDirective is not provided', async () => {
     repo = createTestRepo();
     const planFile = join(repo.path, 'plan.yaml');
     writeFileSync(planFile, 'plan: { name: d, version: 1 }\ntasks: []\n');
@@ -68,10 +68,12 @@ describe('ctx-sys directive injection', () => {
       config: DEFAULT_CONFIG,
       backendFor: () => makeRecorder(captured),
     });
-    expect(captured[0]?.systemPrompt).toBeUndefined();
+    // The yaao authorization preamble is always present, but the ctx-sys
+    // directive is not added when ctxSysDirective is unset.
+    expect(captured[0]?.systemPrompt).not.toContain('context_query');
   });
 
-  it('honors directive: false at the task level', async () => {
+  it('honors directive: false at the task level (still keeps the yaao authorization)', async () => {
     repo = createTestRepo();
     const planFile = join(repo.path, 'plan.yaml');
     writeFileSync(planFile, 'plan: { name: d, version: 1 }\ntasks: []\n');
@@ -97,6 +99,7 @@ describe('ctx-sys directive injection', () => {
       backendFor: () => makeRecorder(captured),
       ctxSysDirective: CTX_SYS_DIRECTIVE,
     });
-    expect(captured[0]?.systemPrompt).toBeUndefined();
+    expect(captured[0]?.systemPrompt).not.toContain('context_query');
+    expect(captured[0]?.systemPrompt).toMatch(/yaao/);
   });
 });
