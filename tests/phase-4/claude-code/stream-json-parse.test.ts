@@ -47,6 +47,8 @@ describe('buildClaudeArgs', () => {
     expect(args).toContain('--print');
     expect(args).toContain('--output-format');
     expect(args).toContain('stream-json');
+    // `claude` requires --verbose when --print + --output-format stream-json are used.
+    expect(args).toContain('--verbose');
     expect(args).toContain('--model');
     expect(args).toContain('claude-sonnet-4-6');
     expect(args).toContain('--mcp-config');

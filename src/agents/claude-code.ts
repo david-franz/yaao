@@ -21,7 +21,9 @@ export function resolveClaudeModel(model: string | undefined): string | undefine
 }
 
 export function buildClaudeArgs(opts: SpawnOptions, mcpConfigPath?: string): string[] {
-  const args = ['--print', '--output-format', 'stream-json'];
+  // `--verbose` is required by the current `claude` CLI when combining
+  // `--print` with `--output-format stream-json`.
+  const args = ['--print', '--output-format', 'stream-json', '--verbose'];
   const model = resolveClaudeModel(opts.model);
   if (model) {
     args.push('--model', model);
