@@ -74,6 +74,20 @@ export interface Git {
     cwd?: string,
   ): Promise<MergeResult>;
   mergeAbort(cwd?: string): Promise<void>;
+  /**
+   * Merge `source` into `target` without touching any working tree. Computes
+   * the merged tree via `git merge-tree --write-tree`, creates a merge commit
+   * via `git commit-tree`, and fast-forwards the target ref via `update-ref`.
+   * Works even when the target branch is currently checked out at the user's
+   * root repo or in another worktree. Returns the new commit SHA on success;
+   * on conflict the result `ok` is false and `conflicts` lists the paths.
+   */
+  mergeRefs(
+    target: string,
+    source: string,
+    opts: { message: string },
+    cwd?: string,
+  ): Promise<MergeResult>;
   diff(opts?: DiffOpts, cwd?: string): Promise<string>;
   log(opts?: LogOpts, cwd?: string): Promise<LogEntry[]>;
   push(remote: string, branch: string, opts?: { setUpstream?: boolean }, cwd?: string): Promise<void>;
@@ -196,6 +210,53 @@ export const git: Git = {
   },
   async mergeAbort(cwd) {
     await runOk(['merge', '--abort'], cwd);
+  },
+  async mergeRefs(target, source, opts, cwd) {
+    // 1) Resolve tip commits of both sides.
+    const targetSha = (await run(['rev-parse', '--verify', target], cwd)).stdout.trim();
+    const sourceSha = (await run(['rev-parse', '--verify', source], cwd)).stdout.trim();
+    if (!targetSha || !sourceSha) {
+      throw new GitError({
+        message: `mergeRefs: unable to resolve ${!targetSha ? target : source}`,
+        cmd: ['git', 'rev-parse', target, source],
+        exitCode: 1,
+        stdout: '',
+        stderr: '',
+      });
+    }
+    // 2) Compute the merge tree. Modern git (2.38+) prints the resulting tree
+    //    SHA on stdout for a clean merge, exits 1 with conflict info otherwise.
+    const mt = await run(['merge-tree', '--write-tree', '--', target, source], cwd);
+    if (mt.exitCode !== 0) {
+      // Parse conflict markers from stderr/stdout. merge-tree's stdout on
+      // conflict starts with the (unfinished) tree SHA followed by conflicted
+      // path lines; the simplest safe extraction is to scan stdout for lines
+      // that look like file paths.
+      const conflicts = (mt.stdout + '\n' + mt.stderr)
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l && !l.match(/^[0-9a-f]{40,}$/) && !l.startsWith('CONFLICT') && l.includes('/'));
+      return { ok: false, conflicts };
+    }
+    const treeSha = mt.stdout.trim().split(/\r?\n/)[0] ?? '';
+    // 3) Build a merge commit pointing at both parents.
+    const ct = await run(
+      ['commit-tree', treeSha, '-p', targetSha, '-p', sourceSha, '-m', opts.message],
+      cwd,
+    );
+    if (ct.exitCode !== 0) {
+      throw new GitError({
+        message: `mergeRefs: commit-tree failed: ${ct.stderr.trim() || ct.stdout.trim()}`,
+        cmd: ['git', 'commit-tree'],
+        exitCode: ct.exitCode,
+        stdout: ct.stdout,
+        stderr: ct.stderr,
+      });
+    }
+    const mergeCommit = ct.stdout.trim();
+    // 4) Advance the target ref to the new commit.
+    await runOk(['update-ref', `refs/heads/${target}`, mergeCommit, targetSha], cwd);
+    return { ok: true, conflicts: [], mergeCommit };
   },
   async diff(opts, cwd) {
     const args = ['diff'];

@@ -292,12 +292,20 @@ export class Lifecycle {
         deletions: diffStats.deletions,
       });
 
-      // 6.5) Optional per-task merge: route the task's commits into a chosen
-      // target branch (e.g. a phase branch) before reporting completion. Failure
-      // here is non-fatal — the task succeeded; we surface the merge problem so
-      // the user can resolve it without losing the task's work.
-      if (commitOutcome.commit && task.merge.into && task.merge.when === 'completed') {
-        await this.mergeIntoTarget(task, wt.branch, branchEntry.baseBranch);
+      // 6.5) Land the task's commits on a downstream branch (a phase branch
+      // via task.merge.into, or the run's base-branch when merge.strategy is
+      // 'auto'). Failure is non-fatal — the task succeeded; we surface the
+      // merge problem so the user can resolve it without losing the task's
+      // work.
+      if (commitOutcome.commit && task.merge.when === 'completed') {
+        const target =
+          task.merge.into ??
+          (task.merge.strategy === 'auto'
+            ? this.opts.plan.config['base-branch']
+            : undefined);
+        if (target) {
+          await this.mergeIntoTarget(task, wt.branch, branchEntry.baseBranch, target);
+        }
       }
 
       // 7) Write context.md artifact
@@ -358,19 +366,49 @@ export class Lifecycle {
   }
 
   /**
-   * Merge a completed task's branch into a target branch (e.g. a phase branch).
-   * Uses a transient worktree so we never touch the user's main checkout. The
-   * target branch is created off `base` if missing and `create-if-missing` is
-   * set. Conflicts surface as a `task:merge-failed` event without failing the
-   * task itself — the agent's work is preserved on its own branch.
+   * Serialise concurrent merges to the same target branch. Each task that
+   * needs to merge into `<target>` awaits any pending merges into the same
+   * target — necessary because a single git repo can only have one worktree
+   * with a given branch checked out, and `auto`-merge means every layer-N
+   * task may land on `base-branch` while layer-N siblings are still working.
+   */
+  private readonly mergeChain = new Map<string, Promise<void>>();
+
+  /**
+   * Merge a completed task's branch into a target branch (a phase branch via
+   * task.merge.into, or `base-branch` when merge.strategy is `auto`). Uses a
+   * transient worktree so we never touch the user's main checkout. The target
+   * branch is created off `base` if missing and `create-if-missing` is set.
+   * Conflicts surface as a `task:merge-failed` event without failing the task
+   * itself — the agent's work is preserved on its own branch.
    */
   private async mergeIntoTarget(
     task: ResolvedTask,
     sourceBranch: string,
     baseBranch: string,
+    target: string,
   ): Promise<void> {
-    const target = task.merge.into;
-    if (!target) return;
+    // Chain on the prior merge to the same target so we don't trip git's
+    // "branch already checked out in worktree X" error when several tasks
+    // auto-merge to base-branch in parallel.
+    const prev = this.mergeChain.get(target) ?? Promise.resolve();
+    const next = prev.then(() => this.doMergeIntoTarget(task, sourceBranch, baseBranch, target));
+    // Swallow predecessor errors in the chain so an earlier failed merge
+    // doesn't block subsequent ones; the original error is still surfaced
+    // via task:merge-failed.
+    this.mergeChain.set(
+      target,
+      next.catch(() => undefined),
+    );
+    await next;
+  }
+
+  private async doMergeIntoTarget(
+    task: ResolvedTask,
+    sourceBranch: string,
+    baseBranch: string,
+    target: string,
+  ): Promise<void> {
     const rootDir = this.opts.rootDir;
     const exists = await this.opts.git.branchExists(target, rootDir);
     if (!exists) {
@@ -398,34 +436,17 @@ export class Lifecycle {
       }
     }
 
-    // Transient checkout used purely for this merge. The path lives under the
-    // run dir so `yaao clean` reclaims it alongside the rest of the run.
-    const safe = target.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const mergePath = join(this.opts.runDir, '_merge', safe);
+    // Plumbing-based merge: works when the target is currently checked out
+    // anywhere (root repo, sibling worktree) because nothing touches a working
+    // tree. See git.mergeRefs.
     try {
-      await this.opts.git.worktreeAdd(mergePath, target, rootDir);
-    } catch (err) {
-      this.opts.bus.emit({
-        type: 'task:merge-failed',
-        taskId: task.id,
-        into: target,
-        reason: `could not check out target: ${(err as Error).message}`,
-        conflicts: [],
-      });
-      return;
-    }
-    try {
-      const result = await this.opts.git.merge(
+      const result = await this.opts.git.mergeRefs(
+        target,
         sourceBranch,
-        { ff: false, noEdit: true, message: `Merge ${sourceBranch} into ${target} (task ${task.id})` },
-        mergePath,
+        { message: `Merge ${sourceBranch} into ${target} (task ${task.id})` },
+        rootDir,
       );
       if (!result.ok) {
-        try {
-          await this.opts.git.mergeAbort(mergePath);
-        } catch {
-          // ignore — already in failure path
-        }
         this.opts.bus.emit({
           type: 'task:merge-failed',
           taskId: task.id,
@@ -441,12 +462,14 @@ export class Lifecycle {
         into: target,
         mergeCommit: result.mergeCommit ?? '',
       });
-    } finally {
-      try {
-        await this.opts.git.worktreeRemove(mergePath, { force: true }, rootDir);
-      } catch {
-        // ignore — `yaao clean` will reclaim it
-      }
+    } catch (err) {
+      this.opts.bus.emit({
+        type: 'task:merge-failed',
+        taskId: task.id,
+        into: target,
+        reason: `merge failed: ${(err as Error).message}`,
+        conflicts: [],
+      });
     }
   }
 
