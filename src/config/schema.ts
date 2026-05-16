@@ -67,6 +67,30 @@ export const ConfigSchema = z
         'exec-dir': z.string().default('.yaao/exec'),
       })
       .default({}),
+    convert: z
+      .object({
+        /** Project-level agent-routing rules consulted by `yaao convert`. User
+         * rules take precedence over the built-in catch-all rules. */
+        'agent-rules': z
+          .array(
+            z.object({
+              match: z.object({
+                'title-regex': z.string().optional(),
+                'id-regex': z.string().optional(),
+                'files-glob': z.string().optional(),
+                'prompt-contains': z.string().optional(),
+                any: z.boolean().optional(),
+              }),
+              agent: AgentNameSchema,
+              model: z.string().optional(),
+            }),
+          )
+          .default([]),
+        /** Turn off the shipped catch-all rules (test→codex, ui→cursor, infra→claude-code).
+         * Useful when the user only has one backend set up and wants every task to land on it. */
+        'disable-builtin-rules': z.boolean().default(false),
+      })
+      .default({}),
     'mcp-servers': z
       .record(
         z.object({

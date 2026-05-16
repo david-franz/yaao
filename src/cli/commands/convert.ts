@@ -41,6 +41,8 @@ export const convertCommand: CommandModule = {
           outDir: out,
           ...(flags.from !== undefined ? { format: flags.from } : {}),
           ...(flags.inferDeps !== undefined ? { infer: flags.inferDeps } : {}),
+          agentRules: ctx.config.convert['agent-rules'],
+          disableBuiltinAgentRules: ctx.config.convert['disable-builtin-rules'],
         });
         if (ctx.json) {
           process.stdout.write(

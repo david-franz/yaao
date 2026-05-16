@@ -6,6 +6,7 @@ import type { CliContext } from '../context.js';
 import { loadPlan } from '../../plan/yaml/loader.js';
 import { runPlan } from '../../exec/runner.js';
 import type { RunOptions } from '../../exec/runner.js';
+import type { RunEvent } from '../../exec/bus.js';
 import type { ResolvedTask } from '../../plan/schema/types.js';
 import type { AgentBackend, AgentName } from '../../agents/backend.js';
 import { ClaudeCodeBackend } from '../../agents/claude-code.js';
@@ -95,6 +96,14 @@ export const runCommand: CommandModule = {
         };
         if (filter !== undefined) opts.filter = filter;
         if (flags.trial) opts.trial = true;
+        // No-TUI mode and JSON mode both suppress the live reporter: JSON wants a
+        // single structured line on stdout, --no-tui leaves journal tailing to the
+        // user. Otherwise stream progress to stderr.
+        const showReporter = !ctx.json && flags.noTui !== true;
+        if (showReporter) {
+          const isTty = process.stderr.isTTY === true;
+          opts.onProgress = makeRunProgressReporter(loaded.plan.tasks.length, isTty);
+        }
 
         const result = await runPlan(opts);
         if (ctx.json) {
@@ -195,4 +204,133 @@ async function emitDryRun(
   for (const [id, status] of Object.entries(snapshot)) {
     if (status === 'skipped') ctx.logger.info(`  skipped: ${id}`);
   }
+}
+
+/**
+ * Streams run-bus events to stderr so the user can see tasks moving through the
+ * DAG. Mirrors the pattern used by `yaao plan`: task lifecycle lines go above an
+ * elapsed-time ticker that's rewritten in place on a TTY, line-per-5s on a pipe.
+ */
+function makeRunProgressReporter(totalTasks: number, isTty: boolean): (ev: RunEvent) => void {
+  let lastTickLen = 0;
+  let completed = 0;
+  let failed = 0;
+  let skipped = 0;
+  let active = 0;
+  const startedAt = Date.now();
+  let tickHandle: NodeJS.Timeout | undefined;
+
+  const clearTick = (): void => {
+    if (!isTty || lastTickLen === 0) return;
+    process.stderr.write(`\r${' '.repeat(lastTickLen)}\r`);
+    lastTickLen = 0;
+  };
+  const fmtStamp = (ms: number): string => {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    return m > 0 ? `${m}m${(s % 60).toString().padStart(2, '0')}s` : `${s}s`;
+  };
+  const writeLine = (s: string): void => {
+    clearTick();
+    process.stderr.write(s.endsWith('\n') ? s : `${s}\n`);
+  };
+  const renderTick = (): void => {
+    const stamp = fmtStamp(Date.now() - startedAt);
+    const line = `\rworking... ${completed + failed + skipped}/${totalTasks} done · ${active} active (${stamp})`;
+    if (isTty) {
+      process.stderr.write(line);
+      lastTickLen = line.length - 1; // ignore leading \r
+    }
+  };
+  const startTicker = (): void => {
+    if (tickHandle) return;
+    tickHandle = setInterval(() => {
+      if (isTty) renderTick();
+      else {
+        const s = Math.floor((Date.now() - startedAt) / 1000);
+        if (s > 0 && s % 10 === 0) {
+          const stamp = fmtStamp(Date.now() - startedAt);
+          process.stderr.write(
+            `working... ${completed + failed + skipped}/${totalTasks} done · ${active} active (${stamp})\n`,
+          );
+        }
+      }
+    }, 1000);
+  };
+  const stopTicker = (): void => {
+    if (tickHandle) {
+      clearInterval(tickHandle);
+      tickHandle = undefined;
+    }
+    clearTick();
+  };
+
+  return (ev) => {
+    switch (ev.type) {
+      case 'run:start':
+        writeLine(`yaao run: ${ev.runId} (${totalTasks} task${totalTasks === 1 ? '' : 's'})`);
+        startTicker();
+        return;
+      case 'task:queued':
+        return; // noisy at scale; skip
+      case 'task:ready':
+        writeLine(`  ◷ ${ev.taskId}: ready`);
+        return;
+      case 'task:active':
+        active += 1;
+        writeLine(`  ▶ ${ev.taskId}: active`);
+        return;
+      case 'task:completed':
+        active = Math.max(0, active - 1);
+        completed += 1;
+        writeLine(
+          `  ✔ ${ev.taskId}: completed${ev.outcome.commit ? ` (${ev.outcome.commit.slice(0, 7)})` : ''}`,
+        );
+        return;
+      case 'task:failed':
+        active = Math.max(0, active - 1);
+        failed += 1;
+        writeLine(`  ✖ ${ev.taskId}: failed — ${ev.error.message}`);
+        return;
+      case 'task:skipped':
+        skipped += 1;
+        writeLine(`  ⊘ ${ev.taskId}: skipped (${ev.reason})`);
+        return;
+      case 'task:diff':
+        writeLine(
+          `    ${ev.taskId}: +${ev.insertions}/-${ev.deletions} across ${ev.filesChanged} file(s)`,
+        );
+        return;
+      case 'task:committed':
+        // Already surfaced via task:completed; keep stderr quiet here.
+        return;
+      case 'task:retry-attempt':
+        writeLine(`  ↻ ${ev.taskId}: retry ${ev.attempt} — ${ev.error.message}`);
+        return;
+      case 'task:agent-event': {
+        const e = ev.ev;
+        if (e.type === 'tool-use') {
+          let name: string | undefined;
+          try {
+            name = (JSON.parse(e.data) as { name?: string }).name;
+          } catch {
+            /* ignore */
+          }
+          writeLine(`    ${ev.taskId} → tool: ${name ?? '?'}`);
+        } else if (e.type === 'thinking') {
+          writeLine(`    ${ev.taskId} · thinking (${e.data.length} chars)`);
+        } else if (e.type === 'stdout') {
+          const trimmed = e.data.length > 200 ? `${e.data.slice(0, 200)}…` : e.data;
+          writeLine(`    ${ev.taskId}: ${trimmed.trimEnd()}`);
+        }
+        return;
+      }
+      case 'run:end':
+        stopTicker();
+        writeLine(
+          `yaao run: ${ev.status} — ${completed} completed, ${failed} failed, ${skipped} skipped in ${fmtStamp(Date.now() - startedAt)}`,
+        );
+        return;
+    }
+  };
 }

@@ -63,4 +63,35 @@ describe('assignAgent', () => {
     expect(r.demoted).toBe(true);
     expect(r.agent).toBe(DEFAULT_CONFIG.defaults.agent);
   });
+
+  it('skips a built-in rule when its agent is disabled in config', () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      agents: {
+        ...DEFAULT_CONFIG.agents,
+        cursor: { ...DEFAULT_CONFIG.agents.cursor, enabled: false },
+        codex: { ...DEFAULT_CONFIG.agents.codex, enabled: false },
+      },
+    };
+    // Title matches the built-in "ui|frontend|page|component" rule which would
+    // normally route to cursor — but cursor is disabled, so it should fall
+    // through to the project default instead.
+    const r = assignAgent(t({ id: 'ui-1', title: 'Build the login page UI' }), { config });
+    expect(r.agent).toBe(config.defaults.agent);
+    expect(r.reason).toMatch(/project default/);
+  });
+
+  it('demotes a task-suggested disabled agent to project default', () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      agents: {
+        ...DEFAULT_CONFIG.agents,
+        cursor: { ...DEFAULT_CONFIG.agents.cursor, enabled: false },
+      },
+    };
+    const r = assignAgent(t({ id: 'a', title: 'A', agent: 'cursor' }), { config });
+    expect(r.demoted).toBe(true);
+    expect(r.agent).toBe(config.defaults.agent);
+    expect(r.reason).toMatch(/disabled in config/);
+  });
 });

@@ -42,13 +42,27 @@ export const BUILTIN_AGENT_RULES: AgentRule[] = [
 export function assignAgent(task: ParsedTask, opts: AssignOptions): AssignmentResult {
   // 1) Explicit suggestion from the plan author wins.
   if (task.agent) {
-    return finalizeApiFallback({ agent: task.agent as AgentName, ...(task.model !== undefined ? { model: task.model } : {}), reason: 'task suggested agent' }, opts);
+    return finalizeApiFallback(
+      finalizeEnabledFallback(
+        {
+          agent: task.agent as AgentName,
+          ...(task.model !== undefined ? { model: task.model } : {}),
+          reason: 'task suggested agent',
+        },
+        opts,
+      ),
+      opts,
+    );
   }
 
   // 2) Rule precedence: user rules → built-ins (unless disabled) → defaults.
   const rules = [...(opts.rules ?? []), ...(opts.disableBuiltins ? [] : BUILTIN_AGENT_RULES)];
   for (const rule of rules) {
     if (matches(rule.match, task)) {
+      // Skip rules that point at a disabled agent so we don't silently route work
+      // to a backend the user hasn't set up. Falls through to the next matching
+      // rule, or eventually the project default.
+      if (!isAgentEnabled(rule.agent, opts.config)) continue;
       return finalizeApiFallback(
         {
           agent: rule.agent,
@@ -65,6 +79,29 @@ export function assignAgent(task: ParsedTask, opts: AssignOptions): AssignmentRe
     agent: opts.config.defaults.agent,
     model: opts.config.defaults.model,
     reason: 'project default',
+  };
+}
+
+/**
+ * `agents.<name>.enabled` is the user's "I have this CLI set up" switch. If a
+ * task or user rule explicitly asks for a disabled agent, we honor the user's
+ * config and demote to the project default rather than queuing work that will
+ * fail at preflight. `api` doesn't have an `enabled` flag — its availability is
+ * decided by whether a provider key is resolvable (see finalizeApiFallback).
+ */
+function isAgentEnabled(agent: AgentName, config: YaaoConfig): boolean {
+  if (agent === 'api') return true;
+  const entry = (config.agents as unknown as Record<string, { enabled?: boolean } | undefined>)[agent];
+  return entry?.enabled !== false;
+}
+
+function finalizeEnabledFallback(r: AssignmentResult, opts: AssignOptions): AssignmentResult {
+  if (isAgentEnabled(r.agent, opts.config)) return r;
+  return {
+    agent: opts.config.defaults.agent,
+    model: opts.config.defaults.model,
+    reason: `${r.reason}; demoted from ${r.agent} (disabled in config)`,
+    demoted: true,
   };
 }
 

@@ -4,7 +4,7 @@ import type { ResolvedPlan, ResolvedTask } from '../plan/schema/types.js';
 import type { YaaoConfig } from '../config/types.js';
 import { Scheduler, type SchedulerEvent } from './scheduler.js';
 import { Lifecycle } from './lifecycle.js';
-import { createRunBus, type RunBus } from './bus.js';
+import { createRunBus, type RunBus, type RunEvent } from './bus.js';
 import { WorktreeManager } from '../git/worktree-manager.js';
 import { planBranches } from '../git/branch-graph.js';
 import { git as defaultGit, type Git } from '../git/git.js';
@@ -32,6 +32,9 @@ export interface RunOptions {
   mcpServers?: McpServerConfig[];
   /** System-prompt directive injected into every task when ctx-sys is enabled (F7.3). */
   ctxSysDirective?: string;
+  /** Live progress callback. Receives every event from the run bus so the CLI
+   * can render task transitions and agent activity to stderr. */
+  onProgress?: (ev: RunEvent) => void;
 }
 
 export interface RunResult {
@@ -48,6 +51,10 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
   const journalDir = opts.journalDir ?? join(opts.rootDir, '.yaao', 'runs');
   const runDir = opts.runDir ?? join(journalDir, opts.runId);
   mkdirSync(runDir, { recursive: true });
+
+  if (opts.onProgress) {
+    bus.subscribe(opts.onProgress);
+  }
 
   const journal: RunJournal = await openJournal(opts.runId, { dir: journalDir });
   const planContents = readFileSync(opts.planFile, 'utf8');

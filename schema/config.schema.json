@@ -227,6 +227,58 @@
           "additionalProperties": false,
           "default": {}
         },
+        "convert": {
+          "type": "object",
+          "properties": {
+            "agent-rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "match": {
+                    "type": "object",
+                    "properties": {
+                      "title-regex": {
+                        "type": "string"
+                      },
+                      "id-regex": {
+                        "type": "string"
+                      },
+                      "files-glob": {
+                        "type": "string"
+                      },
+                      "prompt-contains": {
+                        "type": "string"
+                      },
+                      "any": {
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "agent": {
+                    "$ref": "#/definitions/YaaoConfig/properties/defaults/properties/agent"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "match",
+                  "agent"
+                ],
+                "additionalProperties": false
+              },
+              "default": []
+            },
+            "disable-builtin-rules": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        },
         "mcp-servers": {
           "type": "object",
           "additionalProperties": {
