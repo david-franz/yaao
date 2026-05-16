@@ -21,7 +21,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 9  | yaao-planner skill          | Plan generation (markdown + Spec Kit), `plan` command           | Shipped |
 | 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Shipped |
 | 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Shipped (text-mode) |
-| 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Planned |
+| 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Shipped |
 | 13 | Distribution & polish       | npm publish, `doctor`, docs                                     | Planned |
 | 14 | Web viewer                  | HTTP server, browser-based DAG/run viewer                       | Planned |
 
@@ -257,17 +257,17 @@ Static plan viewer, live execution monitor, and the rendering primitives behind 
 
 ---
 
-## Phase 12: yaao-as-MCP (primary integration surface)
+## Phase 12: yaao-as-MCP (primary integration surface) **(shipped)**
 
-Expose yaao itself as an MCP server. **This is the canonical way every agent — Claude Code, Cursor, Copilot, Codex, raw API — drives yaao.** Build alongside Phase 8: the skills emitters generate MCP bootstraps that point at this server.
+Expose yaao itself as an MCP server. **This is the canonical way every agent — Claude Code, Cursor, Copilot, Codex, raw API — drives yaao.** Build alongside Phase 8: the skills emitters generate MCP bootstraps that point at this server. Shipped over stdio; `--socket` and `--http` transports are post-MVP additions on the same tool surface.
 
-| Feature | Description | Doc |
-|---------|-------------|-----|
-| **F12.1** | MCP server scaffold + transport            | [F12.1-mcp-server.md](phase-12/F12.1-mcp-server.md) |
-| **F12.2** | `yaao_plan` tool                           | [F12.2-generate-plan-tool.md](phase-12/F12.2-generate-plan-tool.md) |
-| **F12.3** | `yaao_convert` tool                        | [F12.3-convert-plan-tool.md](phase-12/F12.3-convert-plan-tool.md) |
-| **F12.4** | `yaao_run` & `yaao_status` tools           | [F12.4-run-plan-tool.md](phase-12/F12.4-run-plan-tool.md) |
-| **F12.5** | Skill-as-MCP-tool exposure                 | [F12.5-skill-tools.md](phase-12/F12.5-skill-tools.md) |
+| Feature | Description | Status | Doc |
+|---------|-------------|--------|-----|
+| **F12.1** | MCP server scaffold + transport            | shipped (stdio) | [F12.1-mcp-server.md](phase-12/F12.1-mcp-server.md) |
+| **F12.2** | `yaao_plan` tool                           | shipped | [F12.2-generate-plan-tool.md](phase-12/F12.2-generate-plan-tool.md) |
+| **F12.3** | `yaao_convert` tool                        | shipped | [F12.3-convert-plan-tool.md](phase-12/F12.3-convert-plan-tool.md) |
+| **F12.4** | `yaao_run` & `yaao_status` tools           | shipped | [F12.4-run-plan-tool.md](phase-12/F12.4-run-plan-tool.md) |
+| **F12.5** | Skill-as-MCP-tool exposure                 | shipped | [F12.5-skill-tools.md](phase-12/F12.5-skill-tools.md) |
 
 **Key Deliverables:**
 
