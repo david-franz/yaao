@@ -20,7 +20,19 @@ export interface RunPlannerOptions {
   dryRun?: boolean;
   /** Backend factory; in production this would build a real backend from config. */
   backend: AgentBackend;
+  /**
+   * Called for each agent event (stdout text chunk, tool-use, etc) plus periodic
+   * `tick` events while waiting. The CLI uses this to print progress to stderr;
+   * tests/MCP can ignore it.
+   */
+  onProgress?: (ev: ProgressEvent) => void;
 }
+
+export type ProgressEvent =
+  | { type: 'spawn'; agent: string }
+  | { type: 'agent'; event: AgentEvent }
+  | { type: 'tick'; elapsedMs: number }
+  | { type: 'done'; durationMs: number; files: string[] };
 
 export interface RunPlannerResult {
   ok: boolean;
@@ -87,14 +99,25 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
     prompt,
     skills: ['yaao-planner'],
   };
+  const startedAt = Date.now();
+  opts.onProgress?.({ type: 'spawn', agent: opts.backend.name });
   const proc = await opts.backend.spawn(spawnOpts);
-  // Drain events so the backend can complete.
+  // Drain events so the backend can complete, forwarding each to onProgress.
   void (async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    for await (const _ of proc.events) { /* drain */ }
-    return [] as AgentEvent[];
+    for await (const ev of proc.events) {
+      opts.onProgress?.({ type: 'agent', event: ev });
+    }
   })();
-  await proc.completed;
+  // While we wait, emit a tick once per second so a parent CLI can show
+  // "agent running 0:42…" — proves the run isn't hung.
+  const ticker = setInterval(() => {
+    opts.onProgress?.({ type: 'tick', elapsedMs: Date.now() - startedAt });
+  }, 1000);
+  try {
+    await proc.completed;
+  } finally {
+    clearInterval(ticker);
+  }
 
   const after = snapshot(outDir);
   const newFiles = after.filter((f) => !before.includes(f));
@@ -110,6 +133,7 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
     if (parsed) for (const i of parsed.issues) issues.push(i);
   }
 
+  opts.onProgress?.({ type: 'done', durationMs: Date.now() - startedAt, files: newFiles });
   return {
     ok: newFiles.length > 0 && issues.every((i) => !i.code.startsWith('YAAO_PLAN_TASK_ID_INVALID')),
     scope,

@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import type { Command } from 'commander';
 import type { CommandModule } from '../command.js';
 import type { CliContext } from '../context.js';
-import { runPlanner } from '../../planner/run.js';
+import { runPlanner, type ProgressEvent } from '../../planner/run.js';
 import type { PlanScope } from '../../planner/scope.js';
 import { ClaudeCodeBackend } from '../../agents/claude-code.js';
 import { CursorBackend } from '../../agents/cursor.js';
@@ -41,6 +41,9 @@ export const planCommand: CommandModule = {
         const cwd = resolve(ctx.cwd);
         const agentName = flags.agent ?? ctx.config.defaults.agent;
         const backend = backendFor(agentName);
+        const isTty = process.stderr.isTTY === true;
+        const isDryRun = Boolean(flags.dryRun);
+        const reporter = !ctx.json && !isDryRun ? makeProgressReporter(isTty) : undefined;
         const result = await runPlanner({
           cwd,
           config: ctx.config,
@@ -50,6 +53,7 @@ export const planCommand: CommandModule = {
           ...(flags.out !== undefined ? { outDir: flags.out } : {}),
           ...(flags.dryRun !== undefined ? { dryRun: flags.dryRun } : {}),
           backend,
+          ...(reporter !== undefined ? { onProgress: reporter } : {}),
         });
         if (ctx.json) {
           process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -87,4 +91,69 @@ export function backendFor(agent: AgentName): AgentBackend {
     case 'api':
       throw new Error('the `api` backend is not supported by yaao plan in MVP; use a CLI agent');
   }
+}
+
+/**
+ * Streams agent progress to stderr so the user knows yaao isn't hung. On a TTY we
+ * use a carriage-return-only ticker so the elapsed-time line stays on a single row;
+ * piped output gets one line per tick. Tool-use events get a short caption; text
+ * chunks from the agent (e.g. its reasoning) are forwarded as-is.
+ */
+function makeProgressReporter(isTty: boolean): (ev: ProgressEvent) => void {
+  let lastTickLen = 0;
+  const clearTick = () => {
+    if (!isTty || lastTickLen === 0) return;
+    process.stderr.write(`\r${' '.repeat(lastTickLen)}\r`);
+    lastTickLen = 0;
+  };
+  const write = (s: string) => {
+    clearTick();
+    process.stderr.write(s);
+  };
+  return (ev) => {
+    if (ev.type === 'spawn') {
+      write(`yaao plan: spawning ${ev.agent}...\n`);
+      return;
+    }
+    if (ev.type === 'tick') {
+      const s = Math.floor(ev.elapsedMs / 1000);
+      const m = Math.floor(s / 60);
+      const stamp = m > 0 ? `${m}m${(s % 60).toString().padStart(2, '0')}s` : `${s}s`;
+      const line = `\rworking... (${stamp})`;
+      if (isTty) {
+        process.stderr.write(line);
+        lastTickLen = line.length - 1; // ignore the leading \r in clear width
+      } else if (s > 0 && s % 5 === 0) {
+        // Non-TTY: emit one line every 5s so users tailing logs see something.
+        process.stderr.write(`${line.trim()}\n`);
+      }
+      return;
+    }
+    if (ev.type === 'agent') {
+      const e = ev.event;
+      if (e.type === 'tool-use') {
+        try {
+          const parsed = JSON.parse(e.data) as { name?: string };
+          write(`  → tool: ${parsed.name ?? '?'}\n`);
+        } catch {
+          write(`  → tool: (raw)\n`);
+        }
+      } else if (e.type === 'thinking') {
+        write(`  · thinking (${e.data.length} chars)\n`);
+      } else if (e.type === 'stdout') {
+        // Forward small text chunks; truncate long lines so the user still gets
+        // a sense of progress without flooding the terminal.
+        const trimmed = e.data.length > 200 ? `${e.data.slice(0, 200)}…` : e.data;
+        write(trimmed.endsWith('\n') ? trimmed : `${trimmed}\n`);
+      }
+      return;
+    }
+    if (ev.type === 'done') {
+      clearTick();
+      const s = Math.floor(ev.durationMs / 1000);
+      const m = Math.floor(s / 60);
+      const stamp = m > 0 ? `${m}m${(s % 60).toString().padStart(2, '0')}s` : `${s}s`;
+      write(`yaao plan: done in ${stamp} (${ev.files.length} file(s))\n`);
+    }
+  };
 }
