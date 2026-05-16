@@ -94,4 +94,53 @@ describe('assignAgent', () => {
     expect(r.agent).toBe(config.defaults.agent);
     expect(r.reason).toMatch(/disabled in config/);
   });
+
+  describe('per-agent default-model', () => {
+    it('falls back to agents.<name>.default-model when the task has no model', () => {
+      const config = {
+        ...DEFAULT_CONFIG,
+        agents: {
+          ...DEFAULT_CONFIG.agents,
+          'claude-code': { ...DEFAULT_CONFIG.agents['claude-code'], 'default-model': 'sonnet' },
+        },
+      };
+      const r = assignAgent(t({ id: 'a', title: 'A', agent: 'claude-code' }), { config });
+      expect(r.agent).toBe('claude-code');
+      expect(r.model).toBe('sonnet');
+    });
+
+    it('still respects an explicit task model over the per-agent default', () => {
+      const config = {
+        ...DEFAULT_CONFIG,
+        agents: {
+          ...DEFAULT_CONFIG.agents,
+          'claude-code': { ...DEFAULT_CONFIG.agents['claude-code'], 'default-model': 'sonnet' },
+        },
+      };
+      const r = assignAgent(t({ id: 'a', title: 'A', agent: 'claude-code', model: 'haiku' }), {
+        config,
+      });
+      expect(r.model).toBe('haiku');
+    });
+
+    it('falls back to defaults.model when no per-agent default is set', () => {
+      const r = assignAgent(t({ id: 'a', title: 'A', agent: 'claude-code' }), {
+        config: DEFAULT_CONFIG,
+      });
+      expect(r.model).toBe(DEFAULT_CONFIG.defaults.model);
+    });
+
+    it('uses the per-agent default when a rule picks the agent but no rule-model', () => {
+      const config = {
+        ...DEFAULT_CONFIG,
+        agents: {
+          ...DEFAULT_CONFIG.agents,
+          cursor: { ...DEFAULT_CONFIG.agents.cursor, 'default-model': 'cursor-fast' },
+        },
+      };
+      const r = assignAgent(t({ id: 'login-ui', title: 'Login UI' }), { config });
+      expect(r.agent).toBe('cursor');
+      expect(r.model).toBe('cursor-fast');
+    });
+  });
 });

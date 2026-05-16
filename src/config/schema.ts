@@ -40,20 +40,43 @@ export const ConfigSchema = z
       .default({}),
     agents: z
       .object({
+        // Per-agent `default-model` overrides `defaults.model` when this agent
+        // is the one assigned to the task. Lets you say "use sonnet on
+        // claude-code but opus on the API backend" without per-task model
+        // declarations in the plan.
         'claude-code': z
-          .object({ enabled: z.boolean().default(true), bin: z.string().default('claude') })
+          .object({
+            enabled: z.boolean().default(true),
+            bin: z.string().default('claude'),
+            'default-model': z.string().optional(),
+          })
           .default({}),
         cursor: z
-          .object({ enabled: z.boolean().default(true), bin: z.string().default('cursor-agent') })
+          .object({
+            enabled: z.boolean().default(true),
+            bin: z.string().default('cursor-agent'),
+            'default-model': z.string().optional(),
+          })
           .default({}),
         copilot: z
-          .object({ enabled: z.boolean().default(true), bin: z.string().default('gh') })
+          .object({
+            enabled: z.boolean().default(true),
+            bin: z.string().default('gh'),
+            'default-model': z.string().optional(),
+          })
           .default({}),
         codex: z
-          .object({ enabled: z.boolean().default(true), bin: z.string().default('codex') })
+          .object({
+            enabled: z.boolean().default(true),
+            bin: z.string().default('codex'),
+            'default-model': z.string().optional(),
+          })
           .default({}),
         api: z
-          .object({ providers: z.record(ApiProviderSchema).default({}) })
+          .object({
+            providers: z.record(ApiProviderSchema).default({}),
+            'default-model': z.string().optional(),
+          })
           .default({}),
       })
       .default({}),

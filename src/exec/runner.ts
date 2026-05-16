@@ -8,7 +8,7 @@ import { createRunBus, type RunBus, type RunEvent } from './bus.js';
 import { WorktreeManager } from '../git/worktree-manager.js';
 import { planBranches } from '../git/branch-graph.js';
 import { git as defaultGit, type Git } from '../git/git.js';
-import { openJournal, hashPlan, loadRun, type RunJournal } from '../git/journal.js';
+import { openJournal, hashPlan, loadRun, type RunJournal, type RunSummary } from '../git/journal.js';
 import type { PriorFailureContext } from './lifecycle.js';
 import type { AgentBackend, McpServerConfig } from '../agents/backend.js';
 import { YaaoError, AgentUnavailableError } from '../log/errors.js';
@@ -162,7 +162,7 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
   // is fully wired before we synthesize events into it.
   const priorFailures = new Map<string, PriorFailureContext>();
   if (opts.resume) {
-    let priorSummary: import('../git/journal.js').RunSummary | undefined;
+    let priorSummary: RunSummary | undefined;
     try {
       priorSummary = (await loadRun(opts.runId, journalDir)).summary;
     } catch {

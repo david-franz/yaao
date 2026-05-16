@@ -108,6 +108,9 @@
                 "bin": {
                   "type": "string",
                   "default": "claude"
+                },
+                "default-model": {
+                  "type": "string"
                 }
               },
               "additionalProperties": false,
@@ -123,6 +126,9 @@
                 "bin": {
                   "type": "string",
                   "default": "cursor-agent"
+                },
+                "default-model": {
+                  "type": "string"
                 }
               },
               "additionalProperties": false,
@@ -138,6 +144,9 @@
                 "bin": {
                   "type": "string",
                   "default": "gh"
+                },
+                "default-model": {
+                  "type": "string"
                 }
               },
               "additionalProperties": false,
@@ -153,6 +162,9 @@
                 "bin": {
                   "type": "string",
                   "default": "codex"
+                },
+                "default-model": {
+                  "type": "string"
                 }
               },
               "additionalProperties": false,
@@ -180,6 +192,9 @@
                     "additionalProperties": false
                   },
                   "default": {}
+                },
+                "default-model": {
+                  "type": "string"
                 }
               },
               "additionalProperties": false,

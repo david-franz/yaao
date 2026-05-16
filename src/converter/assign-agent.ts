@@ -44,11 +44,14 @@ export function assignAgent(task: ParsedTask, opts: AssignOptions): AssignmentRe
   if (task.agent) {
     return finalizeApiFallback(
       finalizeEnabledFallback(
-        {
-          agent: task.agent as AgentName,
-          ...(task.model !== undefined ? { model: task.model } : {}),
-          reason: 'task suggested agent',
-        },
+        withResolvedModel(
+          {
+            agent: task.agent as AgentName,
+            ...(task.model !== undefined ? { model: task.model } : {}),
+            reason: 'task suggested agent',
+          },
+          opts,
+        ),
         opts,
       ),
       opts,
@@ -64,22 +67,49 @@ export function assignAgent(task: ParsedTask, opts: AssignOptions): AssignmentRe
       // rule, or eventually the project default.
       if (!isAgentEnabled(rule.agent, opts.config)) continue;
       return finalizeApiFallback(
-        {
-          agent: rule.agent,
-          ...(rule.model !== undefined ? { model: rule.model } : {}),
-          reason: `matched rule ${describeRule(rule.match)}`,
-        },
+        withResolvedModel(
+          {
+            agent: rule.agent,
+            ...(rule.model !== undefined ? { model: rule.model } : {}),
+            reason: `matched rule ${describeRule(rule.match)}`,
+          },
+          opts,
+        ),
         opts,
       );
     }
   }
 
-  // 3) Project default.
-  return {
-    agent: opts.config.defaults.agent,
-    model: opts.config.defaults.model,
-    reason: 'project default',
-  };
+  // 3) Project default. defaults.model is the final fallback when no per-agent
+  // default-model is set for the chosen agent.
+  return withResolvedModel(
+    {
+      agent: opts.config.defaults.agent,
+      model: opts.config.defaults.model,
+      reason: 'project default',
+    },
+    opts,
+  );
+}
+
+/**
+ * Resolution order for a task's model when one isn't explicitly stated:
+ *
+ *   task.model (caller-provided) →
+ *   agents.<assigned>.default-model →
+ *   defaults.model
+ *
+ * Lets a project say "claude-code runs sonnet by default" without scattering
+ * the choice across every task in the plan.
+ */
+function withResolvedModel(r: AssignmentResult, opts: AssignOptions): AssignmentResult {
+  if (r.model !== undefined) return r;
+  const agentEntry = (
+    opts.config.agents as unknown as Record<string, { 'default-model'?: string } | undefined>
+  )[r.agent];
+  const perAgent = agentEntry?.['default-model'];
+  if (perAgent !== undefined) return { ...r, model: perAgent };
+  return { ...r, model: opts.config.defaults.model };
 }
 
 /**
