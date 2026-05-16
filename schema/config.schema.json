@@ -75,6 +75,14 @@
               ],
               "default": "agent"
             },
+            "history": {
+              "type": "string",
+              "enum": [
+                "merge",
+                "rebase"
+              ],
+              "default": "merge"
+            },
             "conflict-resolver": {
               "type": "object",
               "properties": {

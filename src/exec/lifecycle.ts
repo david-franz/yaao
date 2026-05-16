@@ -443,7 +443,10 @@ export class Lifecycle {
       const result = await this.opts.git.mergeRefs(
         target,
         sourceBranch,
-        { message: `Merge ${sourceBranch} into ${target} (task ${task.id})` },
+        {
+          message: `Merge ${sourceBranch} into ${target} (task ${task.id})`,
+          mode: this.opts.plan.config.merge.history,
+        },
         rootDir,
       );
       if (!result.ok) {

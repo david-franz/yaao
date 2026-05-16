@@ -75,17 +75,24 @@ export interface Git {
   ): Promise<MergeResult>;
   mergeAbort(cwd?: string): Promise<void>;
   /**
-   * Merge `source` into `target` without touching any working tree. Computes
-   * the merged tree via `git merge-tree --write-tree`, creates a merge commit
-   * via `git commit-tree`, and fast-forwards the target ref via `update-ref`.
-   * Works even when the target branch is currently checked out at the user's
-   * root repo or in another worktree. Returns the new commit SHA on success;
-   * on conflict the result `ok` is false and `conflicts` lists the paths.
+   * Merge `source` into `target` without touching the root working tree.
+   *
+   * - `mode: 'merge'` (default): computes the merged tree via
+   *   `git merge-tree --write-tree`, creates a merge commit via
+   *   `git commit-tree`, fast-forwards the target ref via `update-ref`.
+   *   No working tree is touched.
+   * - `mode: 'rebase'`: replays source's commits onto target via a detached
+   *   transient worktree, then updates the target ref to the rebased tip.
+   *   Linear history; on conflict the rebase is aborted and `ok: false` is
+   *   returned with the conflicting paths.
+   *
+   * Either mode works when the target branch is checked out at the user's
+   * root repo or in another worktree.
    */
   mergeRefs(
     target: string,
     source: string,
-    opts: { message: string },
+    opts: { message: string; mode?: 'merge' | 'rebase' },
     cwd?: string,
   ): Promise<MergeResult>;
   diff(opts?: DiffOpts, cwd?: string): Promise<string>;
@@ -212,7 +219,8 @@ export const git: Git = {
     await runOk(['merge', '--abort'], cwd);
   },
   async mergeRefs(target, source, opts, cwd) {
-    // 1) Resolve tip commits of both sides.
+    const mode = opts.mode ?? 'merge';
+    // Resolve tip commits of both sides for either mode.
     const targetSha = (await run(['rev-parse', '--verify', target], cwd)).stdout.trim();
     const sourceSha = (await run(['rev-parse', '--verify', source], cwd)).stdout.trim();
     if (!targetSha || !sourceSha) {
@@ -224,39 +232,84 @@ export const git: Git = {
         stderr: '',
       });
     }
-    // 2) Compute the merge tree. Modern git (2.38+) prints the resulting tree
-    //    SHA on stdout for a clean merge, exits 1 with conflict info otherwise.
-    const mt = await run(['merge-tree', '--write-tree', '--', target, source], cwd);
-    if (mt.exitCode !== 0) {
-      // Parse conflict markers from stderr/stdout. merge-tree's stdout on
-      // conflict starts with the (unfinished) tree SHA followed by conflicted
-      // path lines; the simplest safe extraction is to scan stdout for lines
-      // that look like file paths.
-      const conflicts = (mt.stdout + '\n' + mt.stderr)
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter((l) => l && !l.match(/^[0-9a-f]{40,}$/) && !l.startsWith('CONFLICT') && l.includes('/'));
-      return { ok: false, conflicts };
+    if (mode === 'merge') {
+      // 1) Compute the merge tree. Modern git (2.38+) prints the resulting
+      //    tree SHA on stdout for a clean merge, exits 1 on conflict.
+      const mt = await run(['merge-tree', '--write-tree', '--', target, source], cwd);
+      if (mt.exitCode !== 0) {
+        const conflicts = (mt.stdout + '\n' + mt.stderr)
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => l && !l.match(/^[0-9a-f]{40,}$/) && !l.startsWith('CONFLICT') && l.includes('/'));
+        return { ok: false, conflicts };
+      }
+      const treeSha = mt.stdout.trim().split(/\r?\n/)[0] ?? '';
+      // 2) Build a merge commit pointing at both parents.
+      const ct = await run(
+        ['commit-tree', treeSha, '-p', targetSha, '-p', sourceSha, '-m', opts.message],
+        cwd,
+      );
+      if (ct.exitCode !== 0) {
+        throw new GitError({
+          message: `mergeRefs: commit-tree failed: ${ct.stderr.trim() || ct.stdout.trim()}`,
+          cmd: ['git', 'commit-tree'],
+          exitCode: ct.exitCode,
+          stdout: ct.stdout,
+          stderr: ct.stderr,
+        });
+      }
+      const mergeCommit = ct.stdout.trim();
+      // 3) Advance the target ref atomically (CAS via the old SHA).
+      await runOk(['update-ref', `refs/heads/${target}`, mergeCommit, targetSha], cwd);
+      return { ok: true, conflicts: [], mergeCommit };
     }
-    const treeSha = mt.stdout.trim().split(/\r?\n/)[0] ?? '';
-    // 3) Build a merge commit pointing at both parents.
-    const ct = await run(
-      ['commit-tree', treeSha, '-p', targetSha, '-p', sourceSha, '-m', opts.message],
-      cwd,
-    );
-    if (ct.exitCode !== 0) {
-      throw new GitError({
-        message: `mergeRefs: commit-tree failed: ${ct.stderr.trim() || ct.stdout.trim()}`,
-        cmd: ['git', 'commit-tree'],
-        exitCode: ct.exitCode,
-        stdout: ct.stdout,
-        stderr: ct.stderr,
-      });
+    // mode === 'rebase'
+    const baseRes = await run(['merge-base', target, source], cwd);
+    if (baseRes.exitCode !== 0) {
+      return { ok: false, conflicts: [] };
     }
-    const mergeCommit = ct.stdout.trim();
-    // 4) Advance the target ref to the new commit.
-    await runOk(['update-ref', `refs/heads/${target}`, mergeCommit, targetSha], cwd);
-    return { ok: true, conflicts: [], mergeCommit };
+    const mergeBase = baseRes.stdout.trim();
+    // Already up to date: source's tip is ancestor of target. No-op.
+    if (mergeBase === sourceSha) return { ok: true, conflicts: [], mergeCommit: targetSha };
+    // Detached transient worktree under .yaao so `yaao clean` reclaims it
+    // if anything below leaves residue.
+    const safe = `${target}_${source}`.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const tmpPath = `${cwd ?? '.'}/.yaao/runs/_rebase-${safe}-${Date.now().toString(36)}`;
+    try {
+      const addRes = await run(['worktree', 'add', '--detach', tmpPath, source], cwd);
+      if (addRes.exitCode !== 0) {
+        return { ok: false, conflicts: [] };
+      }
+    } catch {
+      return { ok: false, conflicts: [] };
+    }
+    try {
+      const reb = await run(['rebase', '--onto', target, mergeBase], tmpPath);
+      if (reb.exitCode !== 0) {
+        // Capture conflicted paths before aborting.
+        const unmerged = await run(['diff', '--name-only', '--diff-filter=U'], tmpPath);
+        const conflicts = unmerged.stdout
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        try {
+          await run(['rebase', '--abort'], tmpPath);
+        } catch {
+          // ignore — already failing
+        }
+        return { ok: false, conflicts };
+      }
+      const newHead = (await run(['rev-parse', 'HEAD'], tmpPath)).stdout.trim();
+      // Atomic CAS update to the target branch.
+      await runOk(['update-ref', `refs/heads/${target}`, newHead, targetSha], cwd);
+      return { ok: true, conflicts: [], mergeCommit: newHead };
+    } finally {
+      try {
+        await run(['worktree', 'remove', '--force', tmpPath], cwd);
+      } catch {
+        // ignore — best effort cleanup
+      }
+    }
   },
   async diff(opts, cwd) {
     const args = ['diff'];

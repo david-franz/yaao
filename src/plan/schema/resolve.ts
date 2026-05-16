@@ -20,6 +20,7 @@ export interface ResolvedPlanConfig {
   merge: {
     strategy: 'auto' | 'pr' | 'manual';
     'on-conflict': 'manual' | 'agent';
+    history: 'merge' | 'rebase';
   };
   context: {
     'per-dep-budget'?: number;
@@ -71,6 +72,7 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
     merge: {
       strategy: planMerge.strategy ?? cfg.merge.strategy,
       'on-conflict': planMerge['on-conflict'] ?? cfg.merge['on-conflict'],
+      history: planMerge.history ?? cfg.merge.history,
     },
     context: {
       ...(planContext['per-dep-budget'] !== undefined

@@ -126,6 +126,11 @@ export const PlanConfigSchema = z
       .object({
         strategy: z.enum(['auto', 'pr', 'manual']).optional(),
         'on-conflict': z.enum(['manual', 'agent']).optional(),
+        /** Which git verb is used for the outgoing merge (task branch into
+         * its target / base-branch). `merge` produces a merge commit;
+         * `rebase` replays the task's commits on top of the target for a
+         * linear history. Default `merge`. */
+        history: z.enum(['merge', 'rebase']).optional(),
       })
       .strict()
       .optional(),

@@ -33,6 +33,10 @@ export const ConfigSchema = z
         // by the executing agent instead of failing the task. Set to 'manual'
         // to get the historical behaviour of aborting + failing the task.
         'on-conflict': z.enum(['manual', 'agent']).default('agent'),
+        // Which git verb to use when landing a task branch on its target
+        // (auto-merge to base-branch, or task.merge.into). `merge` produces a
+        // merge commit per task; `rebase` replays commits for linear history.
+        history: z.enum(['merge', 'rebase']).default('merge'),
         'conflict-resolver': z
           .object({ agent: AgentNameSchema, model: z.string() })
           .optional(),

@@ -55,6 +55,13 @@
                     "manual",
                     "agent"
                   ]
+                },
+                "history": {
+                  "type": "string",
+                  "enum": [
+                    "merge",
+                    "rebase"
+                  ]
                 }
               },
               "additionalProperties": false
