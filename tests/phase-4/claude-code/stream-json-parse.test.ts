@@ -49,6 +49,9 @@ describe('buildClaudeArgs', () => {
     expect(args).toContain('stream-json');
     // `claude` requires --verbose when --print + --output-format stream-json are used.
     expect(args).toContain('--verbose');
+    // Non-interactive runs can't accept permission prompts, so we auto-accept edits.
+    expect(args).toContain('--permission-mode');
+    expect(args).toContain('acceptEdits');
     expect(args).toContain('--model');
     expect(args).toContain('claude-sonnet-4-6');
     expect(args).toContain('--mcp-config');

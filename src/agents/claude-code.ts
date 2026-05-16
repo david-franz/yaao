@@ -23,7 +23,19 @@ export function resolveClaudeModel(model: string | undefined): string | undefine
 export function buildClaudeArgs(opts: SpawnOptions, mcpConfigPath?: string): string[] {
   // `--verbose` is required by the current `claude` CLI when combining
   // `--print` with `--output-format stream-json`.
-  const args = ['--print', '--output-format', 'stream-json', '--verbose'];
+  // `--permission-mode acceptEdits` is needed because non-interactive `--print`
+  // can't prompt the user; without it the agent's file-write tools fail and yaao
+  // ends up with "I need permission to write to ...". The agent runs inside a
+  // worktree (or `.yaao/plans/`) that yaao owns, so auto-accepting edits is the
+  // right contract.
+  const args = [
+    '--print',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--permission-mode',
+    'acceptEdits',
+  ];
   const model = resolveClaudeModel(opts.model);
   if (model) {
     args.push('--model', model);

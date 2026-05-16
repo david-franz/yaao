@@ -90,6 +90,9 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
     });
   }
 
+  // Ensure the output directory exists so the agent doesn't have to mkdir via Bash.
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(outDir, { recursive: true });
   // Snapshot the out directory so we can detect what the agent wrote.
   const before = snapshot(outDir);
 
