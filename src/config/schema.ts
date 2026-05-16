@@ -28,7 +28,11 @@ export const ConfigSchema = z
     merge: z
       .object({
         strategy: z.enum(['auto', 'pr', 'manual']).default('auto'),
-        'on-conflict': z.enum(['manual', 'agent']).default('manual'),
+        // Default to 'agent': dep-branch merge conflicts (the common shape when
+        // parallel sibling tasks touch overlapping files) get resolved inline
+        // by the executing agent instead of failing the task. Set to 'manual'
+        // to get the historical behaviour of aborting + failing the task.
+        'on-conflict': z.enum(['manual', 'agent']).default('agent'),
         'conflict-resolver': z
           .object({ agent: AgentNameSchema, model: z.string() })
           .optional(),

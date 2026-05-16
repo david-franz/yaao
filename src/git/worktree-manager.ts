@@ -11,6 +11,19 @@ export interface WorktreeRequest {
   parentBranches: string[];
   rootDir: string;
   worktreeRoot: string;
+  /**
+   * How to handle a conflict produced while merging a parent dep branch.
+   *
+   * - `abort` (default): aborts the merge, tears down the half-created
+   *   worktree, and throws `WorktreeMergeError`. Matches the historical
+   *   behaviour — the task fails before the agent ever sees the worktree.
+   * - `leave-for-agent`: leaves the conflict markers in place and returns the
+   *   worktree with `unresolvedConflicts` populated. The lifecycle prepends a
+   *   conflict-resolution preamble to the agent prompt so the agent resolves
+   *   the merge as part of its task. Subsequent parents are NOT merged after
+   *   the first conflict — the agent finishes the current merge first.
+   */
+  onConflict?: 'abort' | 'leave-for-agent';
 }
 
 export interface Worktree {
@@ -18,6 +31,12 @@ export interface Worktree {
   branch: string;
   path: string;
   baseCommit: string;
+  /** Files with conflict markers left in place by `onConflict: leave-for-agent`. */
+  unresolvedConflicts?: string[];
+  /** The parent branch whose merge produced the conflicts above. */
+  conflictingParent?: string;
+  /** Parents that weren't merged because we stopped at the first conflict. */
+  deferredParents?: string[];
 }
 
 export interface WorktreeStamp {
@@ -66,33 +85,44 @@ export class WorktreeManager {
     await this.git.createBranch(req.branch, req.baseBranch, req.rootDir);
     await this.git.worktreeAdd(path, req.branch, req.rootDir);
 
-    // Merge any additional parents in order.
-    for (const parent of req.parentBranches) {
+    // Merge any additional parents in order. On conflict, behaviour is
+    // governed by `req.onConflict` (default abort).
+    let unresolvedConflicts: string[] | undefined;
+    let conflictingParent: string | undefined;
+    let deferredParents: string[] | undefined;
+    for (let i = 0; i < req.parentBranches.length; i++) {
+      const parent = req.parentBranches[i];
+      if (parent === undefined) continue;
       // eslint-disable-next-line no-await-in-loop -- parents merge sequentially
       const result = await this.git.merge(parent, { ff: false }, path);
-      if (!result.ok) {
-        // Abort and tear down so we don't leave half-merged state.
-        try {
-          await this.git.mergeAbort(path);
-        } catch {
-          // ignore — we're already failing
-        }
-        try {
-          await this.git.worktreeRemove(path, { force: true }, req.rootDir);
-        } catch {
-          // ignore
-        }
-        try {
-          await this.git.deleteBranch(req.branch, { force: true }, req.rootDir);
-        } catch {
-          // ignore
-        }
-        throw new WorktreeMergeError({
-          message: `merge of '${parent}' into '${req.branch}' produced conflicts: ${result.conflicts.join(', ')}`,
-          conflicts: result.conflicts,
-          path,
-        });
+      if (result.ok) continue;
+      if (req.onConflict === 'leave-for-agent') {
+        unresolvedConflicts = result.conflicts;
+        conflictingParent = parent;
+        deferredParents = req.parentBranches.slice(i + 1);
+        break;
       }
+      // Default: abort + tear down so we don't leave half-merged state.
+      try {
+        await this.git.mergeAbort(path);
+      } catch {
+        // ignore — we're already failing
+      }
+      try {
+        await this.git.worktreeRemove(path, { force: true }, req.rootDir);
+      } catch {
+        // ignore
+      }
+      try {
+        await this.git.deleteBranch(req.branch, { force: true }, req.rootDir);
+      } catch {
+        // ignore
+      }
+      throw new WorktreeMergeError({
+        message: `merge of '${parent}' into '${req.branch}' produced conflicts: ${result.conflicts.join(', ')}`,
+        conflicts: result.conflicts,
+        path,
+      });
     }
 
     // Stamp the worktree so we can identify orphans later.
@@ -106,7 +136,15 @@ export class WorktreeManager {
     };
     writeFileSync(join(yaaoDir, '.task'), JSON.stringify(stamp, null, 2));
 
-    const wt: Worktree = { taskId: req.taskId, branch: req.branch, path, baseCommit };
+    const wt: Worktree = {
+      taskId: req.taskId,
+      branch: req.branch,
+      path,
+      baseCommit,
+      ...(unresolvedConflicts !== undefined ? { unresolvedConflicts } : {}),
+      ...(conflictingParent !== undefined ? { conflictingParent } : {}),
+      ...(deferredParents !== undefined && deferredParents.length > 0 ? { deferredParents } : {}),
+    };
     this.known.set(req.taskId, wt);
     return wt;
   }

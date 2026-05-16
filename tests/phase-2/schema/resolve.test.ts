@@ -13,7 +13,9 @@ describe('resolvePlan', () => {
     expect(r.config['base-branch']).toBe('main');
     expect(r.config['max-parallel']).toBe(4);
     expect(r.config.merge.strategy).toBe('auto');
-    expect(r.config.merge['on-conflict']).toBe('manual');
+    // Default flipped to 'agent' so parallel-sibling merge conflicts get
+    // resolved inline instead of failing the task.
+    expect(r.config.merge['on-conflict']).toBe('agent');
   });
 
   it('synthesizes branch and worktree from plan name + task id', () => {

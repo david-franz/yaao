@@ -73,7 +73,7 @@
                 "manual",
                 "agent"
               ],
-              "default": "manual"
+              "default": "agent"
             },
             "conflict-resolver": {
               "type": "object",

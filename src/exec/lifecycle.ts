@@ -120,6 +120,11 @@ export class Lifecycle {
       // idempotently and the agent gets the failure context in its prompt.
       const reuseExisting = attempt > 1 || prevFailure !== undefined;
       const existing = reuseExisting ? await this.opts.worktreeManager.get(task.id) : undefined;
+      // When the plan's on-conflict mode is `agent`, dep-branch merge conflicts
+      // are left in place for the agent to resolve rather than aborting the
+      // task — see WorktreeRequest.onConflict.
+      const onConflict =
+        this.opts.plan.config.merge['on-conflict'] === 'agent' ? 'leave-for-agent' : 'abort';
       const wt =
         existing ??
         (await this.opts.worktreeManager.create({
@@ -130,6 +135,7 @@ export class Lifecycle {
           parentBranches: branchEntry.parentBranches,
           rootDir: this.opts.rootDir,
           worktreeRoot: this.opts.plan.config['worktree-root'],
+          onConflict,
         }));
 
       // 1.5) Pre-task setup: run any shell commands declared in `task.setup`
@@ -155,7 +161,10 @@ export class Lifecycle {
         task,
       });
       const priorFailurePrefix = prevFailure ? buildPriorFailurePrefix(prevFailure) : '';
-      const prompt = `${priorFailurePrefix}${prefix}${promptBody}`;
+      const conflictPrefix = wt.unresolvedConflicts?.length
+        ? buildConflictResolutionPrefix(wt.unresolvedConflicts, wt.conflictingParent, wt.deferredParents)
+        : '';
+      const prompt = `${priorFailurePrefix}${conflictPrefix}${prefix}${promptBody}`;
       const systemPrompt = computeSystemPrompt(task, this.opts.ctxSysDirective);
 
       // 3) Spawn agent
@@ -568,6 +577,49 @@ function buildPriorFailurePrefix(failure: PriorFailureContext): string {
   }
   lines.push('');
   lines.push('The worktree is preserved from your previous attempt — fix the issue and let the validation command pass.');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  return lines.join('\n');
+}
+
+/**
+ * Prompt prefix used when a task's worktree was set up with `onConflict:
+ * leave-for-agent`. The dep-branch merge produced conflicts; git is mid-merge
+ * with markers in place. The agent has to resolve them and commit before
+ * (or as part of) doing the rest of the task. We list the conflicting files
+ * explicitly so the agent can target them, and call out any deferred parents
+ * so the agent knows the picture is incomplete.
+ */
+function buildConflictResolutionPrefix(
+  conflicts: string[],
+  conflictingParent: string | undefined,
+  deferredParents: string[] | undefined,
+): string {
+  const lines: string[] = [];
+  lines.push('## Merge conflicts to resolve before doing the task');
+  lines.push('');
+  if (conflictingParent) {
+    lines.push(`The worktree's setup tried to merge \`${conflictingParent}\` into your task branch and git produced conflicts. The merge is in progress — your first job is to finish it.`);
+  } else {
+    lines.push('Your worktree has unresolved merge conflicts left in place.');
+  }
+  lines.push('');
+  lines.push('Files with conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`):');
+  for (const f of conflicts) lines.push(`- ${f}`);
+  lines.push('');
+  lines.push('Steps:');
+  lines.push('1. Read both sides of each conflict, decide which content (or merged content) is correct, and remove the markers.');
+  lines.push("   - For lockfiles like `pnpm-lock.yaml` it's almost always safer to delete them and regenerate via the appropriate install command (`pnpm install`, `npm install`).");
+  lines.push('   - For source files, prefer the version that matches the rest of the codebase; ask `git log -p <file>` for context if needed.');
+  lines.push('2. Stage and commit the resolution: `git add -A && git commit -m "Resolve merge conflicts"`.');
+  lines.push('3. Then proceed with the task described below.');
+  if (deferredParents?.length) {
+    lines.push('');
+    lines.push(
+      `Note: parent branches ${deferredParents.map((p) => `\`${p}\``).join(', ')} were NOT merged because yaao stopped at the first conflict. Once you've resolved the current merge, you can \`git merge --no-ff\` them in if your task needs their changes.`,
+    );
+  }
   lines.push('');
   lines.push('---');
   lines.push('');
