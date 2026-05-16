@@ -29,12 +29,15 @@ export function buildClaudeArgs(opts: SpawnOptions, mcpConfigPath?: string): str
   if (mcpConfigPath) {
     args.push('--mcp-config', mcpConfigPath);
   }
-  for (const skill of opts.skills ?? []) {
-    args.push('--skill', skill);
-  }
   if (opts.systemPrompt) {
     args.push('--append-system-prompt', opts.systemPrompt);
   }
+  // Skills are not passed as CLI flags — the current `claude` binary doesn't have
+  // `--skill`. Skill content reaches the agent via:
+  //   1. the yaao MCP server (Phase 12) → `yaao_skill_<name>` tool calls; and
+  //   2. the `.claude/CLAUDE.md` managed block written by the Phase 8 emitter.
+  // The `opts.skills` list is kept on `SpawnOptions` for the API backend, which
+  // builds the request body directly.
   return args;
 }
 

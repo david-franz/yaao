@@ -23,7 +23,9 @@ export const skillsCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     const skills = program
       .command('skills')
-      .description('Install / sync / validate / list yaao skill artifacts per agent');
+      .description(
+        'Skill artifacts per agent (subcommands: install / sync / list / validate)',
+      );
 
     skills
       .command('install')

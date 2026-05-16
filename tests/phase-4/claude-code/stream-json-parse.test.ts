@@ -33,7 +33,7 @@ describe('parseClaudeStreamJsonLine', () => {
 });
 
 describe('buildClaudeArgs', () => {
-  it('produces --print --output-format stream-json with model + skills', () => {
+  it('produces --print --output-format stream-json with model + mcp-config + system prompt', () => {
     const args = buildClaudeArgs(
       {
         cwd: '/x',
@@ -51,10 +51,14 @@ describe('buildClaudeArgs', () => {
     expect(args).toContain('claude-sonnet-4-6');
     expect(args).toContain('--mcp-config');
     expect(args).toContain('/tmp/mcp.json');
-    expect(args).toContain('--skill');
-    expect(args).toContain('yaao-implementer');
     expect(args).toContain('--append-system-prompt');
     expect(args).toContain('be brief');
+  });
+
+  it('does not pass --skill (the real claude CLI does not have that flag)', () => {
+    const args = buildClaudeArgs({ cwd: '/x', prompt: 'p', skills: ['a', 'b', 'c'] });
+    expect(args).not.toContain('--skill');
+    expect(args).not.toContain('a');
   });
 });
 

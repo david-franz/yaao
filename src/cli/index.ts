@@ -63,6 +63,7 @@ export async function yaao(opts: YaaoRunOptions = {}): Promise<number> {
     moduleByName.set(mod.name, mod);
     mod.register(program, baseCtx);
   }
+  augmentHelp(program);
 
   program.hook('preAction', async (thisCommand, actionCommand) => {
     const flags = thisCommand.opts() as GlobalFlags;
@@ -102,4 +103,44 @@ function isCommanderExitError(err: unknown): err is { exitCode: number; code: st
     typeof (err as { code: unknown }).code === 'string' &&
     String((err as { code: unknown }).code).startsWith('commander.')
   );
+}
+
+/**
+ * Walk every subcommand and append a "Global options" footer to its help output so the
+ * inherited `--cwd / --json / --verbose / --quiet` flags are discoverable everywhere.
+ * For parent commands that only contain subcommands (no own action), default to showing
+ * help instead of doing nothing.
+ */
+function augmentHelp(program: Command): void {
+  const FOOTER = [
+    '',
+    'Global options (inherited from `yaao`):',
+    '  --cwd <path>   run as if invoked from <path>',
+    '  --json         machine-readable output (line-delimited JSON)',
+    '  -v, --verbose  verbose logs (debug level)',
+    '  -q, --quiet    quiet logs (warn level only)',
+  ].join('\n');
+
+  const visit = (cmd: Command): void => {
+    cmd.addHelpText('after', FOOTER);
+    const subs = cmd.commands as Command[];
+    if (subs.length > 0) {
+      // commander auto-adds the `help [command]` placeholder; only check real subcommands.
+      const realSubs = subs.filter((c) => c.name() !== 'help');
+      const cmdHasAction =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        typeof (cmd as unknown as { _actionHandler?: unknown })._actionHandler === 'function';
+      if (realSubs.length > 0 && !cmdHasAction && cmd.parent) {
+        // Parent group with subcommands but no own action — show help by default.
+        cmd.action(() => {
+          cmd.outputHelp();
+        });
+      }
+      for (const sub of realSubs) visit(sub);
+    }
+  };
+
+  for (const sub of program.commands as Command[]) {
+    if (sub.name() !== 'help') visit(sub);
+  }
 }

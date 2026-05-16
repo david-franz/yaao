@@ -59,7 +59,7 @@ export class SubprocessBackend implements AgentBackend {
         };
       }
       const out = (r.stdout?.toString() ?? '').trim();
-      return { available: true, version: out.split(/\s+/).pop() ?? out };
+      return { available: true, version: parseVersionString(out) };
     } catch (err) {
       return { available: false, reason: (err as Error).message };
     }
@@ -225,4 +225,23 @@ function killTree(child: KillableChild): void {
       // ignore
     }
   }, 5000).unref();
+}
+
+/**
+ * Pull a semver-ish token out of a `--version` output. Real CLIs vary wildly:
+ *   - `1.2.3 (Claude Code)` (claude)
+ *   - `cursor-agent 0.45.1` (cursor)
+ *   - `gh version 2.62.0 (2024-..)` (gh)
+ *   - `codex 0.10.0`
+ *
+ * We prefer the first `\d+\.\d+\.\d+[\w.-]*` match; if that fails we fall back to the
+ * first whitespace-delimited token. Stripping a leading `v` keeps display tidy.
+ */
+export function parseVersionString(text: string): string | undefined {
+  if (!text) return undefined;
+  const m = text.match(/(\d+\.\d+(?:\.\d+)?[\w.-]*)/);
+  if (m && m[1]) return m[1];
+  const first = text.split(/\s+/)[0];
+  if (!first) return undefined;
+  return first.replace(/^v/i, '');
 }
