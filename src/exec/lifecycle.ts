@@ -247,8 +247,23 @@ export class Lifecycle {
         if (v.exitCode !== 0 && task.validation['must-pass']) {
           const stdoutTail = tail(v.stdout, 30);
           const stderrTail = tail(v.stderr, 30);
+          // Detect prose-as-validation: agents sometimes write natural-language
+          // instructions ("Open index.html in browser…") into validation.command
+          // instead of a runnable shell command. yaao runs it via sh and the
+          // user gets a confusing failure. The reliable signal isn't the exit
+          // code (varies by OS / what tokens accidentally match commands) but
+          // the command text itself — English connector words between tokens
+          // are a very strong indicator the agent wrote prose. Flag it so the
+          // user knows to edit the plan instead of chasing the agent into a
+          // hopeless retry loop.
+          const looksLikeProse = /(^|\s)(and|or|the|with|from|in|to|on|for|then)\s+\S/i.test(
+            task.validation.command,
+          );
+          const message = looksLikeProse
+            ? `validation for ${task.id} looks like natural-language prose, not a shell command: \`${task.validation.command}\`. Edit the plan to provide a runnable command (e.g. \`npx tsc --noEmit\`, \`pnpm test -- ${task.id}\`) or remove the \`validation:\` line.`
+            : `validation failed for ${task.id}: ${task.validation.command} exited ${v.exitCode}`;
           throw new AgentNonZeroExitError({
-            message: `validation failed for ${task.id}: ${task.validation.command} exited ${v.exitCode}`,
+            message,
             agent: backend.name,
             exitCode: v.exitCode,
             command: task.validation.command,

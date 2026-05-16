@@ -149,6 +149,17 @@ triplet at `{{out}}/<plan-slug>/spec.md|plan.md|tasks.md`.
   majors may have breaking API changes that downstream tasks haven't been
   written to handle. Document the chosen major in the task prose so the
   executing agent doesn't second-guess it.
+- **Validation commands MUST be runnable shell commands** — yaao runs them
+  literally via `sh -c "<command>"` after the agent finishes. Natural-language
+  instructions ("Open index.html in a browser and check the console", "Verify
+  the page renders", "Confirm tests pass") are NOT validation commands and
+  will fail with `sh: <first-word>: command not found`. Write something the
+  shell can execute, or omit `validation:` entirely.
+  - **Bad** (will fail): `Open index.html in browser and confirm no console errors`.
+  - **Bad** (vague): `Make sure the tests pass`.
+  - **Good**: `npx tsc --noEmit`, `pnpm test -- auth`, `npx jest --selectProjects web`, `test -f index.html`.
+  - **No automatable check?** Skip the `validation:` line. Don't invent
+    one — a missing validation is fine; a fake validation breaks the run.
 - **Monorepo validation commands MUST be scoped to the package the task owns.**
   Validation runs from the worktree root. A blanket `pnpm build` or
   `pnpm prisma migrate dev` from root will: (a) try to build sibling packages
