@@ -73,11 +73,18 @@ export async function convertPlan(opts: ConvertOptions): Promise<ConvertResult> 
     };
     if (assignment.model) task.model = assignment.model;
     if (t.validation) {
-      const { command, cwd } = extractValidationCwd(t.validation);
+      const { command, cwd: explicitCwd } = extractValidationCwd(t.validation);
+      // Fall back to the deepest directory shared by all `files:` entries when
+      // the validation command didn't already specify a cwd. In a monorepo this
+      // routes `pnpm build` / `pnpm test` to the task's actual workspace
+      // instead of the root, where parallel siblings would otherwise clobber
+      // each other. Pure heuristic — explicit cwd or `cd …` prefix always
+      // wins.
+      const inferredCwd = explicitCwd ?? inferCwdFromFiles(t.files);
       task.validation = {
         command,
         'must-pass': true,
-        ...(cwd !== undefined ? { cwd } : {}),
+        ...(inferredCwd !== undefined ? { cwd: inferredCwd } : {}),
       };
       task.setup = inferSetupFromValidation(command);
     }
@@ -192,6 +199,52 @@ export function extractValidationCwd(raw: string): { command: string; cwd?: stri
   const m = raw.trim().match(/^cd\s+([^\s&;]+)\s*&&\s*(.+)$/s);
   if (m && m[1] && m[2]) return { command: m[2].trim(), cwd: m[1] };
   return { command: raw };
+}
+
+/**
+ * Standard monorepo layout roots. When the inferred prefix starts with one of
+ * these, we cap at two segments (e.g. `apps/web`, not `apps/web/src`) so the
+ * cwd lands at the workspace root where `package.json` lives.
+ */
+const MONOREPO_ROOTS = new Set(['apps', 'packages', 'services', 'libs']);
+
+/**
+ * Pick a `validation.cwd` from a task's declared file list when the command
+ * didn't already specify one. Returns the deepest directory that prefixes
+ * every entry in `files`, capped at the workspace root for the common monorepo
+ * layouts in MONOREPO_ROOTS. Requires every file to have a directory
+ * component, so a task with files at the repo root gets no inferred cwd.
+ */
+export function inferCwdFromFiles(files: string[]): string | undefined {
+  if (files.length === 0) return undefined;
+  // Normalise: drop trailing slashes, split on `/`, ignore empty leading segs.
+  const splits = files.map((f) =>
+    f
+      .trim()
+      .replace(/\/+$/, '')
+      .split('/')
+      .filter((seg) => seg.length > 0),
+  );
+  if (splits.some((s) => s.length < 2)) return undefined; // some file at repo root
+  const first = splits[0]!;
+  let prefixLen = first.length - 1; // ignore the filename segment
+  for (let i = 1; i < splits.length; i++) {
+    const cur = splits[i]!;
+    const maxShared = Math.min(prefixLen, cur.length - 1);
+    let shared = 0;
+    while (shared < maxShared && first[shared] === cur[shared]) shared += 1;
+    prefixLen = shared;
+    if (prefixLen === 0) return undefined;
+  }
+  if (prefixLen === 0) return undefined;
+  // For standard monorepo layouts the workspace name is the second segment.
+  // If files only share the layout root (e.g. `apps/api/...` vs `apps/web/...`
+  // collapse to just `apps`), that's not a useful cwd — bail out.
+  if (first[0] !== undefined && MONOREPO_ROOTS.has(first[0])) {
+    if (prefixLen < 2) return undefined;
+    if (prefixLen > 2) prefixLen = 2;
+  }
+  return first.slice(0, prefixLen).join('/');
 }
 
 export function inferSetupFromValidation(cmd: string): string[] {

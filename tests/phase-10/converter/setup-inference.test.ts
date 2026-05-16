@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { extractValidationCwd, inferSetupFromValidation } from '../../../src/converter/convert.js';
+import {
+  extractValidationCwd,
+  inferCwdFromFiles,
+  inferSetupFromValidation,
+} from '../../../src/converter/convert.js';
 
 describe('inferSetupFromValidation', () => {
   it('prepends a conditional install when validation uses a package manager', () => {
@@ -64,5 +68,60 @@ describe('extractValidationCwd', () => {
 
   it('leaves plain commands alone', () => {
     expect(extractValidationCwd('pnpm build')).toEqual({ command: 'pnpm build' });
+  });
+});
+
+describe('inferCwdFromFiles', () => {
+  it('returns the deepest common directory when every file shares one', () => {
+    expect(
+      inferCwdFromFiles([
+        'apps/api/src/routes/auth.ts',
+        'apps/api/src/middleware/jwt.ts',
+        'apps/api/prisma/schema.prisma',
+      ]),
+    ).toBe('apps/api');
+    // Common monorepo layouts cap at the workspace level so the cwd is where
+    // package.json lives, not the deepest shared module folder.
+    expect(
+      inferCwdFromFiles([
+        'apps/api/src/modules/auth/controller.ts',
+        'apps/api/src/modules/auth/service.ts',
+      ]),
+    ).toBe('apps/api');
+  });
+
+  it('does NOT cap when the prefix is outside a known monorepo root', () => {
+    expect(
+      inferCwdFromFiles([
+        'backend/src/routes/auth.ts',
+        'backend/src/routes/users.ts',
+      ]),
+    ).toBe('backend/src/routes');
+  });
+
+  it('returns undefined when files span multiple top-level dirs', () => {
+    expect(
+      inferCwdFromFiles(['apps/api/src/x.ts', 'apps/web/src/y.ts']),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when any file sits at repo root', () => {
+    expect(inferCwdFromFiles(['apps/api/src/x.ts', 'README.md'])).toBeUndefined();
+    expect(inferCwdFromFiles(['package.json'])).toBeUndefined();
+  });
+
+  it('returns undefined for an empty file list', () => {
+    expect(inferCwdFromFiles([])).toBeUndefined();
+  });
+
+  it('tolerates trailing slashes on directory-style entries (cap to workspace)', () => {
+    // Files all under apps/api/prisma; for monorepo layouts we cap at the
+    // workspace root (apps/api) since that's where package.json lives.
+    expect(
+      inferCwdFromFiles([
+        'apps/api/prisma/schema.prisma',
+        'apps/api/prisma/migrations/',
+      ]),
+    ).toBe('apps/api');
   });
 });
