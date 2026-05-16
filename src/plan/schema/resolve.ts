@@ -25,6 +25,9 @@ export interface ResolvedPlanConfig {
     'per-dep-budget'?: number;
     'total-budget'?: number;
   };
+  hooks: {
+    'post-task': { command: string; cwd?: string; 'must-pass': boolean }[];
+  };
 }
 
 export interface ResolvedPlanContext {
@@ -76,6 +79,9 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
       ...(planContext['total-budget'] !== undefined
         ? { 'total-budget': planContext['total-budget'] }
         : {}),
+    },
+    hooks: {
+      'post-task': planCfg.hooks?.['post-task'] ?? [],
     },
   };
 

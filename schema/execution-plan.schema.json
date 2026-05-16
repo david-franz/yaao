@@ -72,6 +72,36 @@
                 }
               },
               "additionalProperties": false
+            },
+            "hooks": {
+              "type": "object",
+              "properties": {
+                "post-task": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "command": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "cwd": {
+                        "type": "string"
+                      },
+                      "must-pass": {
+                        "type": "boolean",
+                        "default": true
+                      }
+                    },
+                    "required": [
+                      "command"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "default": []
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false

@@ -24,6 +24,18 @@ export const ValidationSchema = z.object({
 
 export const PermissionModeSchema = z.enum(['ask', 'allow-edits', 'allow-all']);
 
+/**
+ * Shell command run after a task's main validation as a cross-cutting check
+ * (typecheck, lint, project-wide tests). Same shape as ValidationSchema so
+ * the lifecycle treats hook failures the same as validation failures —
+ * including the retry-with-context loop.
+ */
+export const HookSchema = z.object({
+  command: z.string().min(1),
+  cwd: z.string().optional(),
+  'must-pass': z.boolean().default(true),
+});
+
 export const MergeStrategySchema = z.enum(['auto', 'pr', 'manual', 'none']);
 
 /**
@@ -124,6 +136,18 @@ export const PlanConfigSchema = z
       .object({
         'per-dep-budget': z.number().int().positive().optional(),
         'total-budget': z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
+    /** Plan-wide hooks. `post-task` commands run after every task's own
+     * validation succeeds and before the lifecycle commits the task's work.
+     * Use for cross-cutting checks like `typecheck`, `lint`, project-wide
+     * `test`. Each entry has the same shape as `validation`: { command, cwd?,
+     * must-pass? }. A failing must-pass hook fails the task and triggers the
+     * retry-with-context flow. */
+    hooks: z
+      .object({
+        'post-task': z.array(HookSchema).default([]),
       })
       .strict()
       .optional(),

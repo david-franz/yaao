@@ -253,6 +253,32 @@ export class Lifecycle {
         }
       }
 
+      // 4.5) Plan-wide post-task hooks (typecheck/lint/test/etc). Same failure
+      // semantics as validation: a failing must-pass hook throws, which the
+      // retry loop catches and feeds back to the agent as failure context on
+      // the next attempt. Hooks inherit the task's validation.cwd by default
+      // so they land in the right workspace for monorepos; each hook can
+      // override via its own `cwd:`.
+      for (const hook of this.opts.plan.config.hooks['post-task']) {
+        const hookCwd = hook.cwd
+          ? resolvePath(wt.path, hook.cwd)
+          : task.validation?.cwd
+            ? resolvePath(wt.path, task.validation.cwd)
+            : wt.path;
+        // eslint-disable-next-line no-await-in-loop -- hooks run sequentially
+        const h = await this.runShell(hook.command, hookCwd);
+        if (h.exitCode !== 0 && hook['must-pass']) {
+          throw new AgentNonZeroExitError({
+            message: `post-task hook failed for ${task.id}: ${hook.command} exited ${h.exitCode}`,
+            agent: backend.name,
+            exitCode: h.exitCode,
+            command: hook.command,
+            stdoutTail: tail(h.stdout, 30),
+            stderrTail: tail(h.stderr, 30),
+          });
+        }
+      }
+
       // 5) Commit changes if present
       const commitOutcome = await this.commitIfDirty(task, wt.path, stdout);
 
