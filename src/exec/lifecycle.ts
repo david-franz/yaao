@@ -151,6 +151,14 @@ export class Lifecycle {
         deletions: diffStats.deletions,
       });
 
+      // 6.5) Optional per-task merge: route the task's commits into a chosen
+      // target branch (e.g. a phase branch) before reporting completion. Failure
+      // here is non-fatal — the task succeeded; we surface the merge problem so
+      // the user can resolve it without losing the task's work.
+      if (commitOutcome.commit && task.merge.into && task.merge.when === 'completed') {
+        await this.mergeIntoTarget(task, wt.branch, branchEntry.baseBranch);
+      }
+
       // 7) Write context.md artifact
       const artifact: TaskOutcomeArtifact = {
         branch: wt.branch,
@@ -189,15 +197,11 @@ export class Lifecycle {
               message: (err as Error).message,
               cause: err,
             });
-      // Tear down any worktree/branch we created before failing so the next
-      // run doesn't collide on "branch already exists" or a stale stamped dir.
-      // Best-effort: any teardown error is swallowed so we don't mask the
-      // original failure reason for the user.
-      try {
-        await this.opts.worktreeManager.remove(task.id, { force: true, deleteBranch: true });
-      } catch {
-        // ignore — we're already failing this task
-      }
+      // We intentionally do NOT tear down the worktree/branch here. Leaving
+      // them on disk lets the user inspect what the agent produced and cherry-
+      // pick anything worth keeping. `yaao clean <run-id>` is the documented
+      // way to reclaim that state once the user is done. `yaao run --force`
+      // also offers an opt-in shortcut to wipe colliding leftovers on retry.
       this.opts.scheduler.failTask(task.id, yerr);
       await this.opts.journal.append({
         t: 'task:failed',
@@ -217,6 +221,99 @@ export class Lifecycle {
       stdout: r.stdout?.toString() ?? '',
       stderr: r.stderr?.toString() ?? '',
     };
+  }
+
+  /**
+   * Merge a completed task's branch into a target branch (e.g. a phase branch).
+   * Uses a transient worktree so we never touch the user's main checkout. The
+   * target branch is created off `base` if missing and `create-if-missing` is
+   * set. Conflicts surface as a `task:merge-failed` event without failing the
+   * task itself — the agent's work is preserved on its own branch.
+   */
+  private async mergeIntoTarget(
+    task: ResolvedTask,
+    sourceBranch: string,
+    baseBranch: string,
+  ): Promise<void> {
+    const target = task.merge.into;
+    if (!target) return;
+    const rootDir = this.opts.rootDir;
+    const exists = await this.opts.git.branchExists(target, rootDir);
+    if (!exists) {
+      if (!task.merge['create-if-missing']) {
+        this.opts.bus.emit({
+          type: 'task:merge-failed',
+          taskId: task.id,
+          into: target,
+          reason: `target branch '${target}' does not exist and create-if-missing is false`,
+          conflicts: [],
+        });
+        return;
+      }
+      try {
+        await this.opts.git.createBranch(target, baseBranch, rootDir);
+      } catch (err) {
+        this.opts.bus.emit({
+          type: 'task:merge-failed',
+          taskId: task.id,
+          into: target,
+          reason: `could not create target branch '${target}': ${(err as Error).message}`,
+          conflicts: [],
+        });
+        return;
+      }
+    }
+
+    // Transient checkout used purely for this merge. The path lives under the
+    // run dir so `yaao clean` reclaims it alongside the rest of the run.
+    const safe = target.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const mergePath = join(this.opts.runDir, '_merge', safe);
+    try {
+      await this.opts.git.worktreeAdd(mergePath, target, rootDir);
+    } catch (err) {
+      this.opts.bus.emit({
+        type: 'task:merge-failed',
+        taskId: task.id,
+        into: target,
+        reason: `could not check out target: ${(err as Error).message}`,
+        conflicts: [],
+      });
+      return;
+    }
+    try {
+      const result = await this.opts.git.merge(
+        sourceBranch,
+        { ff: false, noEdit: true, message: `Merge ${sourceBranch} into ${target} (task ${task.id})` },
+        mergePath,
+      );
+      if (!result.ok) {
+        try {
+          await this.opts.git.mergeAbort(mergePath);
+        } catch {
+          // ignore — already in failure path
+        }
+        this.opts.bus.emit({
+          type: 'task:merge-failed',
+          taskId: task.id,
+          into: target,
+          reason: `merge conflicts (${result.conflicts.length} file(s))`,
+          conflicts: result.conflicts,
+        });
+        return;
+      }
+      this.opts.bus.emit({
+        type: 'task:merged',
+        taskId: task.id,
+        into: target,
+        mergeCommit: result.mergeCommit ?? '',
+      });
+    } finally {
+      try {
+        await this.opts.git.worktreeRemove(mergePath, { force: true }, rootDir);
+      } catch {
+        // ignore — `yaao clean` will reclaim it
+      }
+    }
   }
 
   private async commitIfDirty(

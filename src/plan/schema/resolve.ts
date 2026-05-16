@@ -30,10 +30,17 @@ export interface ResolvedPlanContext {
   };
 }
 
-export type ResolvedTask = Task & {
+export interface ResolvedTaskMerge {
+  strategy: 'auto' | 'pr' | 'manual' | 'none';
+  into?: string;
+  when: 'completed' | 'manual';
+  'create-if-missing': boolean;
+}
+
+export type ResolvedTask = Omit<Task, 'merge'> & {
   branch: string;
   worktree: string;
-  merge: 'auto' | 'pr' | 'manual' | 'none';
+  merge: ResolvedTaskMerge;
   retries: number;
 };
 
@@ -67,11 +74,14 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
   const tasks: ResolvedTask[] = plan.tasks.map((t) => {
     const branch = t.branch ?? `${plan.plan.name}/${t.id}`;
     const worktree = t.worktree ?? `${resolvedConfig['worktree-root']}/${plan.plan.name}/${t.id}`;
+    const merge = resolveTaskMerge(t.merge, resolvedConfig.merge.strategy);
+    const { merge: _drop, ...rest } = t;
+    void _drop;
     return {
-      ...t,
+      ...rest,
       branch,
       worktree,
-      merge: t.merge ?? resolvedConfig.merge.strategy,
+      merge,
     };
   });
 
@@ -81,5 +91,28 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
     context: resolvedContext,
     includes: plan.includes,
     tasks,
+  };
+}
+
+/**
+ * Normalize the per-task merge directive into a consistent object form. Accepts
+ * either the shorthand strategy string or the full object; falls back to the
+ * plan-level strategy when the task says nothing.
+ */
+function resolveTaskMerge(
+  raw: Task['merge'],
+  planStrategy: 'auto' | 'pr' | 'manual',
+): ResolvedTaskMerge {
+  if (raw === undefined) {
+    return { strategy: planStrategy, when: 'completed', 'create-if-missing': true };
+  }
+  if (typeof raw === 'string') {
+    return { strategy: raw, when: 'completed', 'create-if-missing': true };
+  }
+  return {
+    strategy: raw.strategy ?? planStrategy,
+    ...(raw.into !== undefined ? { into: raw.into } : {}),
+    when: raw.when ?? 'completed',
+    'create-if-missing': raw['create-if-missing'] ?? true,
   };
 }

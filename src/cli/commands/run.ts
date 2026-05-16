@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Command } from 'commander';
 import type { CommandModule } from '../command.js';
@@ -15,6 +15,8 @@ import { CopilotBackend } from '../../agents/copilot.js';
 import { CodexBackend } from '../../agents/codex.js';
 import { ApiBackend, AnthropicProvider, OpenAIProvider, OpenRouterProvider } from '../../agents/api/backend.js';
 import type { ApiProvider } from '../../agents/api/provider.js';
+import { WorktreeManager } from '../../git/worktree-manager.js';
+import { git } from '../../git/git.js';
 import type { YaaoConfig } from '../../config/types.js';
 import type { ResolvedPlan } from '../../plan/schema/types.js';
 
@@ -46,7 +48,10 @@ export const runCommand: CommandModule = {
       .option('--only <ids>', 'comma-separated task ids to include (with deps)')
       .option('--skip <ids>', 'comma-separated task ids to skip (with downstream)')
       .option('--resume <run-id>', 'resume a prior run; checks plan-hash')
-      .option('--force', 'accept blocking conditions (plan-hash mismatch on resume)')
+      .option(
+        '--force',
+        'accept blocking conditions on resume AND wipe any leftover worktrees/branches from prior failed runs of this plan',
+      )
       .action(async (planPath: string, flags: RunFlags) => {
         if (flags.only && flags.skip) {
           ctx.logger.error('--only and --skip are mutually exclusive');
@@ -82,6 +87,13 @@ export const runCommand: CommandModule = {
           await emitDryRun(ctx, loaded.plan, filter);
           ctx.exit(0);
           return;
+        }
+
+        if (flags.force && !flags.resume) {
+          // Pre-flight cleanup: nuke any branches and worktrees this plan would
+          // try to recreate. Saves the user from manually running `yaao clean`
+          // after a failed run when they just want to retry.
+          await wipeLeftovers(cwd, loaded.plan, ctx);
         }
 
         const runId = flags.resume ?? `run-${Date.now().toString(36)}`;
@@ -207,6 +219,46 @@ async function emitDryRun(
 }
 
 /**
+ * Best-effort wipe of any worktrees/branches a previous failed run of this
+ * plan left behind. Runs when the user passes `--force` without `--resume`,
+ * so they can retry without manually invoking `yaao clean`.
+ */
+async function wipeLeftovers(cwd: string, plan: ResolvedPlan, ctx: CliContext): Promise<void> {
+  const wtManager = new WorktreeManager({
+    git,
+    rootDir: cwd,
+    worktreeRoot: plan.config['worktree-root'],
+  });
+  for (const t of plan.tasks) {
+    try {
+      // remove() looks up by task id across all stamped worktrees.
+      // eslint-disable-next-line no-await-in-loop -- per-task cleanup is sequential
+      await wtManager.remove(t.id, { force: true, deleteBranch: true });
+    } catch {
+      // ignore — best effort
+    }
+    // Belt-and-braces: explicitly delete the branch by name in case the
+    // worktree was already removed but the branch was not.
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await git.deleteBranch(t.branch, { force: true }, cwd);
+    } catch {
+      // ignore — branch may not exist
+    }
+  }
+  // Also drop any stamped worktree directory that doesn't match a current task.
+  const worktreeRoot = resolve(cwd, plan.config['worktree-root']);
+  if (existsSync(worktreeRoot)) {
+    try {
+      rmSync(worktreeRoot, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  }
+  ctx.logger.info('--force: wiped leftover worktrees and branches');
+}
+
+/**
  * Streams run-bus events to stderr so the user can see tasks moving through the
  * DAG. Mirrors the pattern used by `yaao plan`: task lifecycle lines go above an
  * elapsed-time ticker that's rewritten in place on a TTY, line-per-5s on a pipe.
@@ -303,6 +355,16 @@ function makeRunProgressReporter(totalTasks: number, isTty: boolean): (ev: RunEv
         return;
       case 'task:committed':
         // Already surfaced via task:completed; keep stderr quiet here.
+        return;
+      case 'task:merged':
+        writeLine(`  ↪ ${ev.taskId}: merged into ${ev.into} (${ev.mergeCommit.slice(0, 7)})`);
+        return;
+      case 'task:merge-failed':
+        writeLine(
+          `  ⚠ ${ev.taskId}: merge into ${ev.into} failed — ${ev.reason}${
+            ev.conflicts.length > 0 ? ` (conflicts: ${ev.conflicts.slice(0, 3).join(', ')}${ev.conflicts.length > 3 ? '…' : ''})` : ''
+          }`,
+        );
         return;
       case 'task:retry-attempt':
         writeLine(`  ↻ ${ev.taskId}: retry ${ev.attempt} — ${ev.error.message}`);

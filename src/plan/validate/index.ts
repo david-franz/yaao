@@ -204,7 +204,7 @@ export function validatePlan(
     }
   }
   for (const t of plan.tasks) {
-    if (t.merge === 'none') {
+    if (t.merge.strategy === 'none') {
       const ds = dependents.get(t.id) ?? [];
       if (ds.length > 0) {
         issues.push({

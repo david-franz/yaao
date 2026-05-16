@@ -52,10 +52,15 @@ export class WorktreeManager {
     const baseCommit = await this.git.revParse(req.baseBranch, req.rootDir);
     const path = resolve(req.rootDir, req.worktreeRoot, req.runId, req.taskId);
     if (existsSync(path)) {
-      throw new WorktreeError({ message: `worktree path already exists: ${path}`, path });
+      throw new WorktreeError({
+        message: `worktree path already exists: ${path} — leftover from a prior run? Try \`yaao clean <run-id>\` or re-run with \`--force\``,
+        path,
+      });
     }
     if (await this.git.branchExists(req.branch, req.rootDir)) {
-      throw new WorktreeError({ message: `branch already exists: ${req.branch}` });
+      throw new WorktreeError({
+        message: `branch already exists: ${req.branch} — leftover from a prior run? Try \`yaao clean <run-id>\` or re-run with \`--force\``,
+      });
     }
     mkdirSync(join(path, '..'), { recursive: true });
     await this.git.createBranch(req.branch, req.baseBranch, req.rootDir);

@@ -18,6 +18,27 @@ export const ValidationSchema = z.object({
   'must-pass': z.boolean().default(true),
 });
 
+export const MergeStrategySchema = z.enum(['auto', 'pr', 'manual', 'none']);
+
+/**
+ * Per-task merge directive. Shorthand form is the strategy string; the object
+ * form additionally lets a plan author route a task's commits into a specific
+ * branch (e.g. a phase branch) after the task completes.
+ */
+export const TaskMergeObjectSchema = z
+  .object({
+    strategy: MergeStrategySchema.optional(),
+    /** Branch to merge this task's commits into after it completes. */
+    into: z.string().optional(),
+    /** When to perform the merge. 'manual' leaves the branch for the user. */
+    when: z.enum(['completed', 'manual']).default('completed'),
+    /** If `into` doesn't exist, create it from base-branch before merging. */
+    'create-if-missing': z.boolean().default(true),
+  })
+  .strict();
+
+export const TaskMergeSchema = z.union([MergeStrategySchema, TaskMergeObjectSchema]);
+
 export const TaskContextSchema = z.object({
   'ctx-sys': z
     .object({
@@ -47,7 +68,7 @@ export const TaskSchema = z
     timeout: DurationSchema.optional(),
     retries: z.number().int().min(0).default(0),
     validation: ValidationSchema.optional(),
-    merge: z.enum(['auto', 'pr', 'manual', 'none']).optional(),
+    merge: TaskMergeSchema.optional(),
     context: TaskContextSchema.optional(),
     env: z.record(z.string()).default({}),
   })

@@ -199,12 +199,40 @@
                 "additionalProperties": false
               },
               "merge": {
-                "type": "string",
-                "enum": [
-                  "auto",
-                  "pr",
-                  "manual",
-                  "none"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "pr",
+                      "manual",
+                      "none"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "strategy": {
+                        "$ref": "#/definitions/ExecutionPlan/properties/tasks/items/properties/merge/anyOf/0"
+                      },
+                      "into": {
+                        "type": "string"
+                      },
+                      "when": {
+                        "type": "string",
+                        "enum": [
+                          "completed",
+                          "manual"
+                        ],
+                        "default": "completed"
+                      },
+                      "create-if-missing": {
+                        "type": "boolean",
+                        "default": true
+                      }
+                    },
+                    "additionalProperties": false
+                  }
                 ]
               },
               "context": {

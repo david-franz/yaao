@@ -104,7 +104,7 @@ export async function runMerge(req: MergeRequest): Promise<MergeOutcome> {
       blocked.add(id);
       continue;
     }
-    const policy: TaskMergePolicy = (task.merge as TaskMergePolicy) ?? 'auto';
+    const policy: TaskMergePolicy = (task.merge.strategy as TaskMergePolicy) ?? 'auto';
     const branchEntry = req.branchPlan.byTask.get(id);
     if (!branchEntry) {
       outcome.skipped.push({ taskId: id, reason: 'no branch entry' });
