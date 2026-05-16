@@ -162,29 +162,25 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
   // is fully wired before we synthesize events into it.
   const priorFailures = new Map<string, PriorFailureContext>();
   if (opts.resume) {
+    let priorSummary: import('../git/journal.js').RunSummary | undefined;
     try {
-      const { summary: priorSummary } = await loadRun(opts.runId, journalDir);
+      priorSummary = (await loadRun(opts.runId, journalDir)).summary;
+    } catch {
+      // No prior journal — proceed as a fresh run, ignoring the resume flag.
+    }
+    if (priorSummary) {
+      // Synthesising a completion requires the scheduler to consider the task
+      // 'ready', which requires its deps to be completed first. priorSummary's
+      // iteration order isn't guaranteed to be topological (it's the order
+      // events first appeared in the journal, which gets scrambled by cascade
+      // skips across runs). So collect the work first, then drain it in
+      // multiple passes — synthesise whatever's currently ready, let the
+      // cascade unblock downstream tasks, repeat until nothing more is ready.
+      const toSynth = new Map<string, { durationMs?: number }>();
       for (const [id, task] of Object.entries(priorSummary.tasks)) {
         if (!taskById.has(id)) continue;
         if (task.status === 'completed') {
-          // Synthesise completion so downstream tasks unblock without re-running.
-          scheduler.startTask(id);
-          scheduler.completeTask(id, {
-            ...(task.durationMs !== undefined ? { durationMs: task.durationMs } : {}),
-          });
-          // Also persist the completion in the new run's journal so the NEXT
-          // resume sees it. Without this, synthesised completions live only in
-          // the scheduler's memory and are lost across runs — leading the next
-          // resume to try to re-run the task and trip the worktree collision.
-          // eslint-disable-next-line no-await-in-loop -- sequential resume bootstrap
-          await journal.append({
-            t: 'task:completed',
-            time: new Date().toISOString(),
-            taskId: id,
-            durationMs: task.durationMs ?? 0,
-            filesChanged: 0,
-            commit: '',
-          });
+          toSynth.set(id, task.durationMs !== undefined ? { durationMs: task.durationMs } : {});
         } else if (task.status === 'failed') {
           priorFailures.set(id, {
             attempt: task.attempts ?? 1,
@@ -196,8 +192,33 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
         // the scheduler picks them up in its normal flow, and the lifecycle's
         // idempotent worktree-get-or-create reuses the existing worktree.
       }
-    } catch {
-      // No prior journal — proceed as a fresh run, ignoring the resume flag.
+      let progressed = true;
+      while (progressed && toSynth.size > 0) {
+        progressed = false;
+        const snap = scheduler.snapshot();
+        for (const id of [...toSynth.keys()]) {
+          if (snap[id] !== 'ready') continue;
+          const outcome = toSynth.get(id) ?? {};
+          scheduler.startTask(id);
+          scheduler.completeTask(id, outcome);
+          // Persist the synthesised completion so a subsequent resume sees
+          // it in the journal (sticky-completion replay then preserves it).
+          // eslint-disable-next-line no-await-in-loop -- sequential resume bootstrap
+          await journal.append({
+            t: 'task:completed',
+            time: new Date().toISOString(),
+            taskId: id,
+            durationMs: outcome.durationMs ?? 0,
+            filesChanged: 0,
+            commit: '',
+          });
+          toSynth.delete(id);
+          progressed = true;
+        }
+      }
+      // Anything still in toSynth couldn't be made ready (its deps weren't
+      // completed in the prior summary either). Leave them; the scheduler
+      // will pick them up if/when their deps finish in this run.
     }
   }
 
