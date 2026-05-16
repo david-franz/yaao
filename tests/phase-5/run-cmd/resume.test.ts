@@ -29,6 +29,9 @@ describe('yaao run --resume', () => {
           agent: 'claude-code',
           depends: ['a'],
           prompt: 'pass after fix',
+          // Pin retries to 0 so the first run fails immediately and the test
+          // exercises the --resume path, not in-run retry.
+          retries: 0,
           validation: { command: 'test -f marker.txt', 'must-pass': true },
         },
       ],

@@ -72,7 +72,13 @@ export const TaskSchema = z
     branch: z.string().optional(),
     worktree: z.string().optional(),
     timeout: DurationSchema.optional(),
-    retries: z.number().int().min(0).default(0),
+    // Default to 1: a single auto-retry catches the common class of flaky
+    // validation failures (test teardown not closing handles, transient
+    // network/install errors, the agent picking the wrong API version) and
+    // re-spawns the agent with the captured failure context injected into
+    // the prompt — usually enough for the agent to self-correct. Set to 0
+    // when you want fail-fast behaviour for debugging.
+    retries: z.number().int().min(0).default(1),
     validation: ValidationSchema.optional(),
     merge: TaskMergeSchema.optional(),
     context: TaskContextSchema.optional(),

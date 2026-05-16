@@ -67,7 +67,10 @@ export async function convertPlan(opts: ConvertOptions): Promise<ConvertResult> 
       skills: [],
       files: t.files,
       env: {},
-      retries: 0,
+      // Keep in sync with TaskSchema's retries default — one retry catches
+      // transient validation flakes (test teardown, etc.) without burning
+      // many extra tokens on truly broken tasks.
+      retries: 1,
       setup: [],
       prompt: t.prompt || t.title,
     };

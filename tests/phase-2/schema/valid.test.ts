@@ -44,6 +44,8 @@ tasks:
     expect(parsed.tasks[0]?.skills).toEqual([]);
     expect(parsed.tasks[0]?.files).toEqual([]);
     expect(parsed.tasks[0]?.env).toEqual({});
-    expect(parsed.tasks[0]?.retries).toBe(0);
+    // Default retries flipped from 0 to 1 so transient validation flakes get
+    // one self-correcting retry with the failure context fed back to the agent.
+    expect(parsed.tasks[0]?.retries).toBe(1);
   });
 });
