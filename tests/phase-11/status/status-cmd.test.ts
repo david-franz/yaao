@@ -5,10 +5,10 @@ import { runCli } from '../../helpers/cli.js';
 import { createTmpProject } from '../../helpers/tmp-dir.js';
 
 function writeSummary(project: ReturnType<typeof createTmpProject>, runId: string) {
-  const dir = join(project.path, '.yaao', 'runs');
+  const dir = join(project.path, '.yaao', 'runs', runId);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
-    join(dir, `${runId}.summary.json`),
+    join(dir, 'summary.json'),
     JSON.stringify({
       runId,
       planFile: 'plan.yaml',
@@ -22,10 +22,7 @@ function writeSummary(project: ReturnType<typeof createTmpProject>, runId: strin
     }),
   );
   // jsonl too so loadRun finds the events file
-  writeFileSync(
-    join(dir, `${runId}.jsonl`),
-    '',
-  );
+  writeFileSync(join(dir, 'journal.jsonl'), '');
 }
 
 describe('yaao status', () => {

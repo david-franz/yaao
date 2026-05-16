@@ -17,8 +17,8 @@ describe('yaao clean (cautious default)', () => {
     await execa('git', ['branch', 'cl/a', 'main'], { cwd: repo.path });
 
     // Hand-write a summary saying task a completed on branch cl/a.
-    const summaryPath = join(repo.path, '.yaao', 'runs', 'r1.summary.json');
-    mkdirSync(join(repo.path, '.yaao', 'runs'), { recursive: true });
+    const summaryPath = join(repo.path, '.yaao', 'runs', 'r1', 'summary.json');
+    mkdirSync(join(repo.path, '.yaao', 'runs', 'r1'), { recursive: true });
     writeFileSync(
       summaryPath,
       JSON.stringify({

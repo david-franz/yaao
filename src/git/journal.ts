@@ -80,10 +80,14 @@ export interface OpenJournalOptions {
 }
 
 export async function openJournal(runId: string, opts: OpenJournalOptions): Promise<RunJournal> {
-  const dir = resolve(opts.dir);
-  mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${runId}.jsonl`);
-  const summaryPath = join(dir, `${runId}.summary.json`);
+  // The journal + summary live inside the run's own subdirectory now, so a
+  // single `rm -rf <run-id>/` (or `yaao clean`) is enough to scrub everything
+  // about a run — previously they were siblings of the worktree-output dirs.
+  const root = resolve(opts.dir);
+  const runDir = join(root, runId);
+  mkdirSync(runDir, { recursive: true });
+  const path = join(runDir, 'journal.jsonl');
+  const summaryPath = join(runDir, 'summary.json');
   const fd = openSync(path, 'a');
 
   let cachedSummary: RunSummary = await deriveFromFile(runId, path);
@@ -123,9 +127,10 @@ export async function listRuns(dir: string): Promise<RunSummary[]> {
   if (!existsSync(root)) return [];
   const out: RunSummary[] = [];
   for (const f of readdirSync(root)) {
-    if (!f.endsWith('.summary.json')) continue;
+    const summaryPath = join(root, f, 'summary.json');
+    if (!existsSync(summaryPath)) continue;
     try {
-      const summary = JSON.parse(readFileSync(join(root, f), 'utf8')) as RunSummary;
+      const summary = JSON.parse(readFileSync(summaryPath, 'utf8')) as RunSummary;
       out.push(summary);
     } catch {
       // skip corrupt summaries
@@ -136,7 +141,7 @@ export async function listRuns(dir: string): Promise<RunSummary[]> {
 }
 
 export async function loadRun(runId: string, dir: string): Promise<{ events: JournalEvent[]; summary: RunSummary }> {
-  const path = join(resolve(dir), `${runId}.jsonl`);
+  const path = join(resolve(dir), runId, 'journal.jsonl');
   const events: JournalEvent[] = [];
   for await (const ev of readEvents(path)) events.push(ev);
   const summary = events.reduce<RunSummary>((s, ev) => applyEvent(s, ev), emptySummary(runId));

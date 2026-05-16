@@ -35,9 +35,10 @@ tasks:
 
     // Hand-write a journal that the merge command can consume.
     const journalDir = join(repo.path, '.yaao', 'runs');
-    mkdirSync(journalDir, { recursive: true });
+    const runDir = join(journalDir, 'manual');
+    mkdirSync(runDir, { recursive: true });
     writeFileSync(
-      join(journalDir, 'manual.jsonl'),
+      join(runDir, 'journal.jsonl'),
       [
         JSON.stringify({ t: 'run:start', time: '2026-01-01T00:00:00Z', runId: 'manual', planFile: join(repo.path, planPath), planHash: 'h', config: { baseBranch: 'main', maxParallel: 1 } }),
         JSON.stringify({ t: 'task:queued', time: '2026-01-01T00:00:01Z', taskId: 'a', depends: [] }),
@@ -48,7 +49,7 @@ tasks:
       ].join('\n'),
     );
     writeFileSync(
-      join(journalDir, 'manual.summary.json'),
+      join(runDir, 'summary.json'),
       JSON.stringify({
         runId: 'manual',
         planFile: join(repo.path, planPath),

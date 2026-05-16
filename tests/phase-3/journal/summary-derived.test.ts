@@ -37,7 +37,7 @@ describe('Journal summary sidecar', () => {
       commit: 'deadbeef',
     });
     await j.close();
-    const summaryPath = join(project.path, 'r1.summary.json');
+    const summaryPath = join(project.path, 'r1', 'summary.json');
     expect(existsSync(summaryPath)).toBe(true);
     const summary = JSON.parse(readFileSync(summaryPath, 'utf8')) as {
       tasks: Record<string, { status: string; agent?: string }>;

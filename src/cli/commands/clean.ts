@@ -1,4 +1,4 @@
-import { rmSync, readdirSync, statSync } from 'node:fs';
+import { rmSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Command } from 'commander';
 import type { CommandModule } from '../command.js';
@@ -99,19 +99,36 @@ export const cleanCommand: CommandModule = {
               }
             }
           }
+          // Wipe the per-run directory under .yaao/runs/<run-id>/ — this is
+          // where the journal, summary, per-task output.log, and context.md
+          // live. Doing it here means a `yaao clean <run-id>` (or `--all`) is
+          // sufficient on its own; subsequent runs of the same plan do NOT
+          // need `yaao run --force` to clear leftover state.
+          if (!flags.branchesOnly && !flags.worktreesOnly) {
+            const runPath = join(journalDir, target.runId);
+            try {
+              if (existsSync(runPath)) {
+                rmSync(runPath, { recursive: true, force: true });
+                summary.journalsRemoved += 1;
+              }
+            } catch {
+              // ignore — best effort
+            }
+          }
         }
 
         if (flags.runs) {
           const days = Number(flags.runs);
           if (Number.isFinite(days) && days >= 0) {
             const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-            for (const f of readdirSync(journalDir)) {
-              if (!f.endsWith('.jsonl') && !f.endsWith('.summary.json')) continue;
-              const full = join(journalDir, f);
+            for (const entry of readdirSync(journalDir)) {
+              const runPath = join(journalDir, entry);
+              const summaryPath = join(runPath, 'summary.json');
+              if (!existsSync(summaryPath)) continue;
               try {
-                if (statSync(full).mtimeMs < cutoff) {
-                  rmSync(full);
-                  if (f.endsWith('.jsonl')) summary.journalsRemoved += 1;
+                if (statSync(summaryPath).mtimeMs < cutoff) {
+                  rmSync(runPath, { recursive: true, force: true });
+                  summary.journalsRemoved += 1;
                 }
               } catch {
                 // ignore

@@ -287,9 +287,18 @@ function makeRunProgressReporter(totalTasks: number, isTty: boolean): (ev: RunEv
     clearTick();
     process.stderr.write(s.endsWith('\n') ? s : `${s}\n`);
   };
+  const statusLine = (stamp: string): string => {
+    // "Done" was confusingly inclusive (it counted failed + skipped tasks too).
+    // Break it out so the user can see at a glance how many actually completed
+    // vs failed vs skipped, plus how many are still active.
+    const parts = [`${completed}✓`];
+    if (failed > 0) parts.push(`${failed}✖`);
+    if (skipped > 0) parts.push(`${skipped}⊘`);
+    return `working... ${parts.join(' ')} of ${totalTasks} · ${active} active (${stamp})`;
+  };
   const renderTick = (): void => {
     const stamp = fmtStamp(Date.now() - startedAt);
-    const line = `\rworking... ${completed + failed + skipped}/${totalTasks} done · ${active} active (${stamp})`;
+    const line = `\r${statusLine(stamp)}`;
     if (isTty) {
       process.stderr.write(line);
       lastTickLen = line.length - 1; // ignore leading \r
@@ -302,10 +311,7 @@ function makeRunProgressReporter(totalTasks: number, isTty: boolean): (ev: RunEv
       else {
         const s = Math.floor((Date.now() - startedAt) / 1000);
         if (s > 0 && s % 10 === 0) {
-          const stamp = fmtStamp(Date.now() - startedAt);
-          process.stderr.write(
-            `working... ${completed + failed + skipped}/${totalTasks} done · ${active} active (${stamp})\n`,
-          );
+          process.stderr.write(`${statusLine(fmtStamp(Date.now() - startedAt))}\n`);
         }
       }
     }, 1000);
