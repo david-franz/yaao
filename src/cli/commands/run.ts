@@ -113,12 +113,34 @@ export const runCommand: CommandModule = {
         // single structured line on stdout, --no-tui leaves journal tailing to the
         // user. Otherwise stream progress to stderr.
         const showReporter = !ctx.json && flags.noTui !== true;
+        const isTty = process.stderr.isTTY === true;
         if (showReporter) {
-          const isTty = process.stderr.isTTY === true;
           opts.onProgress = makeRunProgressReporter(loaded.plan.tasks.length, isTty);
         }
 
-        const result = await runPlan(opts);
+        // On Ctrl+C the shell echoes `^C` at the cursor's current position,
+        // which lands inline with the in-place ticker (`working... … (Xm Ys)^C`).
+        // Hook SIGINT so we clear the ticker line and emit a clean cancellation
+        // line before letting the default handler kill the process.
+        const onSigint = (): void => {
+          if (showReporter && isTty) {
+            // Push past the ticker line so `^C` doesn't smear with our output.
+            process.stderr.write('\n');
+          }
+          process.stderr.write(`yaao run: cancelled (run-id ${runId})\n`);
+          // Restore default behaviour and re-raise so the parent shell sees
+          // the signal exit code.
+          process.off('SIGINT', onSigint);
+          process.kill(process.pid, 'SIGINT');
+        };
+        process.on('SIGINT', onSigint);
+
+        let result;
+        try {
+          result = await runPlan(opts);
+        } finally {
+          process.off('SIGINT', onSigint);
+        }
         if (ctx.json) {
           process.stdout.write(`${JSON.stringify({ runId, status: result.status, durationMs: result.durationMs })}\n`);
         } else {
