@@ -128,6 +128,38 @@ async function run(args: string[], cwd: string | undefined): Promise<RunResult> 
   };
 }
 
+/**
+ * Move `target` to `newSha` in a way that respects the user's working tree.
+ * Plain `update-ref` advances the branch ref but leaves the index + working
+ * tree pointing at the old commit — so if `target` happens to be checked out
+ * at `cwd` (typical: the user's `main` checkout at the repo root), every
+ * file in the new commit shows up as a "staged deletion" in `git status`.
+ *
+ * When `target === HEAD`'s current branch at `cwd`, we use `git reset --keep`
+ * instead, which atomically advances the head, index, and working tree —
+ * and aborts safely if the user has work in progress that would be lost.
+ * In the fallback path (--keep refused, or target isn't checked out here),
+ * we use update-ref so the merge still records on the branch.
+ */
+async function advanceTargetRef(
+  target: string,
+  newSha: string,
+  expectedOld: string,
+  cwd: string | undefined,
+): Promise<void> {
+  const cur = await run(['rev-parse', '--abbrev-ref', 'HEAD'], cwd);
+  const currentBranch = cur.exitCode === 0 ? cur.stdout.trim() : '';
+  if (currentBranch === target) {
+    const reset = await run(['reset', '--keep', newSha], cwd);
+    if (reset.exitCode === 0) return;
+    // `--keep` refused because the working tree has uncommitted changes.
+    // Fall through to update-ref so the run still records the merge on the
+    // branch, but the user's checkout will fall behind — they can sync with
+    // `git checkout .` once their WIP is dealt with.
+  }
+  await runOk(['update-ref', `refs/heads/${target}`, newSha, expectedOld], cwd);
+}
+
 async function runOk(args: string[], cwd: string | undefined): Promise<string> {
   const r = await run(args, cwd);
   if (r.exitCode !== 0) {
@@ -259,8 +291,16 @@ export const git: Git = {
         });
       }
       const mergeCommit = ct.stdout.trim();
-      // 3) Advance the target ref atomically (CAS via the old SHA).
-      await runOk(['update-ref', `refs/heads/${target}`, mergeCommit, targetSha], cwd);
+      // 3) Advance the target ref. If `target` is also the branch checked out
+      // at `cwd` (typical: user's main checkout at the repo root), use
+      // `git reset --keep` to move the head + index + working tree together.
+      // Plain `update-ref` would leave the user's working tree and index
+      // pointing at the OLD commit, and `git status` would then report every
+      // newly-merged file as a staged deletion. `--keep` aborts safely if
+      // the working tree has changes that would be lost; we fall back to
+      // plain update-ref in that case (the user keeps their WIP and can
+      // sync the checkout themselves).
+      await advanceTargetRef(target, mergeCommit, targetSha, cwd);
       return { ok: true, conflicts: [], mergeCommit };
     }
     // mode === 'rebase'
@@ -300,8 +340,10 @@ export const git: Git = {
         return { ok: false, conflicts };
       }
       const newHead = (await run(['rev-parse', 'HEAD'], tmpPath)).stdout.trim();
-      // Atomic CAS update to the target branch.
-      await runOk(['update-ref', `refs/heads/${target}`, newHead, targetSha], cwd);
+      // Same dance as merge mode: prefer `git reset --keep` when target is
+      // the cwd's current branch, so the user's working tree and index stay
+      // in sync with the new HEAD.
+      await advanceTargetRef(target, newHead, targetSha, cwd);
       return { ok: true, conflicts: [], mergeCommit: newHead };
     } finally {
       try {
