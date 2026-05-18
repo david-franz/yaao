@@ -342,7 +342,18 @@ export class Lifecycle {
       // 'auto'). Failure is non-fatal — the task succeeded; we surface the
       // merge problem so the user can resolve it without losing the task's
       // work.
-      if (commitOutcome.commit && task.merge.when === 'completed') {
+      //
+      // Trigger when the branch advanced this attempt, regardless of whether
+      // the new commit came from yaao's `commitIfDirty` or from the agent
+      // running `git commit` itself. Earlier we gated on `commitOutcome.commit`
+      // only, which silently skipped auto-merge whenever the agent
+      // self-committed all its work — the branch had the changes, but main
+      // never got them.
+      const headAfterCommit = await this.opts.git.revParse('HEAD', wt.path).catch(() => '');
+      const taskMadeProgress =
+        Boolean(commitOutcome.commit) ||
+        (headBeforeSpawn !== '' && headAfterCommit !== '' && headAfterCommit !== headBeforeSpawn);
+      if (taskMadeProgress && task.merge.when === 'completed') {
         const target =
           task.merge.into ??
           (task.merge.strategy === 'auto'

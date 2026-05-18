@@ -63,6 +63,11 @@ export const GITIGNORE_BLOCK_LINES = [
   '.yaao/secrets.local.json',
   '.yaao/worktrees/',
   '.yaao/runs/',
+  // Worktree stamp written by WorktreeManager at <worktree>/.yaao/.task.
+  // Inside a task's worktree this file lives at `.yaao/.task` (a relative
+  // path), so a generic `.yaao/.task` ignore catches it before the agent's
+  // `git add -A` sweeps it into a commit.
+  '.yaao/.task',
 ];
 
 export function buildGitignoreBlock(): string {
