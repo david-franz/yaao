@@ -507,6 +507,19 @@ export class Lifecycle {
         rootDir,
       );
       if (!result.ok) {
+        // If the plan says `on-conflict: agent`, give the agent a shot at
+        // resolving this outgoing merge — same idea as the incoming
+        // dep-branch flow, but in a transient detached worktree because
+        // the target branch may be checked out at root.
+        if (this.opts.plan.config.merge['on-conflict'] === 'agent') {
+          const resolved = await this.agentResolveOutgoingMerge(
+            task,
+            sourceBranch,
+            target,
+            result.conflicts,
+          );
+          if (resolved) return;
+        }
         this.opts.bus.emit({
           type: 'task:merge-failed',
           taskId: task.id,
@@ -530,6 +543,134 @@ export class Lifecycle {
         reason: `merge failed: ${(err as Error).message}`,
         conflicts: [],
       });
+    }
+  }
+
+  /**
+   * Spawn the task's agent inside a detached transient worktree to resolve an
+   * outgoing-merge conflict (task branch → base-branch / merge.into). Mirrors
+   * the existing incoming-dep on-conflict=agent flow but happens AFTER the
+   * task completed, so we set up the merge state from scratch in a temp
+   * worktree rather than the task's own worktree (which may already have
+   * dependent state on it).
+   *
+   * Resolution always uses `git merge --no-ff` regardless of plan.config
+   * merge.history. Producing a single merge commit is the simplest shape
+   * for the agent; users who insist on linear history can rebase the
+   * resulting merge commits later.
+   *
+   * Returns true on a successful resolution + ref advance, false on any
+   * failure (the caller falls through to task:merge-failed).
+   */
+  private async agentResolveOutgoingMerge(
+    task: ResolvedTask,
+    sourceBranch: string,
+    target: string,
+    conflicts: string[],
+  ): Promise<boolean> {
+    const rootDir = this.opts.rootDir;
+    const safe = `${task.id}-into-${target}`.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const tmpPath = join(this.opts.runDir, '_outgoing-merge', safe);
+    const targetSha = await this.opts.git.revParse(target, rootDir).catch(() => '');
+    if (!targetSha) return false;
+
+    // 1) Create a detached worktree at the target's tip.
+    try {
+      await this.opts.git.worktreeAdd(tmpPath, targetSha, rootDir);
+    } catch {
+      return false;
+    }
+
+    try {
+      // 2) Start the merge — this will leave conflict markers in the working tree.
+      const mergeResult = await this.opts.git.merge(
+        sourceBranch,
+        {
+          ff: false,
+          noEdit: true,
+          message: `Merge ${sourceBranch} into ${target} (task ${task.id})`,
+        },
+        tmpPath,
+      );
+      if (mergeResult.ok) {
+        // Shouldn't really happen — mergeRefs already failed with conflicts —
+        // but if git's working-tree-aware merge here disagreed and managed
+        // a clean merge, take it.
+        const newHead = await this.opts.git.revParse('HEAD', tmpPath);
+        await this.opts.git.advanceRef(target, newHead, targetSha, rootDir);
+        this.opts.bus.emit({
+          type: 'task:merged',
+          taskId: task.id,
+          into: target,
+          mergeCommit: newHead,
+        });
+        return true;
+      }
+
+      // 3) Real conflicts. Spawn the same agent that did the task to resolve.
+      const backend = this.opts.backendFor(task);
+      const prompt = buildOutgoingConflictResolutionPrefix(
+        task,
+        sourceBranch,
+        target,
+        mergeResult.conflicts.length > 0 ? mergeResult.conflicts : conflicts,
+      );
+      const proc = await backend.spawn({
+        cwd: tmpPath,
+        prompt,
+        ...(task.model !== undefined ? { model: task.model } : {}),
+        env: task.env,
+        permissions: 'allow-all',
+      });
+      // Forward the agent's events to the run bus so the user sees what it's
+      // doing during conflict resolution.
+      void (async () => {
+        for await (const ev of proc.events) {
+          this.opts.bus.emit({ type: 'task:agent-event', taskId: task.id, ev });
+        }
+      })();
+      await proc.completed;
+
+      // 4) Verify the agent actually resolved the merge.
+      const status = await this.opts.git.status(tmpPath);
+      const hasUnmerged = status.files.some((f) => f.xy.includes('U'));
+      if (hasUnmerged) {
+        try {
+          await this.opts.git.mergeAbort(tmpPath);
+        } catch {
+          // ignore — we're failing anyway
+        }
+        return false;
+      }
+      const newHead = await this.opts.git.revParse('HEAD', tmpPath).catch(() => '');
+      if (!newHead || newHead === targetSha) {
+        // Agent didn't commit — abort.
+        try {
+          await this.opts.git.mergeAbort(tmpPath);
+        } catch {
+          // ignore
+        }
+        return false;
+      }
+
+      // 5) Atomically advance the target branch + sync any checkout.
+      await this.opts.git.advanceRef(target, newHead, targetSha, rootDir);
+      this.opts.bus.emit({
+        type: 'task:merged',
+        taskId: task.id,
+        into: target,
+        mergeCommit: newHead,
+      });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      // 6) Clean up the transient worktree.
+      try {
+        await this.opts.git.worktreeRemove(tmpPath, { force: true }, rootDir);
+      } catch {
+        // ignore — `yaao clean` will reclaim it
+      }
     }
   }
 
@@ -714,6 +855,42 @@ function buildPriorFailurePrefix(failure: PriorFailureContext): string {
  * explicitly so the agent can target them, and call out any deferred parents
  * so the agent knows the picture is incomplete.
  */
+/**
+ * Prompt prefix used when an outgoing merge (task branch → base-branch or
+ * task.merge.into) conflicts and we're respawning the task's agent in a
+ * transient detached worktree to resolve it. Same shape as
+ * buildConflictResolutionPrefix but the wording is tailored to the
+ * outgoing context — `git merge` is already in progress in the current
+ * cwd, and the user prompt is just "resolve and commit", not "resolve
+ * then do the task work".
+ */
+function buildOutgoingConflictResolutionPrefix(
+  task: ResolvedTask,
+  sourceBranch: string,
+  target: string,
+  conflicts: string[],
+): string {
+  const lines: string[] = [];
+  lines.push('## Resolve an outgoing merge conflict');
+  lines.push('');
+  lines.push(
+    `Your task \`${task.id}\` (${task.title}) completed successfully on branch \`${sourceBranch}\`. yaao is now trying to land that work on \`${target}\`, but the merge conflicts with changes that landed on \`${target}\` while your task was running (typically from a parallel sibling task).`,
+  );
+  lines.push('');
+  lines.push('The current working directory is a transient worktree that yaao set up for this resolution. `git merge --no-ff` is in progress; at least the following files have conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`):');
+  lines.push('');
+  for (const f of conflicts) lines.push(`- ${f}`);
+  lines.push('');
+  lines.push('Your one job here is to resolve the merge:');
+  lines.push('1. Run `git status` to see EVERY unmerged path — there may be more than the list above. Each `UU`/`AA`/`DD` entry needs a resolution.');
+  lines.push('2. For each unmerged file: read both sides, pick or combine the right content, and remove the conflict markers entirely.');
+  lines.push('3. `git add -A` (covers every resolved file at once).');
+  lines.push('4. `git commit -m "Resolve outgoing merge conflicts"` to finalize the merge.');
+  lines.push('');
+  lines.push('Do not change anything other than what the conflicts require. Do not run tests or builds here — this worktree is throwaway. Your task work is already done. Once the commit lands, yaao will pick the resolved merge up and advance the target branch automatically.');
+  return lines.join('\n');
+}
+
 function buildConflictResolutionPrefix(
   conflicts: string[],
   conflictingParent: string | undefined,

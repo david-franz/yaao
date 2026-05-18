@@ -95,6 +95,13 @@ export interface Git {
     opts: { message: string; mode?: 'merge' | 'rebase' },
     cwd?: string,
   ): Promise<MergeResult>;
+  /**
+   * Advance `target` to `newSha`. Prefers `git reset --keep` when `target`
+   * is the current branch at `cwd` (atomically updates head + index +
+   * working tree), falls back to `update-ref` otherwise. Aborts the reset
+   * if local changes would be lost.
+   */
+  advanceRef(target: string, newSha: string, expectedOld: string, cwd?: string): Promise<void>;
   diff(opts?: DiffOpts, cwd?: string): Promise<string>;
   log(opts?: LogOpts, cwd?: string): Promise<LogEntry[]>;
   push(remote: string, branch: string, opts?: { setUpstream?: boolean }, cwd?: string): Promise<void>;
@@ -249,6 +256,9 @@ export const git: Git = {
   },
   async mergeAbort(cwd) {
     await runOk(['merge', '--abort'], cwd);
+  },
+  async advanceRef(target, newSha, expectedOld, cwd) {
+    await advanceTargetRef(target, newSha, expectedOld, cwd);
   },
   async mergeRefs(target, source, opts, cwd) {
     const mode = opts.mode ?? 'merge';
