@@ -90,13 +90,26 @@ describe('inferCwdFromFiles', () => {
     ).toBe('apps/api');
   });
 
-  it('does NOT cap when the prefix is outside a known monorepo root', () => {
+  it('returns undefined for flat (non-monorepo) layouts even when files share a prefix', () => {
+    // Inferring "deepest common dir" for a flat Python/Node project is
+    // actively harmful: `python -m src.foo` needs to run from project root,
+    // not from src/foo/. Skip inference unless we see a known workspace
+    // layout (apps/, packages/, services/, libs/).
     expect(
       inferCwdFromFiles([
         'backend/src/routes/auth.ts',
         'backend/src/routes/users.ts',
       ]),
-    ).toBe('backend/src/routes');
+    ).toBeUndefined();
+    expect(
+      inferCwdFromFiles([
+        'src/tax_calculator/cli.py',
+        'src/tax_calculator/__main__.py',
+      ]),
+    ).toBeUndefined();
+    expect(
+      inferCwdFromFiles(['tests/test_calculator.py', 'tests/test_brackets.py']),
+    ).toBeUndefined();
   });
 
   it('returns undefined when files span multiple top-level dirs', () => {

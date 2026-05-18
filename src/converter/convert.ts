@@ -213,10 +213,18 @@ const MONOREPO_ROOTS = new Set(['apps', 'packages', 'services', 'libs']);
 
 /**
  * Pick a `validation.cwd` from a task's declared file list when the command
- * didn't already specify one. Returns the deepest directory that prefixes
- * every entry in `files`, capped at the workspace root for the common monorepo
- * layouts in MONOREPO_ROOTS. Requires every file to have a directory
- * component, so a task with files at the repo root gets no inferred cwd.
+ * didn't already specify one. Only infers when the file list lives entirely
+ * under a known monorepo workspace root (apps/<pkg>, packages/<pkg>,
+ * services/<pkg>, libs/<pkg>) — in that case the cwd is capped at
+ * `<root>/<pkg>` (the workspace root, where package.json lives).
+ *
+ * For non-monorepo layouts (flat Python projects with `src/foo/`, `tests/`,
+ * etc.) we deliberately return undefined and let validation run from the
+ * worktree root. Inferring "deepest common prefix" there is harmful:
+ * `python -m src.tax_calculator` must run where `src/` is a sibling, not
+ * inside `src/tax_calculator/`; `pytest tests/` needs `tests/` to be a
+ * subdir of cwd, not for cwd to BE `tests/`. The planner skill is told to
+ * use `cd <dir> &&` in validation if a non-root cwd is genuinely needed.
  */
 export function inferCwdFromFiles(files: string[]): string | undefined {
   if (files.length === 0) return undefined;
@@ -229,7 +237,18 @@ export function inferCwdFromFiles(files: string[]): string | undefined {
       .filter((seg) => seg.length > 0),
   );
   if (splits.some((s) => s.length < 2)) return undefined; // some file at repo root
+  // Only infer when EVERY file lives under the same known monorepo layout
+  // root (apps/X/..., packages/X/..., etc.). This is the only case where
+  // "the deepest common dir" reliably maps to a workspace root where
+  // validation commands should run.
   const first = splits[0]!;
+  if (first[0] === undefined || !MONOREPO_ROOTS.has(first[0])) return undefined;
+  const workspaceRoot = first[1];
+  if (workspaceRoot === undefined) return undefined;
+  for (let i = 1; i < splits.length; i++) {
+    const cur = splits[i]!;
+    if (cur[0] !== first[0] || cur[1] !== workspaceRoot) return undefined;
+  }
   let prefixLen = first.length - 1; // ignore the filename segment
   for (let i = 1; i < splits.length; i++) {
     const cur = splits[i]!;
