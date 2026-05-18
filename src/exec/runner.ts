@@ -104,6 +104,26 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
   bus.subscribe((ev) => {
     if (ev.type.startsWith('task:queued') || ev.type === 'task:ready' || ev.type === 'task:skipped') {
       recordSchedulerEvent(ev as SchedulerEvent);
+    } else if (ev.type === 'task:merged') {
+      // Persist outgoing-merge outcomes so `yaao status` and downstream
+      // tooling can see which tasks landed on base and which are still
+      // stranded on their own branches.
+      void journal.append({
+        t: 'task:merged',
+        time: new Date().toISOString(),
+        taskId: ev.taskId,
+        into: ev.into,
+        mergeCommit: ev.mergeCommit,
+      });
+    } else if (ev.type === 'task:merge-failed') {
+      void journal.append({
+        t: 'task:merge-failed',
+        time: new Date().toISOString(),
+        taskId: ev.taskId,
+        into: ev.into,
+        reason: ev.reason,
+        conflicts: ev.conflicts,
+      });
     }
   });
 

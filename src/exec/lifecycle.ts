@@ -536,17 +536,22 @@ export class Lifecycle {
   private async commitIfDirty(
     task: ResolvedTask,
     cwd: string,
-    transcript: string,
+    _transcript: string,
   ): Promise<{ commit?: string; subject?: string }> {
     const status = await this.opts.git.status(cwd);
     if (status.files.length === 0 && status.untracked.length === 0) {
       return {};
     }
+    // Subject-only commit message. Earlier versions appended the tail of the
+    // agent's stdout as the commit body — for agents using stream-json output
+    // (claude-code --output-format stream-json) that meant the entire
+    // tool-call event stream landed in the commit message. Awful to read in
+    // `git log`. The agent's narrative is already captured in the run's
+    // context.md and output.log under .yaao/runs/<runId>/<taskId>/.
+    void _transcript;
     const subject = `[${task.id}] ${task.title}`;
-    const body = transcript.trim().split(/\r?\n/).slice(-40).join('\n');
-    const message = body ? `${subject}\n\n${body}` : subject;
     await this.opts.git.addAll(cwd);
-    const sha = await this.opts.git.commit(message, undefined, cwd);
+    const sha = await this.opts.git.commit(subject, undefined, cwd);
     this.opts.bus.emit({ type: 'task:committed', taskId: task.id, sha });
     return { commit: sha, subject };
   }

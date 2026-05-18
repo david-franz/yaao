@@ -47,6 +47,15 @@ export type JournalEvent =
       validation?: { command: string; stdoutTail?: string; stderrTail?: string };
     }
   | { t: 'task:skipped'; time: string; taskId: string; reason: 'depFailed' | 'filtered' }
+  | { t: 'task:merged'; time: string; taskId: string; into: string; mergeCommit: string }
+  | {
+      t: 'task:merge-failed';
+      time: string;
+      taskId: string;
+      into: string;
+      reason: string;
+      conflicts: string[];
+    }
   | { t: 'merge:start'; time: string; taskId: string; into: string }
   | { t: 'merge:conflict'; time: string; taskId: string; files: string[] }
   | { t: 'merge:resolved'; time: string; taskId: string; by: 'auto' | 'agent' | 'manual'; commit: string }
@@ -77,6 +86,15 @@ export interface RunSummary {
        * --only / --skip. Lets the status table distinguish "blocked" tasks
        * from user-requested skips. */
       skipReason?: 'depFailed' | 'filtered';
+      /** Outcome of the outgoing auto-merge / merge.into step. `merged`
+       * means the task's branch landed on its target (typically base-branch
+       * when merge.strategy=auto). `merge-failed` means a conflict aborted
+       * the merge — the task itself succeeded, but the work is still only
+       * on its own branch and the user needs to land it manually. */
+      mergeStatus?: 'merged' | 'merge-failed';
+      mergeInto?: string;
+      mergeConflicts?: string[];
+      mergeReason?: string;
     }
   >;
 }
@@ -264,6 +282,22 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
         ...(next.tasks[ev.taskId] ?? { status: 'skipped' }),
         status: 'skipped',
         skipReason: ev.reason,
+      };
+      return next;
+    case 'task:merged':
+      next.tasks[ev.taskId] = {
+        ...(next.tasks[ev.taskId] ?? { status: 'completed' }),
+        mergeStatus: 'merged',
+        mergeInto: ev.into,
+      };
+      return next;
+    case 'task:merge-failed':
+      next.tasks[ev.taskId] = {
+        ...(next.tasks[ev.taskId] ?? { status: 'completed' }),
+        mergeStatus: 'merge-failed',
+        mergeInto: ev.into,
+        mergeConflicts: ev.conflicts,
+        mergeReason: ev.reason,
       };
       return next;
     case 'run:end':

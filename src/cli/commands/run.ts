@@ -292,6 +292,8 @@ function makeRunProgressReporter(totalTasks: number, isTty: boolean): (ev: RunEv
   let failed = 0;
   let skipped = 0;
   let active = 0;
+  let mergeFailed = 0;
+  const mergeFailures: { taskId: string; into: string }[] = [];
   const startedAt = Date.now();
   let tickHandle: NodeJS.Timeout | undefined;
 
@@ -402,6 +404,8 @@ function makeRunProgressReporter(totalTasks: number, isTty: boolean): (ev: RunEv
         writeLine(`  ↪ ${ev.taskId}: merged into ${ev.into} (${ev.mergeCommit.slice(0, 7)})`);
         return;
       case 'task:merge-failed':
+        mergeFailed += 1;
+        mergeFailures.push({ taskId: ev.taskId, into: ev.into });
         writeLine(
           `  ⚠ ${ev.taskId}: merge into ${ev.into} failed — ${ev.reason}${
             ev.conflicts.length > 0 ? ` (conflicts: ${ev.conflicts.slice(0, 3).join(', ')}${ev.conflicts.length > 3 ? '…' : ''})` : ''
@@ -434,6 +438,16 @@ function makeRunProgressReporter(totalTasks: number, isTty: boolean): (ev: RunEv
         writeLine(
           `yaao run: ${ev.status} — ${completed} completed, ${failed} failed, ${skipped} skipped in ${fmtStamp(Date.now() - startedAt)}`,
         );
+        // Outgoing merge conflicts don't fail the task (the work is on the
+        // branch) but they do mean main fell behind. Call them out at the
+        // end so the user doesn't miss them among the per-event ⚠ lines.
+        if (mergeFailed > 0) {
+          writeLine(
+            `  ⚠ ${mergeFailed} task(s) committed work but failed to merge: ${mergeFailures
+              .map((m) => `${m.taskId} → ${m.into}`)
+              .join(', ')}. Resolve manually (rebase + push) or re-run; the branches are intact.`,
+          );
+        }
         return;
     }
   };
