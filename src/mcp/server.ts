@@ -1,10 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { existsSync, watch as fsWatch, type FSWatcher } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import type { YaaoConfig } from '../config/types.js';
+import { loadConfig, configPaths } from '../config/loader.js';
 import {
   yaaoPlanTool,
   yaaoConvertTool,
@@ -312,17 +314,127 @@ export function startSkillWatcher(server: McpServer, opts: StartSkillWatcherOpti
   return watcher;
 }
 
+export interface StartConfigWatcherOptions {
+  cwd: string;
+  /** Override the debounce window. Tests use a small value for snappy asserts. */
+  debounceMs?: number;
+  /** Called when a reload throws (invalid edit, schema fail). Default no-op. */
+  onError?: (err: Error) => void;
+}
+
+export interface ConfigWatcher {
+  start(): void;
+  stop(): void;
+}
+
+/**
+ * Watch the project config (`yaao.config.json`) and its sibling secrets file
+ * (`.yaao/secrets.local.json`) and re-load `loadConfig` on change, mutating
+ * `ctx.config` in place so every subsequent tool call reads the live values.
+ *
+ * Tools access `ctx.config.X` at call time, so reassigning the property on
+ * the shared `ctx` object propagates automatically — no per-tool plumbing
+ * needed. If a reload fails (invalid JSON, schema failure), the old config
+ * is preserved and `onError` is invoked.
+ */
+export function startConfigWatcher(ctx: ToolContext, opts: StartConfigWatcherOptions): ConfigWatcher {
+  const debounceMs = opts.debounceMs ?? 100;
+  const watchers: FSWatcher[] = [];
+  let timer: NodeJS.Timeout | undefined;
+  let started = false;
+
+  // Watch each file's parent dir (more robust than watching a single path —
+  // editors rename-and-replace on save, which kills a file-level watcher).
+  // Filter events by basename so unrelated writes in the same dir don't fire
+  // a reload.
+  const paths = configPaths(resolve(ctx.cwd));
+  const filesToWatch: { dir: string; basename: string }[] = [];
+  if (paths.project) {
+    filesToWatch.push({ dir: dirname(paths.project), basename: basename(paths.project) });
+  }
+  if (paths.secrets) {
+    filesToWatch.push({ dir: dirname(paths.secrets), basename: basename(paths.secrets) });
+  }
+
+  const reload = async (): Promise<void> => {
+    try {
+      const { config } = await loadConfig({ cwd: ctx.cwd, env: process.env });
+      // Mutate the shared ctx object so tool closures pick up the new value
+      // on their next call. Tools read `ctx.config.X` lazily; replacing the
+      // reference is enough.
+      ctx.config = config;
+    } catch (err) {
+      // Don't crash the server on a bad edit — the user is mid-keystroke or
+      // the file is briefly invalid. Keep the previous config; the next
+      // valid write triggers another reload.
+      if (opts.onError) opts.onError(err as Error);
+    }
+  };
+
+  const fire = (): void => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = undefined;
+      void reload();
+    }, debounceMs);
+  };
+
+  return {
+    start() {
+      if (started) return;
+      started = true;
+      for (const { dir, basename: bn } of filesToWatch) {
+        if (!existsSync(dir)) continue;
+        try {
+          const w = fsWatch(dir, (_eventType, filename) => {
+            // filename can be null on some platforms; in that case fire
+            // anyway — the debounce coalesces any noise.
+            if (filename === null || filename === bn) fire();
+          });
+          w.on('error', () => undefined);
+          watchers.push(w);
+        } catch {
+          // Bad perms, vanished dir — fall through.
+        }
+      }
+    },
+    stop() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      for (const w of watchers) {
+        try {
+          w.close();
+        } catch {
+          // ignore
+        }
+      }
+      watchers.length = 0;
+      started = false;
+    },
+  };
+}
+
 export async function serve(opts: ServeOptions): Promise<void> {
-  const server = buildMcpServer({ cwd: opts.cwd, config: opts.config });
+  const ctx: ToolContext = { cwd: opts.cwd, config: opts.config };
+  const server = buildMcpServer(ctx);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // F12.6: keep the tool catalog live with on-disk skills until the
   // transport closes. The watcher tears itself down in `onclose` below.
-  const watcher = startSkillWatcher(server, { cwd: opts.cwd });
+  const skillWatcher = startSkillWatcher(server, { cwd: opts.cwd });
+  // Reload yaao.config.json (+ secrets.local.json) on change so the server
+  // doesn't serve a stale snapshot for the rest of its lifetime. Tools read
+  // `ctx.config.X` lazily, so reassigning ctx.config inside the watcher
+  // propagates to every subsequent call without per-tool plumbing.
+  const configWatcher = startConfigWatcher(ctx, { cwd: opts.cwd });
+  configWatcher.start();
   // Block until the transport closes (parent process disconnects).
   await new Promise<void>((res) => {
     transport.onclose = () => {
-      watcher.stop();
+      configWatcher.stop();
+      skillWatcher.stop();
       res();
     };
   });
