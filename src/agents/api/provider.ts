@@ -26,6 +26,15 @@ export interface ApiRunRequest {
   toolResults?: ApiToolResult[];
   prevAssistantMessages?: AssistantStep[];
   signal?: AbortSignal;
+  /**
+   * Resolved API key + optional base URL. Read by network-backed providers
+   * (AnthropicProvider, OpenAIProvider, etc.). Threaded through per-request
+   * rather than held on the provider instance so a single provider can be
+   * reused across calls with different credentials and so the credentials
+   * never live in long-lived process state.
+   */
+  apiKey?: string;
+  baseUrl?: string;
 }
 
 export interface AssistantStep {
@@ -33,6 +42,16 @@ export interface AssistantStep {
   toolCalls: ApiToolCall[];
   /** True if the model decided to stop without further tool calls. */
   stop: boolean;
+  /**
+   * Tool results the backend produced from `toolCalls` AFTER this step
+   * completed and fed back into the next iteration. Providers reconstructing
+   * the multi-turn message history (e.g. Anthropic's `tool_result` blocks
+   * must immediately follow the assistant turn that emitted the `tool_use`)
+   * read these from `prevAssistantMessages` rather than only the latest
+   * `toolResults` field on the next request. Populated by the ApiBackend
+   * loop, not by providers.
+   */
+  toolResults?: ApiToolResult[];
 }
 
 export interface ApiProviderConfig {
