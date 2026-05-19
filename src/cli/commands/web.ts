@@ -8,6 +8,7 @@ interface WebFlags {
   host?: string;
   port?: string;
   open?: boolean;
+  token?: string;
 }
 
 export const webCommand: CommandModule = {
@@ -19,6 +20,7 @@ export const webCommand: CommandModule = {
       .description('Start the yaao web viewer on a local port')
       .option('--host <host>', 'bind host (non-loopback requires --token)', '127.0.0.1')
       .option('--port <n>', 'bind port (0 = kernel-assigned)', '0')
+      .option('--token <t>', 'bearer token required for /api/* requests on non-loopback binds')
       .option('--no-open', "don't auto-open a browser (no-op in F13.0)")
       .action(async (flags: WebFlags) => {
         const portN = Number(flags.port ?? '0');
@@ -31,6 +33,7 @@ export const webCommand: CommandModule = {
           cwd: resolve(ctx.cwd),
           host: flags.host ?? '127.0.0.1',
           port: portN,
+          ...(flags.token !== undefined ? { token: flags.token } : {}),
         });
         // Print to stderr (not stdout) so the bound URL doesn't pollute
         // anyone piping `yaao web` output into another command. Two lines:

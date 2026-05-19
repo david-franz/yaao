@@ -19,6 +19,9 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VERSION } from '../version.js';
 import type { AddressInfo } from 'node:net';
+import { loadConfig } from '../config/loader.js';
+import type { ToolContext } from '../mcp/tools.js';
+import { mountRoutes, type RouteContext } from './routes.js';
 
 export interface StartWebServerOptions {
   cwd: string;
@@ -32,6 +35,17 @@ export interface StartWebServerOptions {
    * don't depend on a real Vite build.
    */
   distDir?: string;
+  /**
+   * Bearer token required by every `/api/*` request when the host is
+   * non-loopback. Loopback binds ignore this. Required when
+   * `opts.host` is not 127.0.0.1 / ::1 / localhost.
+   */
+  token?: string;
+  /**
+   * Skip the `loadConfig` call and use this context instead. Tests inject
+   * a synthetic ToolContext so they don't need a real `.yaao/` on disk.
+   */
+  ctxOverride?: ToolContext;
 }
 
 export interface WebServerHandle {
@@ -48,14 +62,30 @@ export interface WebServerHandle {
  * exercise the routes via fetch-without-network (hono's `app.fetch`) when
  * they need to.
  */
-export function buildWebApp(opts: { cwd: string; distDir: string }): Hono {
+export function buildWebApp(opts: {
+  cwd: string;
+  distDir: string;
+  ctx: ToolContext;
+  requireToken: boolean;
+  token?: string;
+}): Hono {
   const app = new Hono();
+  const routeCtx: RouteContext = {
+    cwd: opts.cwd,
+    ctx: opts.ctx,
+    requireToken: opts.requireToken,
+    ...(opts.token !== undefined ? { token: opts.token } : {}),
+  };
 
-  // F13.0 health endpoint. F13.1 expands this to the full `/api/*` surface
-  // (plans, runs, inspect, prune, config, SSE).
+  // /api/health is the canary endpoint — version + cwd. Lives outside the
+  // routes module so tests can ping a server without needing a real
+  // ToolContext.
   app.get('/api/health', (c) =>
     c.json({ ok: true, version: VERSION, cwd: opts.cwd }),
   );
+
+  // F13.1: every other /api/* route + the auth middleware.
+  mountRoutes(app, routeCtx);
 
   // Static asset path: serve every file under `distDir`. The
   // `@hono/node-server/serve-static` middleware is path-traversal safe and
@@ -112,7 +142,37 @@ export function startWebServer(opts: StartWebServerOptions): Promise<WebServerHa
   const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? 0;
   const distDir = opts.distDir ?? resolveDefaultDistDir();
-  const app = buildWebApp({ cwd: resolve(opts.cwd), distDir });
+  const requireToken = !isLoopbackHost(host);
+  if (requireToken && !opts.token) {
+    return Promise.reject(
+      new Error(
+        `binding to ${host} requires --token <t> so /api/* requests can be authenticated. Loopback (127.0.0.1) doesn't need a token.`,
+      ),
+    );
+  }
+  // Hot-reload config the same way `serve()` does — see comment in
+  // src/mcp/server.ts. We accept an injected ctx for tests; in production
+  // we load lazily once at startup.
+  const ctxPromise: Promise<ToolContext> = opts.ctxOverride
+    ? Promise.resolve(opts.ctxOverride)
+    : loadConfig({ cwd: resolve(opts.cwd), env: process.env }).then((r) => ({
+        cwd: resolve(opts.cwd),
+        config: r.config,
+      }));
+
+  return ctxPromise.then((ctx) => {
+    const app = buildWebApp({
+      cwd: resolve(opts.cwd),
+      distDir,
+      ctx,
+      requireToken,
+      ...(opts.token !== undefined ? { token: opts.token } : {}),
+    });
+    return startListener(app, host, port);
+  });
+}
+
+function startListener(app: Hono, host: string, port: number): Promise<WebServerHandle> {
 
   return new Promise<WebServerHandle>((res, reject) => {
     let server: ReturnType<typeof honoServe>;
@@ -139,6 +199,10 @@ export function startWebServer(opts: StartWebServerOptions): Promise<WebServerHa
     });
     server.once('error', (err) => reject(err));
   });
+}
+
+function isLoopbackHost(host: string): boolean {
+  return host === '127.0.0.1' || host === '::1' || host === 'localhost';
 }
 
 /**
