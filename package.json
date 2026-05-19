@@ -2,6 +2,7 @@
   "name": "yaao",
   "version": "0.0.1",
   "description": "yet another agent orchestrator",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=20"
