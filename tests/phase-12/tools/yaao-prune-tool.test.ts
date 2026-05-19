@@ -151,6 +151,17 @@ describe('yaao_prune MCP tool', () => {
       ],
       materializeBranches: true,
     });
+    // Make `p/b` actually diverge from main with a unique commit — without
+    // this, the ancestor-check would (correctly) classify it safe to delete
+    // and skip the skip. The merge-failed scenario the test is about is
+    // specifically the case where the branch *has* unique work that didn't
+    // land; reflect that.
+    execaSync('git', ['checkout', 'p/b'], { cwd: repo.path });
+    writeFileSync(join(repo.path, 'b-work.txt'), 'unmerged work\n');
+    execaSync('git', ['add', 'b-work.txt'], { cwd: repo.path });
+    execaSync('git', ['commit', '-m', 'unmerged work on p/b'], { cwd: repo.path });
+    execaSync('git', ['checkout', 'main'], { cwd: repo.path });
+
     const ctx: ToolContext = { cwd: repo.path, config: DEFAULT_CONFIG };
     const r = await yaaoPruneTool(
       { target: 'run', runId: 'r2', scope: ['branches'], dryRun: false },
@@ -298,9 +309,8 @@ describe('yaao_prune MCP tool', () => {
 
   it('force: true bypasses the never-merged guard and deletes the branch', async () => {
     // Reviewer's "force not honored for never-merged" report. Without force,
-    // any non-`merged` mergeStatus (failed, merge-failed, missing) is skipped.
-    // With force, the same branch should make it to the delete attempt and,
-    // if deletion succeeds, end up in `removed.branches`, not `skipped`.
+    // a branch with unique commits and no `mergeStatus: merged` record is
+    // skipped. With force, it goes through.
     repo = createTestRepo();
     await seedRun(repo.path, 'r-nm', 'p', {
       // No mergeStatus → falls into the 'never-merged' branch of the
@@ -308,6 +318,15 @@ describe('yaao_prune MCP tool', () => {
       tasks: [{ id: 'a', branch: 'p/a' }],
       materializeBranches: true,
     });
+    // Diverge `p/a` from main so the ancestor-aware safety check actually
+    // has something to be careful about — without unique work, the new
+    // check correctly classifies it as safe-to-delete without force.
+    execaSync('git', ['checkout', 'p/a'], { cwd: repo.path });
+    writeFileSync(join(repo.path, 'a-work.txt'), 'work in progress\n');
+    execaSync('git', ['add', 'a-work.txt'], { cwd: repo.path });
+    execaSync('git', ['commit', '-m', 'p/a work'], { cwd: repo.path });
+    execaSync('git', ['checkout', 'main'], { cwd: repo.path });
+
     const ctx: ToolContext = { cwd: repo.path, config: DEFAULT_CONFIG };
 
     // Without force: skipped with reason `never-merged`.
@@ -331,6 +350,83 @@ describe('yaao_prune MCP tool', () => {
       cwd: repo.path,
     }).stdout;
     expect(branches).not.toContain('p/a');
+  });
+
+  it('a branch whose tip is already an ancestor of base is safe to delete without force', async () => {
+    // Reviewer's edge case: a task failed before committing anything, so
+    // its branch literally points at base's tip. There are no unique
+    // commits to lose by deleting it; requiring `force: true` is friction
+    // without safety benefit.
+    repo = createTestRepo();
+    await seedRun(repo.path, 'r-anc', 'p', {
+      // No mergeStatus recorded — the journal-only signal would say
+      // "never-merged" and skip. But git can see this is already an
+      // ancestor of main.
+      tasks: [{ id: 'a', branch: 'p/a' }],
+      materializeBranches: true,
+    });
+    const ctx: ToolContext = { cwd: repo.path, config: DEFAULT_CONFIG };
+    const r = await yaaoPruneTool(
+      { target: 'run', runId: 'r-anc', scope: ['branches'], dryRun: false },
+      ctx,
+    );
+    const removed = r.structuredContent['removed'] as { branches: string[] };
+    const skipped = r.structuredContent['skipped'] as { path: string; reason: string }[];
+    expect(removed.branches).toContain('p/a');
+    expect(skipped.find((s) => s.path === 'p/a')).toBeUndefined();
+  });
+
+  it('keeps the run dir when any in-scope artifact for the run was skipped', async () => {
+    // Reviewer's "orphaned-branch reachability" — previously the run dir
+    // got deleted in the same pass that skipped a branch, leaving the
+    // skipped branch unreachable via `target: run` for follow-up cleanup.
+    // Now: when an artifact is skipped, the run dir survives so a
+    // follow-up `force: true` call can still find the run.
+    repo = createTestRepo();
+    await seedRun(repo.path, 'r-orphan', 'p', {
+      tasks: [{ id: 'a', branch: 'p/a' }],
+      materializeBranches: true,
+    });
+    // Diverge p/a so the ancestor check doesn't autopass it.
+    execaSync('git', ['checkout', 'p/a'], { cwd: repo.path });
+    writeFileSync(join(repo.path, 'a.txt'), 'work\n');
+    execaSync('git', ['add', 'a.txt'], { cwd: repo.path });
+    execaSync('git', ['commit', '-m', 'unmerged'], { cwd: repo.path });
+    execaSync('git', ['checkout', 'main'], { cwd: repo.path });
+
+    const journalDir = join(repo.path, '.yaao', 'runs', 'r-orphan');
+    const ctx: ToolContext = { cwd: repo.path, config: DEFAULT_CONFIG };
+
+    // First call (no force): branch is skipped, run dir must be preserved.
+    const r1 = await yaaoPruneTool(
+      {
+        target: 'run',
+        runId: 'r-orphan',
+        scope: ['worktrees', 'branches', 'runs'],
+        dryRun: false,
+      },
+      ctx,
+    );
+    const skipped1 = r1.structuredContent['skipped'] as { kind: string; path: string; reason: string }[];
+    expect(skipped1.find((s) => s.path === 'p/a' && s.kind === 'branch')).toBeDefined();
+    expect(skipped1.find((s) => s.kind === 'runDir')?.reason).toMatch(/run-has-skipped-artifacts/);
+    expect(existsSync(journalDir)).toBe(true);
+
+    // Follow-up with force: branch and run dir both go.
+    const r2 = await yaaoPruneTool(
+      {
+        target: 'run',
+        runId: 'r-orphan',
+        scope: ['worktrees', 'branches', 'runs'],
+        dryRun: false,
+        force: true,
+      },
+      ctx,
+    );
+    const removed2 = r2.structuredContent['removed'] as { branches: string[]; runDirs: string[] };
+    expect(removed2.branches).toContain('p/a');
+    expect(removed2.runDirs.some((p) => p.endsWith('/r-orphan'))).toBe(true);
+    expect(existsSync(journalDir)).toBe(false);
   });
 
   it('reaps the empty per-run worktree parent dir after the last child is removed', async () => {

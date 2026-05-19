@@ -86,6 +86,14 @@ export interface Git {
   lastCommitFor(path: string, cwd?: string): Promise<string | undefined>;
   revParse(ref: string, cwd?: string): Promise<string>;
   branchExists(branch: string, cwd?: string): Promise<boolean>;
+  /**
+   * True when `commit` is an ancestor of `ref` — i.e. every commit reachable
+   * from `commit` is also reachable from `ref`. Used by cleanup logic to
+   * recognise that a branch whose tip equals base's tip (or is reachable from
+   * base) carries no unique commits and is therefore safe to delete, even if
+   * yaao's journal never recorded an explicit merge for it.
+   */
+  isAncestor(commit: string, ref: string, cwd?: string): Promise<boolean>;
   createBranch(branch: string, base: string, cwd?: string): Promise<void>;
   deleteBranch(branch: string, opts?: { force?: boolean }, cwd?: string): Promise<void>;
   worktreeAdd(path: string, branch: string, cwd?: string): Promise<void>;
@@ -251,6 +259,13 @@ export const git: Git = {
   },
   async branchExists(branch, cwd) {
     const r = await run(['rev-parse', '--verify', `refs/heads/${branch}`], cwd);
+    return r.exitCode === 0;
+  },
+  async isAncestor(commit, ref, cwd) {
+    // `merge-base --is-ancestor` exits 0 if true, 1 if false, other on error.
+    // Treat errors (bad ref, missing branch, etc.) as "not an ancestor" so
+    // callers default to the safer "don't assume merged" interpretation.
+    const r = await run(['merge-base', '--is-ancestor', commit, ref], cwd);
     return r.exitCode === 0;
   },
   async createBranch(branch, base, cwd) {

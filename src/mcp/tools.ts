@@ -816,6 +816,15 @@ export async function yaaoPruneTool(input: PruneToolInput, ctx: ToolContext): Pr
     const sawWorktreePath = new Set<string>();
     const sawBranch = new Set<string>();
 
+    // Per-target tally of whether any artifact got skipped by a safety
+    // check. When true, we keep the run dir around so a follow-up
+    // `yaao_prune({target: 'run', runId})` can still find the run and the
+    // user can re-attempt cleanup after deciding how to handle the skipped
+    // item. Previously the run dir was deleted unconditionally, which
+    // orphaned skipped branches: they survived the prune but had no run-dir
+    // anchor, so subsequent prune calls returned YAAO_PRUNE_NO_MATCH.
+    const targetHadSkip = new Map<string, boolean>();
+
     for (const target of targets) {
       if (scope.includes('worktrees')) {
         // Worktrees stamped by this run...
@@ -862,6 +871,7 @@ export async function yaaoPruneTool(input: PruneToolInput, ctx: ToolContext): Pr
               path: w.path,
               reason: 'uncommitted-changes',
             });
+            targetHadSkip.set(target.runId, true);
             continue;
           }
           plannedWorktrees.push({ path: w.path, taskId: w.taskId });
@@ -880,24 +890,52 @@ export async function yaaoPruneTool(input: PruneToolInput, ctx: ToolContext): Pr
               path: branch,
               reason: `is-base-branch (refusing to delete ${baseBranch})`,
             });
+            targetHadSkip.set(target.runId, true);
             continue;
           }
-          // Refuse to delete branches with unmerged commits unless force.
-          // A task whose mergeStatus is 'merged' is safe; anything else
-          // (failed, merge-failed, never-merged) is preserved by default.
-          if (!force && t.mergeStatus !== 'merged') {
+          // Decide whether the branch is safe to delete. The journal says
+          // "merged" when an explicit merge step succeeded — but a branch
+          // can also be safe when it has no unique commits relative to
+          // base. The most common case for the latter: a task failed before
+          // committing anything, so its branch literally points at base's
+          // tip. Forcing the user to pass `force: true` to clean those up
+          // is friction without safety benefit.
+          let safeToDelete = t.mergeStatus === 'merged';
+          if (!safeToDelete) {
+            try {
+              // eslint-disable-next-line no-await-in-loop -- per-branch
+              safeToDelete = await git.isAncestor(branch, baseBranch, cwd);
+            } catch {
+              // Bad ref / git error: stay on the safe side.
+            }
+          }
+          if (!force && !safeToDelete) {
             skipped.push({
               kind: 'branch',
               path: branch,
               reason: t.mergeStatus === 'merge-failed' ? 'unmerged-commits' : 'never-merged',
             });
+            targetHadSkip.set(target.runId, true);
             continue;
           }
           plannedBranches.push({ branch, taskId });
         }
       }
       if (scope.includes('runs')) {
-        plannedRunDirs.push(join(journalDir, target.runId));
+        // Defer the run-dir delete when any in-scope artifact for this run
+        // was held back by a safety check. Removing the run dir under
+        // those conditions strands the skipped artifact: subsequent prune
+        // calls can't reach it via `target: run` because the journal that
+        // listed the run is gone.
+        if (targetHadSkip.get(target.runId)) {
+          skipped.push({
+            kind: 'runDir',
+            path: join(journalDir, target.runId),
+            reason: 'run-has-skipped-artifacts (re-run prune with force: true to finish cleanup)',
+          });
+        } else {
+          plannedRunDirs.push(join(journalDir, target.runId));
+        }
       }
     }
 
