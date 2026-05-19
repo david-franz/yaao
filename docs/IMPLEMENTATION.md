@@ -287,6 +287,7 @@ The browser surface for everything that isn't actually starting a run. Run launc
 
 | Feature | Description | Doc |
 | --- | --- | --- |
+| **F13.0** | Scaffold: `yaao web` CLI command, hono listener, `web/` workspace, build pipeline, smoke tests | [F13.0-scaffold.md](phase-13/F13.0-scaffold.md) |
 | **F13.1** | `yaao web` HTTP+SSE server | [F13.1-web-server.md](phase-13/F13.1-web-server.md) |
 | **F13.2** | DAG view with live-reload | [F13.2-web-dag-view.md](phase-13/F13.2-web-dag-view.md) |
 | **F13.3** | Live run view + activity stream | [F13.3-web-run-view.md](phase-13/F13.3-web-run-view.md) |
