@@ -1,6 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { VERSION } from '../version.js';
 import type { YaaoConfig } from '../config/types.js';
 import {
@@ -17,7 +19,9 @@ import {
   discoverSkills,
   type ToolContext,
   type ToolCallResult,
+  type DiscoveredSkill,
 } from './tools.js';
+import { createSkillWatcher, type SkillWatcher } from './skill-watcher.js';
 
 export interface ServeOptions {
   cwd: string;
@@ -165,33 +169,140 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
   );
 
   // F12.5: auto-register every discoverable skill as `yaao_skill_<name>`.
+  // F12.6: each registration is tracked so the watcher can diff against the
+  // live set and add/remove handles when skills appear or vanish on disk.
+  const skillHandles = new Map<string, RegisteredHandle>();
   for (const skill of discoverSkills(ctx)) {
-    const inputShape: Record<string, z.ZodTypeAny> = {};
-    for (const input of skill.inputs) {
-      const base = z.string().describe(input.description ?? '');
-      inputShape[input.name] = input.required ? base : base.optional();
-    }
-    server.registerTool(
-      `yaao_skill_${skill.name}`,
-      {
-        description: skill.description,
-        inputSchema: inputShape,
-      },
-      // eslint-disable-next-line @typescript-eslint/require-await
-      async (args) =>
-        asSdkResult(yaaoSkillTool(skill.name, args as Record<string, string | undefined>, ctx)),
-    );
+    registerSkillAsTool(server, ctx, skill, skillHandles);
   }
+  skillRegistry.set(server, { ctx, handles: skillHandles });
 
   return server;
+}
+
+/**
+ * Handle returned by `server.registerTool` — typed loosely because the SDK
+ * exposes `.remove()` (which itself sends `tools/list_changed`) but doesn't
+ * publish the type. Keeping this tight to just the field we use keeps the
+ * SDK coupling minimal.
+ */
+interface RegisteredHandle {
+  remove: () => void;
+}
+
+interface SkillRegistry {
+  ctx: ToolContext;
+  handles: Map<string, RegisteredHandle>;
+}
+
+/**
+ * WeakMap from server → its skill bookkeeping. Lives module-level so
+ * `startSkillWatcher` can reach the right map from a server it was given.
+ * WeakMap so a discarded server is eligible for GC.
+ */
+const skillRegistry = new WeakMap<McpServer, SkillRegistry>();
+
+function registerSkillAsTool(
+  server: McpServer,
+  ctx: ToolContext,
+  skill: DiscoveredSkill,
+  handles: Map<string, RegisteredHandle>,
+): void {
+  const inputShape: Record<string, z.ZodTypeAny> = {};
+  for (const input of skill.inputs) {
+    const base = z.string().describe(input.description ?? '');
+    inputShape[input.name] = input.required ? base : base.optional();
+  }
+  const handle = server.registerTool(
+    `yaao_skill_${skill.name}`,
+    {
+      description: skill.description,
+      inputSchema: inputShape,
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async (args) =>
+      asSdkResult(yaaoSkillTool(skill.name, args as Record<string, string | undefined>, ctx)),
+  ) as unknown as RegisteredHandle;
+  handles.set(skill.name, handle);
+}
+
+/**
+ * Reconcile the server's registered skill tools against what's currently on
+ * disk. Adds tools for new skills, removes tools for skills that vanished,
+ * and leaves stable ones alone. Each register / remove call also fires
+ * `tools/list_changed` via the SDK so connected clients refresh.
+ *
+ * Exported for the watcher and for tests; production callers go through
+ * {@link startSkillWatcher} which calls this on each FS change.
+ */
+export function reconcileSkillTools(server: McpServer): { added: string[]; removed: string[] } {
+  const entry = skillRegistry.get(server);
+  if (!entry) return { added: [], removed: [] };
+  const live = discoverSkills(entry.ctx);
+  const liveByName = new Map(live.map((s) => [s.name, s]));
+  const added: string[] = [];
+  const removed: string[] = [];
+  for (const [name, handle] of entry.handles) {
+    if (!liveByName.has(name)) {
+      try {
+        handle.remove();
+      } catch {
+        // Tool may already be torn down by another path; ignore.
+      }
+      entry.handles.delete(name);
+      removed.push(name);
+    }
+  }
+  for (const skill of live) {
+    if (entry.handles.has(skill.name)) continue;
+    try {
+      registerSkillAsTool(server, entry.ctx, skill, entry.handles);
+      added.push(skill.name);
+    } catch {
+      // Most likely a duplicate-name race or a malformed skill the discoverer
+      // accepted but registerTool rejected; skip and keep going.
+    }
+  }
+  return { added, removed };
+}
+
+export interface StartSkillWatcherOptions {
+  cwd: string;
+  /** Override the watcher's debounce window — tests use 0 for snappier asserts. */
+  debounceMs?: number;
+  /** Skip watching `~/.yaao/skills/` (tests run in tmp dirs, not the real $HOME). */
+  skipUser?: boolean;
+}
+
+/**
+ * Begin watching the project + user skill roots and reconcile the server's
+ * tool catalog on each change. Returns the underlying SkillWatcher so the
+ * caller can stop it when the transport closes.
+ */
+export function startSkillWatcher(server: McpServer, opts: StartSkillWatcherOptions): SkillWatcher {
+  const dirs: string[] = [join(resolve(opts.cwd), '.yaao', 'skills')];
+  if (!opts.skipUser) dirs.push(join(homedir(), '.yaao', 'skills'));
+  const watcher = createSkillWatcher({
+    dirs,
+    onChange: () => reconcileSkillTools(server),
+    ...(opts.debounceMs !== undefined ? { debounceMs: opts.debounceMs } : {}),
+  });
+  watcher.start();
+  return watcher;
 }
 
 export async function serve(opts: ServeOptions): Promise<void> {
   const server = buildMcpServer({ cwd: opts.cwd, config: opts.config });
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  // F12.6: keep the tool catalog live with on-disk skills until the
+  // transport closes. The watcher tears itself down in `onclose` below.
+  const watcher = startSkillWatcher(server, { cwd: opts.cwd });
   // Block until the transport closes (parent process disconnects).
-  await new Promise<void>((resolve) => {
-    transport.onclose = () => resolve();
+  await new Promise<void>((res) => {
+    transport.onclose = () => {
+      watcher.stop();
+      res();
+    };
   });
 }
