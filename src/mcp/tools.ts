@@ -9,8 +9,8 @@
  * alongside the envelope rather than replacing it.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, rmdirSync, statSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import type { YaaoConfig } from '../config/types.js';
 import {
   resolveSkill,
@@ -779,29 +779,82 @@ export async function yaaoPruneTool(input: PruneToolInput, ctx: ToolContext): Pr
       ]);
     }
 
-    const removed: PruneRemoved = { worktrees: [], branches: [], runDirs: [] };
     const skipped: PruneSkip[] = [];
     const errors: { code: string; message: string; hint?: string }[] = [];
 
     const wtManager = new WorktreeManager({ git, rootDir: cwd, worktreeRoot });
     const knownWorktrees = await wtManager.list();
+    // Index worktrees both by their sourceRunId AND by branch — a worktree
+    // stamped by run A may hold a branch that belongs to a task in run B
+    // (cache-key reuse, F12.6-era). When pruning run B, the branch delete
+    // would otherwise fail with "branch used by worktree" because we'd only
+    // looked for worktrees whose sourceRunId == B. Indexing by branch closes
+    // that hole.
     const worktreesByRunId = new Map<string, typeof knownWorktrees>();
+    const worktreesByBranch = new Map<string, typeof knownWorktrees[number]>();
     for (const w of knownWorktrees) {
-      if (!w.sourceRunId) continue;
-      const arr = worktreesByRunId.get(w.sourceRunId) ?? [];
-      arr.push(w);
-      worktreesByRunId.set(w.sourceRunId, arr);
+      if (w.sourceRunId) {
+        const arr = worktreesByRunId.get(w.sourceRunId) ?? [];
+        arr.push(w);
+        worktreesByRunId.set(w.sourceRunId, arr);
+      }
+      if (w.branch) worktreesByBranch.set(w.branch, w);
     }
+
+    // -------- Phase 1: plan -----------------------------------------------
+    // Compute everything we'd remove from the current snapshot, independent
+    // of dryRun. The actual-mutation pass below acts only on this plan, so
+    // dry-run output and actual output describe the same decisions over the
+    // same state. (Previously, dirty checks could race against partial
+    // mutations from earlier in the same loop; now they're all taken from
+    // the snapshot up front.)
+    interface PlannedWorktree { path: string; taskId: string }
+    interface PlannedBranch { branch: string; taskId: string }
+    const plannedWorktrees: PlannedWorktree[] = [];
+    const plannedBranches: PlannedBranch[] = [];
+    const plannedRunDirs: string[] = [];
+    const sawWorktreePath = new Set<string>();
+    const sawBranch = new Set<string>();
 
     for (const target of targets) {
       if (scope.includes('worktrees')) {
-        for (const w of worktreesByRunId.get(target.runId) ?? []) {
+        // Worktrees stamped by this run...
+        const wtsForRun = worktreesByRunId.get(target.runId) ?? [];
+        // ...plus any worktree (stamped by any run) that holds a branch
+        // this run's tasks own. Without this, cross-run branch holders
+        // survive the worktree pass and block the branch pass.
+        const branchesOfTarget = new Set(
+          Object.values(target.tasks)
+            .map((t) => t.branch)
+            .filter((b): b is string => Boolean(b)),
+        );
+        const wtsByBranch = [...branchesOfTarget]
+          .map((b) => worktreesByBranch.get(b))
+          .filter((w): w is NonNullable<typeof w> => Boolean(w));
+        const candidates = [...wtsForRun, ...wtsByBranch];
+        for (const w of candidates) {
+          if (sawWorktreePath.has(w.path)) continue;
+          sawWorktreePath.add(w.path);
           // Refuse to remove a worktree with uncommitted changes unless force.
+          // Compute once, against the up-front snapshot, so dry-run and
+          // actual-run see the same answer.
+          //
+          // Filters out anything under `.yaao/` — yaao's own bookkeeping
+          // (notably the `.yaao/.task` stamp WorktreeManager writes) is
+          // always "untracked" from git's perspective, which would flag
+          // every worktree as dirty and bypass cleanup. The lifecycle's
+          // empty-work guard does the same filter for the same reason.
           let dirty = false;
           try {
-            dirty = await git.hasUncommitted(w.path);
+            // eslint-disable-next-line no-await-in-loop -- per-worktree check
+            const s = await git.status(w.path);
+            const realUntracked = s.untracked.filter((p) => !p.startsWith('.yaao/'));
+            const realFiles = s.files.filter((f) => !f.path.startsWith('.yaao/'));
+            const realRenamed = s.renamed.filter((f) => !f.path.startsWith('.yaao/'));
+            dirty = realFiles.length > 0 || realUntracked.length > 0 || realRenamed.length > 0;
           } catch {
-            // worktree may have been removed manually — proceed with deletion.
+            // Worktree may already be gone; treat as not-dirty so the
+            // subsequent removal pass can clean up any straggler state.
           }
           if (dirty && !force) {
             skipped.push({
@@ -811,25 +864,14 @@ export async function yaaoPruneTool(input: PruneToolInput, ctx: ToolContext): Pr
             });
             continue;
           }
-          if (dryRun) {
-            removed.worktrees.push(w.path);
-            continue;
-          }
-          try {
-            await wtManager.remove(w.taskId, { force: true });
-            removed.worktrees.push(w.path);
-          } catch (e) {
-            errors.push({
-              code: 'YAAO_PRUNE_WORKTREE',
-              message: `failed to remove worktree ${w.path}: ${(e as Error).message}`,
-            });
-          }
+          plannedWorktrees.push({ path: w.path, taskId: w.taskId });
         }
       }
       if (scope.includes('branches')) {
         for (const [taskId, t] of Object.entries(target.tasks)) {
           const branch = t.branch;
-          if (!branch) continue;
+          if (!branch || sawBranch.has(branch)) continue;
+          sawBranch.add(branch);
           if (branch === baseBranch) {
             // Hard rule: never delete the configured base-branch, no matter
             // what the journal claims a task ran on.
@@ -851,36 +893,84 @@ export async function yaaoPruneTool(input: PruneToolInput, ctx: ToolContext): Pr
             });
             continue;
           }
-          if (dryRun) {
-            removed.branches.push(branch);
-            continue;
-          }
-          try {
-            await git.deleteBranch(branch, { force: true }, cwd);
-            removed.branches.push(branch);
-          } catch (e) {
-            errors.push({
-              code: 'YAAO_PRUNE_BRANCH',
-              message: `failed to delete branch ${branch} (task ${taskId}): ${(e as Error).message}`,
-            });
-          }
+          plannedBranches.push({ branch, taskId });
         }
       }
       if (scope.includes('runs')) {
-        const runPath = join(journalDir, target.runId);
-        if (dryRun) {
-          removed.runDirs.push(runPath);
-        } else {
-          try {
-            rmSync(runPath, { recursive: true, force: true });
-            removed.runDirs.push(runPath);
-          } catch (e) {
-            errors.push({
-              code: 'YAAO_PRUNE_RUNDIR',
-              message: `failed to remove run dir ${runPath}: ${(e as Error).message}`,
-            });
-          }
-        }
+        plannedRunDirs.push(join(journalDir, target.runId));
+      }
+    }
+
+    const removed: PruneRemoved = {
+      worktrees: plannedWorktrees.map((w) => w.path),
+      branches: plannedBranches.map((b) => b.branch),
+      runDirs: plannedRunDirs.slice(),
+    };
+    if (dryRun) return pruneResult(dryRun, removed, skipped, errors);
+
+    // -------- Phase 2: apply, in the only safe order ----------------------
+    // Worktrees BEFORE branches: `git branch -D` refuses to delete a branch
+    // currently checked out by any worktree. The previous per-target loop
+    // covered this within a single target but missed cross-run branch
+    // holders; collecting both up front and removing every worktree before
+    // any branch fixes it.
+    // Branches BEFORE run dirs: nothing technically depends on the order
+    // here, but the original code did runs after branches, so preserve that.
+    removed.worktrees = [];
+    removed.branches = [];
+    removed.runDirs = [];
+    for (const w of plannedWorktrees) {
+      try {
+        await wtManager.remove(w.taskId, { force: true });
+        removed.worktrees.push(w.path);
+      } catch (e) {
+        errors.push({
+          code: 'YAAO_PRUNE_WORKTREE',
+          message: `failed to remove worktree ${w.path}: ${(e as Error).message}`,
+        });
+      }
+    }
+    for (const b of plannedBranches) {
+      try {
+        await git.deleteBranch(b.branch, { force: true }, cwd);
+        removed.branches.push(b.branch);
+      } catch (e) {
+        errors.push({
+          code: 'YAAO_PRUNE_BRANCH',
+          message: `failed to delete branch ${b.branch} (task ${b.taskId}): ${(e as Error).message}`,
+        });
+      }
+    }
+    for (const runPath of plannedRunDirs) {
+      try {
+        rmSync(runPath, { recursive: true, force: true });
+        removed.runDirs.push(runPath);
+      } catch (e) {
+        errors.push({
+          code: 'YAAO_PRUNE_RUNDIR',
+          message: `failed to remove run dir ${runPath}: ${(e as Error).message}`,
+        });
+      }
+    }
+
+    // Reap empty per-run worktree parent dirs (.yaao/worktrees/<runId>/).
+    // Removing task subdirs leaves these behind otherwise — every prune
+    // accumulates a little graveyard.
+    const wtRoot = resolve(cwd, worktreeRoot);
+    const reapedParents = new Set<string>();
+    for (const w of plannedWorktrees) {
+      const parent = dirname(w.path);
+      if (reapedParents.has(parent)) continue;
+      reapedParents.add(parent);
+      // Only touch dirs strictly under the configured worktree root.
+      if (!parent.startsWith(`${wtRoot}/`) && parent !== wtRoot) continue;
+      if (parent === wtRoot) continue;
+      try {
+        const remaining = readdirSync(parent);
+        if (remaining.length === 0) rmdirSync(parent);
+      } catch {
+        // Parent may already be gone, or non-empty (another run's
+        // worktrees still there) — both are fine, leave it.
       }
     }
 

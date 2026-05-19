@@ -191,4 +191,174 @@ describe('yaao_prune MCP tool', () => {
     const errs = r.structuredContent['errors'] as { code: string }[];
     expect(errs[0]?.code).toBe('YAAO_PRUNE_NO_MATCH');
   });
+
+  it('removes worktrees before branches, even when the worktree belongs to a different run', async () => {
+    repo = createTestRepo();
+    // Run A leaves a stamped worktree behind that *holds* a branch later
+    // re-used by run B's journal. The original prune indexed worktrees only
+    // by their sourceRunId, so pruning run B couldn't see this worktree —
+    // the branch delete then fired with the worktree still attached, and
+    // `git branch -D` refused with "used by worktree".
+    const sharedBranch = 'kheap/kernel-wireup';
+    const mgr = new WorktreeManager({
+      git,
+      rootDir: repo.path,
+      worktreeRoot: '.yaao/worktrees',
+    });
+    const wt = await mgr.create({
+      runId: 'run-A',
+      taskId: 'kernel-wireup',
+      branch: sharedBranch,
+      baseBranch: 'main',
+      parentBranches: [],
+      rootDir: repo.path,
+      worktreeRoot: '.yaao/worktrees',
+      planName: 'kheap',
+      promptHash: hashKey('prompt-A'),
+      dependsHash: dependsHash([]),
+    });
+    expect(existsSync(wt.path)).toBe(true);
+
+    // Run B's journal records the same branch as run-B's `kernel-wireup`
+    // task. The branch is technically owned by run-A's worktree on disk.
+    await seedRun(repo.path, 'run-B', 'kheap', {
+      tasks: [{ id: 'kernel-wireup', branch: sharedBranch, mergeStatus: 'merged' }],
+    });
+
+    const ctx: ToolContext = { cwd: repo.path, config: DEFAULT_CONFIG };
+    const r = await yaaoPruneTool(
+      { target: 'run', runId: 'run-B', scope: ['worktrees', 'branches', 'runs'], dryRun: false },
+      ctx,
+    );
+    expect(r.structuredContent['ok']).toBe(true);
+    const removed = r.structuredContent['removed'] as {
+      worktrees: string[];
+      branches: string[];
+      runDirs: string[];
+    };
+    // Cross-run worktree (stamped by run-A but holding run-B's branch) is removed.
+    expect(removed.worktrees).toContain(wt.path);
+    // Branch is removed because the worktree no longer holds it.
+    expect(removed.branches).toContain(sharedBranch);
+    // No fall-through error from the branch step.
+    expect(r.structuredContent['errors']).toEqual([]);
+  });
+
+  it('dry-run and actual-run agree on the same skip decisions for the same workspace', async () => {
+    repo = createTestRepo();
+    // Build a state with a worktree that has uncommitted changes — the
+    // canonical "should be skipped" case.
+    const mgr = new WorktreeManager({
+      git,
+      rootDir: repo.path,
+      worktreeRoot: '.yaao/worktrees',
+    });
+    const wt = await mgr.create({
+      runId: 'run-dirty',
+      taskId: 'dirty',
+      branch: 'p/dirty',
+      baseBranch: 'main',
+      parentBranches: [],
+      rootDir: repo.path,
+      worktreeRoot: '.yaao/worktrees',
+      planName: 'p',
+      promptHash: hashKey('p'),
+      dependsHash: dependsHash([]),
+    });
+    // Leave an uncommitted file in the worktree.
+    writeFileSync(join(wt.path, 'wip.txt'), 'work in progress\n');
+
+    await seedRun(repo.path, 'run-dirty', 'p', {
+      tasks: [{ id: 'dirty', branch: 'p/dirty', mergeStatus: 'merged' }],
+    });
+
+    const ctx: ToolContext = { cwd: repo.path, config: DEFAULT_CONFIG };
+
+    const dry = await yaaoPruneTool(
+      { target: 'run', runId: 'run-dirty', scope: ['worktrees'], dryRun: true },
+      ctx,
+    );
+    const drySkipped = dry.structuredContent['skipped'] as { path: string; reason: string }[];
+    const dryRemoved = dry.structuredContent['removed'] as { worktrees: string[] };
+    expect(drySkipped.find((s) => s.path === wt.path)?.reason).toBe('uncommitted-changes');
+    expect(dryRemoved.worktrees).not.toContain(wt.path);
+
+    const actual = await yaaoPruneTool(
+      { target: 'run', runId: 'run-dirty', scope: ['worktrees'], dryRun: false },
+      ctx,
+    );
+    const actualSkipped = actual.structuredContent['skipped'] as { path: string; reason: string }[];
+    const actualRemoved = actual.structuredContent['removed'] as { worktrees: string[] };
+    // Same answer: skipped, not removed. The dry-run's promise that the
+    // worktree would be skipped must be honored by the apply path.
+    expect(actualSkipped.find((s) => s.path === wt.path)?.reason).toBe('uncommitted-changes');
+    expect(actualRemoved.worktrees).not.toContain(wt.path);
+    expect(existsSync(wt.path)).toBe(true);
+  });
+
+  it('force: true bypasses the never-merged guard and deletes the branch', async () => {
+    // Reviewer's "force not honored for never-merged" report. Without force,
+    // any non-`merged` mergeStatus (failed, merge-failed, missing) is skipped.
+    // With force, the same branch should make it to the delete attempt and,
+    // if deletion succeeds, end up in `removed.branches`, not `skipped`.
+    repo = createTestRepo();
+    await seedRun(repo.path, 'r-nm', 'p', {
+      // No mergeStatus → falls into the 'never-merged' branch of the
+      // skip-reason ternary (status='completed' but no task:merged event).
+      tasks: [{ id: 'a', branch: 'p/a' }],
+      materializeBranches: true,
+    });
+    const ctx: ToolContext = { cwd: repo.path, config: DEFAULT_CONFIG };
+
+    // Without force: skipped with reason `never-merged`.
+    const dry = await yaaoPruneTool(
+      { target: 'run', runId: 'r-nm', scope: ['branches'], dryRun: true },
+      ctx,
+    );
+    const drySkipped = dry.structuredContent['skipped'] as { path: string; reason: string }[];
+    expect(drySkipped.find((s) => s.path === 'p/a')?.reason).toBe('never-merged');
+
+    // With force: branch is in plannedBranches and gets deleted.
+    const r = await yaaoPruneTool(
+      { target: 'run', runId: 'r-nm', scope: ['branches'], dryRun: false, force: true },
+      ctx,
+    );
+    expect(r.structuredContent['ok']).toBe(true);
+    const removed = r.structuredContent['removed'] as { branches: string[] };
+    expect(removed.branches).toContain('p/a');
+    // git no longer has the branch.
+    const branches = execaSync('git', ['branch', '--format=%(refname:short)'], {
+      cwd: repo.path,
+    }).stdout;
+    expect(branches).not.toContain('p/a');
+  });
+
+  it('reaps the empty per-run worktree parent dir after the last child is removed', async () => {
+    repo = createTestRepo();
+    await seedRun(repo.path, 'run-reap', 'p', {
+      tasks: [
+        { id: 'a', branch: 'p/a', mergeStatus: 'merged' },
+        { id: 'b', branch: 'p/b', mergeStatus: 'merged' },
+      ],
+      materializeBranches: true,
+      materializeWorktrees: true,
+    });
+    const runParent = join(repo.path, '.yaao', 'worktrees', 'run-reap');
+    expect(existsSync(runParent)).toBe(true);
+
+    const ctx: ToolContext = { cwd: repo.path, config: DEFAULT_CONFIG };
+    await yaaoPruneTool(
+      { target: 'run', runId: 'run-reap', scope: ['worktrees'], dryRun: false },
+      ctx,
+    );
+
+    // Per-task subdirs are gone AND the (now-empty) per-run parent is rmdir'd
+    // too. Previously each prune left a `.yaao/worktrees/run-*/` skeleton
+    // behind that the user had to clean up by hand.
+    expect(existsSync(join(runParent, 'a'))).toBe(false);
+    expect(existsSync(join(runParent, 'b'))).toBe(false);
+    expect(existsSync(runParent)).toBe(false);
+    // The shared `.yaao/worktrees/` root is preserved.
+    expect(existsSync(join(repo.path, '.yaao', 'worktrees'))).toBe(true);
+  });
 });
