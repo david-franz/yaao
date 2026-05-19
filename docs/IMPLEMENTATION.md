@@ -23,7 +23,7 @@ yaao is implemented in 15 phases, progressing from foundational CLI infrastructu
 | 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Shipped (text-mode) |
 | 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Shipped |
 | 13 | Distribution & polish       | npm publish, `doctor`, docs                                     | Planned |
-| 14 | Web viewer                  | HTTP server, browser-based DAG/run viewer                       | Planned |
+| 14 | Web viewer                  | HTTP+SSE server, DAG view, live run view, workspace, plan + config editors | Planned |
 | 15 | Session → Skill distillation | `yaao-distiller` skill, session readers, `distill` CLI + MCP   | Planned |
 
 ---
@@ -301,18 +301,25 @@ Make yaao installable, diagnosable, and documented.
 
 ## Phase 14: Web Viewer
 
-Browser-based DAG and run viewer; an alternative to the TUI for users who prefer it.
+The browser surface for everything that isn't actually starting a run. Run launching stays with the CLI / MCP (`yaao_run`, `yaao_resume`); the web viewer is where you point a browser to watch a run happen, browse history, manage workspace state, and edit plans and config.
 
 | Feature | Description | Doc |
-|---------|-------------|-----|
-| **F14.1** | `yaao serve --web` HTTP server             | [F14.1-web-server.md](phase-14/F14.1-web-server.md) |
-| **F14.2** | DAG view (static)                          | [F14.2-web-dag-view.md](phase-14/F14.2-web-dag-view.md) |
-| **F14.3** | Live run view                              | [F14.3-web-run-view.md](phase-14/F14.3-web-run-view.md) |
+| --- | --- | --- |
+| **F14.1** | `yaao serve --web` HTTP+SSE server | [F14.1-web-server.md](phase-14/F14.1-web-server.md) |
+| **F14.2** | DAG view with live-reload | [F14.2-web-dag-view.md](phase-14/F14.2-web-dag-view.md) |
+| **F14.3** | Live run view + activity stream | [F14.3-web-run-view.md](phase-14/F14.3-web-run-view.md) |
+| **F14.4** | Workspace page (yaao_inspect + yaao_prune) | [F14.4-web-workspace-view.md](phase-14/F14.4-web-workspace-view.md) |
+| **F14.5** | Plan editor (Monaco + schema + DAG live) | [F14.5-web-plan-editor.md](phase-14/F14.5-web-plan-editor.md) |
+| **F14.6** | Config editor (form + raw, secrets-aware) | [F14.6-web-config-editor.md](phase-14/F14.6-web-config-editor.md) |
 
 **Key Deliverables:**
-- Local HTTP server (Hono or Fastify) bound to `127.0.0.1` with a randomly-bound port; opens a browser via `open`.
-- Static DAG view rendered with React + a graph layout library; same data the TUI uses.
-- Live view subscribes to the run's event stream over Server-Sent Events; mirrors the TUI's task table and log pane.
+
+- `yaao serve --web` runs the HTTP+SSE listener in the same process as the F12.1 MCP stdio server. One server, two transports; in-memory state (FS watcher from F12.6, tool catalog, journal directory) is shared. Defaults to `127.0.0.1` with no auth.
+- **Run creation is deliberately not in the API.** Start a run from your terminal (`yaao run`) or your MCP-aware editor (`yaao_run`); come to the web view to watch it. Keeping spawning in one place simplifies the lifecycle story and aligns the UI with how users actually work.
+- **Activity stream, not log tail.** F14.3 forwards every `RunEvent` over SSE — `task:agent-event` (with `ev.type` ∈ `{stdout, stderr, thinking, tool-use}`), `task:retry-attempt`, `task:diff`, `task:committed`, `task:merged`, `task:failed`. The browser renders these as a unified stream with thinking blocks collapsed by default and tool-use calls one-line summarized. The validation outcome (`exitCode`, `decisionReason`) is rendered prominently on the task detail pane — the F13.1-era verdict-recording work made this surfaceable, the web viewer makes it impossible to miss.
+- **Workspace page** wraps `yaao_inspect` and `yaao_prune` so cleanup affordances live in the browser. Each prune action defaults to a dry-run preview; the apply call is a separate click. The structural safety rails (base-branch never deleted, worktrees with uncommitted changes require explicit force) carry through from the MCP tool.
+- **Plan editor (F14.5)** is Monaco with the execution-plan JSON Schema attached for live diagnostics, plus a split DAG pane that re-renders on debounced input. Save goes through `PUT /api/plans/:slug/raw`, which runs the full `validatePlan` pipeline server-side — schema-valid plans with dependency cycles are caught before write. Live-reload via `/api/plans/:slug/watch` cooperates with the user's IDE: edits in either place show up in the other; the editor surfaces a non-modal "file changed on disk" banner if there are unsaved changes locally.
+- **Config editor (F14.6)** ships a form view rendered from the JSON Schema (the surface most users will live in) plus a raw Monaco view. Secrets handling is the load-bearing rule: the editor only ever shows `${ENV_VAR}` placeholders, never resolved values; `PUT /api/config/raw` runs the same literal-secret detector `loadConfig` uses and rejects any commit containing a literal API key. Changes to `mcp-servers.*` surface a "Reload MCP servers" affordance that re-spawns affected backends without restarting the whole `yaao serve` process.
 
 ---
 
