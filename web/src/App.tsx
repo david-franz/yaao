@@ -1,42 +1,70 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy } from 'react';
+import { useRoute } from './router.ts';
+import { Link } from './Link.tsx';
+import { Plans } from './pages/Plans.tsx';
+import { PlanDetail } from './pages/PlanDetail.tsx';
 
-interface Health {
-  ok: boolean;
-  version: string;
-  cwd: string;
-}
+// Pages that aren't on the critical first-paint path are lazy-loaded so
+// the initial bundle stays small.
+const Workspace = lazy(() => import('./pages/Workspace.tsx').then((m) => ({ default: m.Workspace })));
+const RunDetail = lazy(() => import('./pages/RunDetail.tsx').then((m) => ({ default: m.RunDetail })));
+const PlanEdit = lazy(() => import('./pages/PlanEdit.tsx').then((m) => ({ default: m.PlanEdit })));
+const ConfigPage = lazy(() => import('./pages/Config.tsx').then((m) => ({ default: m.ConfigPage })));
 
 export function App(): JSX.Element {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void fetch('/api/health')
-      .then((r) => r.json() as Promise<Health>)
-      .then(setHealth)
-      .catch((e: unknown) => setError(String(e)));
-  }, []);
-
+  const route = useRoute();
   return (
-    <main style={{ fontFamily: 'system-ui, sans-serif', padding: '2rem', maxWidth: '40rem' }}>
-      <h1 style={{ fontSize: '1.5rem', margin: 0 }}>yaao web — wired up</h1>
-      <p style={{ color: '#555', marginTop: '0.5rem' }}>
-        Scaffold (F13.0). Feature surface lands in F13.1 onwards.
-      </p>
-      {error !== null ? (
-        <pre style={{ color: '#a00' }}>error: {error}</pre>
-      ) : health ? (
-        <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.25rem 1rem' }}>
-          <dt>version</dt>
-          <dd>{health.version}</dd>
-          <dt>cwd</dt>
-          <dd>
-            <code>{health.cwd}</code>
-          </dd>
-        </dl>
-      ) : (
-        <p>loading…</p>
-      )}
-    </main>
+    <div style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <Nav />
+      <main style={{ padding: '1rem', flex: 1, overflow: 'auto' }}>
+        <Suspense fallback={<p>loading…</p>}>{routeView(route)}</Suspense>
+      </main>
+    </div>
   );
+}
+
+function Nav(): JSX.Element {
+  return (
+    <nav
+      style={{
+        display: 'flex',
+        gap: '1rem',
+        padding: '0.5rem 1rem',
+        borderBottom: '1px solid #ddd',
+        alignItems: 'center',
+      }}
+    >
+      <strong>yaao web</strong>
+      <Link to="/workspace">workspace</Link>
+      <Link to="/plans">plans</Link>
+      <Link to="/runs/latest">latest run</Link>
+      <Link to="/config">config</Link>
+    </nav>
+  );
+}
+
+function routeView(route: ReturnType<typeof useRoute>): JSX.Element {
+  switch (route.name) {
+    case 'workspace':
+      return <Workspace />;
+    case 'plans':
+      return <Plans />;
+    case 'plan-detail':
+      return <PlanDetail slug={route.params['slug'] ?? ''} />;
+    case 'plan-edit':
+      return <PlanEdit slug={route.params['slug'] ?? ''} />;
+    case 'run-detail':
+      return <RunDetail runId={route.params['runId'] ?? ''} />;
+    case 'runs-latest':
+      return <RunDetail runId="latest" />;
+    case 'config':
+      return <ConfigPage />;
+    case 'not-found':
+    default:
+      return (
+        <p>
+          404 · <Link to="/workspace">go home</Link>
+        </p>
+      );
+  }
 }
