@@ -4,7 +4,7 @@ This document is the working spec for `yaao`, organized by phase. Each feature h
 
 ## Overview
 
-yaao is implemented in 14 phases, progressing from foundational CLI infrastructure through the execution engine, agent integrations, the planner/converter skills, the TUI, and finally distribution and the web viewer.
+yaao is implemented in 15 phases, progressing from foundational CLI infrastructure through the execution engine, agent integrations, the planner/converter skills, the TUI, distribution, the web viewer, and finally session-to-skill distillation.
 
 > **Architectural keystone — MCP-first agent compatibility.** The integration story across Claude Code, Cursor, Copilot, Codex, and raw API models is built around yaao itself being an MCP server. Per-agent files are *thin* — each agent only needs to register yaao's MCP server. Skills, tool definitions, and prompts live behind the MCP boundary, not duplicated four ways. This means **Phase 12 (yaao-as-MCP) is foundational, not auxiliary**, and is intended to be implemented in parallel with Phase 8 (skills system). Phase 8's emitters write MCP-config bootstraps, not large skill artifacts. See the Implementation Priority section.
 
@@ -24,6 +24,7 @@ yaao is implemented in 14 phases, progressing from foundational CLI infrastructu
 | 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Shipped |
 | 13 | Distribution & polish       | npm publish, `doctor`, docs                                     | Planned |
 | 14 | Web viewer                  | HTTP server, browser-based DAG/run viewer                       | Planned |
+| 15 | Session → Skill distillation | `yaao-distiller` skill, session readers, `distill` CLI + MCP   | Planned |
 
 ---
 
@@ -268,6 +269,7 @@ Expose yaao itself as an MCP server. **This is the canonical way every agent —
 | **F12.3** | `yaao_convert` tool                        | shipped | [F12.3-convert-plan-tool.md](phase-12/F12.3-convert-plan-tool.md) |
 | **F12.4** | `yaao_run` & `yaao_status` tools           | shipped | [F12.4-run-plan-tool.md](phase-12/F12.4-run-plan-tool.md) |
 | **F12.5** | Skill-as-MCP-tool exposure                 | shipped | [F12.5-skill-tools.md](phase-12/F12.5-skill-tools.md) |
+| **F12.6** | Skill hot reload (fs.watch + reconcile)    | shipped | [F12.6-skill-hot-reload.md](phase-12/F12.6-skill-hot-reload.md) |
 
 **Key Deliverables:**
 
@@ -275,7 +277,7 @@ Expose yaao itself as an MCP server. **This is the canonical way every agent —
 - `yaao_plan` mirrors `yaao plan`; returns the plan body plus the path written.
 - `yaao_convert` mirrors `yaao convert`; returns YAML and validates.
 - `yaao_run` starts a run asynchronously; `yaao_status` reports live state. Long-running progress flows via MCP progress notifications.
-- Every user-defined skill in `.yaao/skills/` is auto-registered as `yaao_skill_<name>` with input schema derived from `skill.yaml`. New skills become callable tools without touching agent configs.
+- Every user-defined skill in `.yaao/skills/` is auto-registered as `yaao_skill_<name>` with input schema derived from `skill.yaml` (F12.5). A debounced FS watcher keeps the catalog in sync mid-session: adding or removing a skill directory triggers register/remove + `tools/list_changed` within ~250 ms, no reconnect needed (F12.6). This is what makes the Phase 15 distiller's "callable in the next turn" UX work.
 
 ---
 
@@ -311,6 +313,29 @@ Browser-based DAG and run viewer; an alternative to the TUI for users who prefer
 - Local HTTP server (Hono or Fastify) bound to `127.0.0.1` with a randomly-bound port; opens a browser via `open`.
 - Static DAG view rendered with React + a graph layout library; same data the TUI uses.
 - Live view subscribes to the run's event stream over Server-Sent Events; mirrors the TUI's task table and log pane.
+
+---
+
+## Phase 15: Session → Skill Distillation
+
+Close the missing half of the skill lifecycle: capture the patterns from a finished chat session — conventions, focus files, user corrections, the approach that actually worked — and crystallize them into a reusable yaao skill that immediately becomes available across every connected agent via the existing F8.1 format, F12.5 auto-MCP-registration, and F12.6 hot reload. See [phase-15/PHASE-15.md](phase-15/PHASE-15.md) for the phase overview.
+
+| Feature | Description | Doc |
+| --- | --- | --- |
+| **F15.1** | `yaao-distiller` built-in skill | [F15.1-distiller-skill.md](phase-15/F15.1-distiller-skill.md) |
+| **F15.2** | In-session capture (`SessionRecord` contract, redaction) | [F15.2-session-readers.md](phase-15/F15.2-session-readers.md) |
+| **F15.3** | Skill emission, validation, post-emit install | [F15.3-skill-emission.md](phase-15/F15.3-skill-emission.md) |
+| **F15.4** | `yaao_distill` MCP tool (sole entry point) | [F15.4-distill-mcp-tool.md](phase-15/F15.4-distill-mcp-tool.md) |
+| **F15.5** | Skill refinement (re-distill, diff review) | [F15.5-skill-refinement.md](phase-15/F15.5-skill-refinement.md) |
+
+**Key Deliverables:**
+
+- `yaao-distiller` joins `yaao-planner` and `yaao-converter` as a third built-in skill under `src/skills/builtin/`. Its prompt is the whole product: a three-stage pipeline (identify the generalizable task → split signal from instance → emit a draft `skill.yaml` + `prompt.md`) with explicit anti-leakage rules.
+- **MCP is the only entry point.** Unlike every other yaao command, Phase 15 has no shell-CLI surface — distillation is inherently in-context, and the agent producing the `SessionRecord` is by definition the agent calling the tool. The calling agent supplies its own structured self-summary as the `session` argument; yaao never reads IDE-internal transcript stores. Works across every supported agent (Claude Code, Cursor, Copilot, Codex, raw API).
+- `yaao_distill` writes to `.yaao/skills/<name>/` (project) or `~/.yaao/skills/<name>/` (user) and reuses `validateSkill` from F8.1. After write, `yaao skills install` re-emits per-agent stubs automatically. F12.6's hot reload picks up the new directory and the SDK fires `tools/list_changed` — so a skill distilled from a Claude Code session is callable from Cursor, Copilot, Codex, and the raw API in the next turn, with no reconnect.
+- **F15.1, F15.2, and F15.3 land together** as one PR — the distiller prompt, the `SessionRecord` contract it consumes, and the emission pipeline it produces output for are deeply coupled and can't be sensibly built in isolation. F15.4 (MCP driver) and F15.5 (refinement) layer on top once those three are working end-to-end.
+- Refinement (F15.5): re-run the distiller against an existing skill with a fresh session. The distiller merges (preserving anti-patterns and distillation notes); yaao returns a diff + changelog in the MCP response so the calling agent can show the user before committing (or call with `apply: false` for explicit preview). Contradictions between old and new conventions block auto-apply, detected via a **structural rule** over backtick-quoted identifiers shared between bullets (LLM-driven semantic conflict detection is a v2 candidate). **Versioning is git's job** — yaao does not touch the `version` field on refinement and keeps no parallel backup directory. `.yaao/skills/` is repo-tracked, so `git log -p` is the audit trail. A pre-refine `YAAO_SKILL_DIRTY` check surfaces uncommitted changes to the calling agent, which is expected to confirm with the user before re-calling with `force: true`.
+- Recovery from a bad distillation: `rm -rf .yaao/skills/<name>` + `yaao skills install`. F12.6's watcher drops the stale `yaao_skill_<name>` tool in the same session. `yaao_prune` does not currently cover skills; a `target: skill` extension is a possible follow-up.
 
 ---
 
