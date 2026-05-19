@@ -441,9 +441,40 @@ export class Lifecycle {
     }
   }
 
+  /**
+   * Run a user-supplied shell command for setup / validation / post-task
+   * hooks. Wraps the command so that pipeline failures aren't masked:
+   *
+   *   `make && nm build/kernel.elf | grep symbol`
+   *
+   * Without pipefail, the pipeline's exit code is grep's — which can be 1
+   * for "no match" even when nm crashed earlier. That produced inconsistent
+   * validation outcomes for the same failure mode across sibling tasks in
+   * one of yaao's own test runs. The fix is to enable -e -o pipefail so any
+   * step's failure is surfaced as the script's exit code, and to do it under
+   * a shell that actually supports `-o pipefail`.
+   *
+   * Strategy: try bash first (where pipefail is fully supported); fall back
+   * to sh with a best-effort `set -o pipefail` prefix so callers on
+   * minimal-image systems still get partial coverage. Both paths set -e.
+   */
   private async runShell(cmd: string, cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
     const { execa } = await import('execa');
-    const r = await execa('sh', ['-c', cmd], { cwd, reject: false });
+    // Prefer bash: deterministic pipefail support across platforms. If bash
+    // isn't on PATH, execa throws ENOENT; in that case we fall back to sh
+    // with a softer best-effort prefix.
+    let r;
+    try {
+      r = await execa('bash', ['-e', '-o', 'pipefail', '-c', cmd], { cwd, reject: false });
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') throw e;
+      r = await execa(
+        'sh',
+        ['-c', `set -e; set -o pipefail 2>/dev/null || true; ${cmd}`],
+        { cwd, reject: false },
+      );
+    }
     return {
       exitCode: typeof r.exitCode === 'number' ? r.exitCode : -1,
       stdout: r.stdout?.toString() ?? '',
