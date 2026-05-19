@@ -12,6 +12,7 @@ import { convertCommand } from './commands/convert.js';
 import { viewCommand } from './commands/view.js';
 import { statusCommand } from './commands/status.js';
 import { serveCommand } from './commands/serve.js';
+import { webCommand } from './commands/web.js';
 
 export const COMMAND_MODULES: CommandModule[] = [
   initCommand,
@@ -31,4 +32,5 @@ export const COMMAND_MODULES: CommandModule[] = [
     phase: 'F13',
   }),
   serveCommand,
+  webCommand,
 ];
