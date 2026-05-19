@@ -252,16 +252,66 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
         : {}),
       ...(input.trial !== undefined ? { trial: input.trial } : {}),
     });
+    // Pull the full summary back out of the journal so we can emit a per-task
+    // array without forcing a follow-up yaao_status call. The summary lives at
+    // .yaao/runs/<runId>/summary.json and already has filesChanged, merge SHA,
+    // and the cachedFromRunId we just plumbed in.
+    const journalDir = join(cwd, '.yaao', 'runs');
+    let tasks: unknown[] = [];
+    let planCommit: string | undefined;
+    let unmerged: { taskId: string; into: string; conflicts: string[] }[] = [];
+    try {
+      const { summary } = await loadRun(runId, journalDir);
+      planCommit = summary.planCommit;
+      tasks = Object.entries(summary.tasks).map(([id, t]) => ({
+        id,
+        status: t.status,
+        ...(t.agent !== undefined ? { agent: t.agent } : {}),
+        ...(t.branch !== undefined ? { branch: t.branch } : {}),
+        ...(t.worktree !== undefined ? { worktree: t.worktree } : {}),
+        ...(t.durationMs !== undefined ? { durationMs: t.durationMs } : {}),
+        ...(t.filesChanged !== undefined ? { filesChanged: t.filesChanged } : {}),
+        ...(t.commit !== undefined ? { commit: t.commit } : {}),
+        ...(t.mergeStatus !== undefined ? { mergeStatus: t.mergeStatus } : {}),
+        ...(t.mergeInto !== undefined ? { mergeInto: t.mergeInto } : {}),
+        ...(t.mergeCommit !== undefined ? { mergeCommit: t.mergeCommit } : {}),
+        ...(t.mergeConflicts !== undefined ? { mergeConflicts: t.mergeConflicts } : {}),
+        ...(t.mergeReason !== undefined ? { mergeReason: t.mergeReason } : {}),
+        ...(t.cachedFromRunId !== undefined
+          ? { cached: true, cachedFromRunId: t.cachedFromRunId }
+          : {}),
+      }));
+      unmerged = Object.entries(summary.tasks)
+        .filter(([, t]) => t.mergeStatus === 'merge-failed')
+        .map(([id, t]) => ({
+          taskId: id,
+          into: t.mergeInto ?? '',
+          conflicts: t.mergeConflicts ?? [],
+        }));
+    } catch {
+      // Journal missing/corrupt — fall back to the bare envelope below.
+    }
+    const warnings: string[] = [];
+    if (unmerged.length > 0) {
+      warnings.push(
+        `${unmerged.length} task(s) committed work but failed to merge: ${unmerged
+          .map((u) => `${u.taskId} → ${u.into}`)
+          .join(', ')}`,
+      );
+    }
     return {
       text: `run ${runId} ${result.status} in ${result.durationMs}ms`,
       structuredContent: {
         ok: result.status === 'success',
         files: [],
-        warnings: [],
+        warnings,
         errors: [],
         runId,
         status: result.status,
         durationMs: result.durationMs,
+        ...(planCommit !== undefined ? { planCommit } : {}),
+        tasks,
+        unmerged,
       },
     };
   });

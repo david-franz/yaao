@@ -29,7 +29,24 @@ export type JournalEvent =
     }
   | { t: 'task:queued'; time: string; taskId: string; depends: string[] }
   | { t: 'task:ready'; time: string; taskId: string }
-  | { t: 'task:running'; time: string; taskId: string; agent: string; model?: string; worktree: string; branch: string; pid: number }
+  | {
+      t: 'task:running';
+      time: string;
+      taskId: string;
+      agent: string;
+      model?: string;
+      worktree: string;
+      branch: string;
+      pid: number;
+      /**
+       * Non-empty when the worktree being entered was originally stamped by a
+       * different run (resume, or fall-through from a prior failed run). Lets
+       * `yaao status` and the MCP run-summary surface a `cached: true` signal
+       * with a pointer to the original run instead of users guessing why the
+       * worktree path doesn't match the current runId.
+       */
+      cachedFromRunId?: string;
+    }
   | { t: 'task:output'; time: string; taskId: string; stream: 'stdout' | 'stderr'; chunk: string }
   | {
       t: 'task:completed';
@@ -113,8 +130,18 @@ export interface RunSummary {
        * on its own branch and the user needs to land it manually. */
       mergeStatus?: 'merged' | 'merge-failed';
       mergeInto?: string;
+      mergeCommit?: string;
       mergeConflicts?: string[];
       mergeReason?: string;
+      /**
+       * Number of files the task's commit touched. Lets callers report a real
+       * diff size without a follow-up `git log` / `git diff`.
+       */
+      filesChanged?: number;
+      /** Commit SHA produced by the task (or '' when no commit was created). */
+      commit?: string;
+      /** Original runId when this run reused a worktree stamped by an earlier run. */
+      cachedFromRunId?: string;
     }
   >;
 }
@@ -266,6 +293,7 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
         agent: ev.agent,
         branch: ev.branch,
         worktree: ev.worktree,
+        ...(ev.cachedFromRunId !== undefined ? { cachedFromRunId: ev.cachedFromRunId } : {}),
       };
       return next;
     case 'task:completed':
@@ -273,6 +301,10 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
         ...(next.tasks[ev.taskId] ?? { status: 'completed' }),
         status: 'completed',
         durationMs: ev.durationMs,
+        filesChanged: ev.filesChanged,
+        // Empty commit happens on no-op tasks; keep the field so callers see
+        // "this task ran but produced nothing" rather than "field missing".
+        commit: ev.commit,
         // Lock the agent in to the one that produced the completion. A later
         // task:running (which is ignored by sticky-completion) won't overwrite
         // it, so the status table reports who actually did the work — not who
@@ -311,6 +343,7 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
         ...(next.tasks[ev.taskId] ?? { status: 'completed' }),
         mergeStatus: 'merged',
         mergeInto: ev.into,
+        mergeCommit: ev.mergeCommit,
       };
       return next;
     case 'task:merge-failed':

@@ -31,6 +31,12 @@ export interface Worktree {
   branch: string;
   path: string;
   baseCommit: string;
+  /**
+   * Run that originally stamped this worktree. When a later run reuses it
+   * (resume, or sibling re-execution) this is the original runId — non-equal
+   * to the active run means callers should surface a `cached: true` signal.
+   */
+  sourceRunId?: string;
   /** Files with conflict markers left in place by `onConflict: leave-for-agent`. */
   unresolvedConflicts?: string[];
   /** The parent branch whose merge produced the conflicts above. */
@@ -228,7 +234,13 @@ export class WorktreeManager {
         if (!isDirectory(wtPath)) continue;
         const stamp = this.readStamp(wtPath);
         if (!stamp) continue;
-        yield { taskId: stamp.taskId, branch: stamp.branch, path: wtPath, baseCommit: stamp.baseCommit };
+        yield {
+        taskId: stamp.taskId,
+        branch: stamp.branch,
+        path: wtPath,
+        baseCommit: stamp.baseCommit,
+        sourceRunId: stamp.runId,
+      };
       }
     }
   }

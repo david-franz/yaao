@@ -183,6 +183,14 @@ export class Lifecycle {
       // falsely marked completed.
       const backend = this.opts.backendFor(task);
       const headBeforeSpawn = await this.opts.git.revParse('HEAD', wt.path).catch(() => '');
+      // Surface worktree-reuse to the journal when we entered a worktree
+      // stamped by a previous run. The reviewer's "cached: true with a
+      // pointer to the original run" — visible via `yaao status` and the
+      // MCP run-summary, no second tool call required.
+      const cachedFromRunId =
+        wt.sourceRunId !== undefined && wt.sourceRunId !== this.opts.runId
+          ? wt.sourceRunId
+          : undefined;
       await this.opts.journal.append({
         t: 'task:running',
         time: new Date().toISOString(),
@@ -192,6 +200,7 @@ export class Lifecycle {
         worktree: wt.path,
         branch: wt.branch,
         pid: 0,
+        ...(cachedFromRunId !== undefined ? { cachedFromRunId } : {}),
       });
       const proc = await backend.spawn({
         cwd: wt.path,
