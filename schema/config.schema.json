@@ -259,6 +259,22 @@
           "additionalProperties": false,
           "default": {}
         },
+        "run": {
+          "type": "object",
+          "properties": {
+            "require-tracked-plan": {
+              "type": "string",
+              "enum": [
+                "error",
+                "warn",
+                "off"
+              ],
+              "default": "error"
+            }
+          },
+          "additionalProperties": false,
+          "default": {}
+        },
         "convert": {
           "type": "object",
           "properties": {

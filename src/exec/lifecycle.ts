@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, resolve as resolvePath } from 'node:path';
 import type { ResolvedPlan, ResolvedTask } from '../plan/schema/types.js';
 import type { Scheduler } from './scheduler.js';
-import type { WorktreeManager } from '../git/worktree-manager.js';
+import { dependsHash, hashKey, type WorktreeManager, type WorktreeStampKey } from '../git/worktree-manager.js';
 import type { Git } from '../git/git.js';
 import type { BranchPlan } from '../git/branch-graph.js';
 import type { AgentBackend, McpServerConfig } from '../agents/backend.js';
@@ -122,9 +122,20 @@ export class Lifecycle {
     try {
       // 1) Provision worktree. yaao leaves worktrees on disk through retries,
       // resumes, and interrupted runs, so always check for an existing stamped
-      // worktree first and reuse it. Only create a fresh one when nothing is
-      // there. Setup commands re-run idempotently in either case.
-      const existing = await this.opts.worktreeManager.get(task.id);
+      // worktree first and reuse it. Reuse is gated on the composite cache
+      // key — (planName, taskId, promptHash, dependsHash) — so two plans that
+      // share a task id (e.g. `kernel-wireup` in both `timer-pit` and `kheap`)
+      // can never collide. A legacy stamp lacking the key fields is treated
+      // as no-match and a fresh worktree is provisioned. Setup commands
+      // re-run idempotently in either path.
+      const promptBodyForKey = resolvePromptBody(task, this.opts.promptRefBaseDir ?? this.opts.rootDir);
+      const cacheKey: WorktreeStampKey = {
+        planName: this.opts.plan.plan.name,
+        taskId: task.id,
+        promptHash: hashKey(promptBodyForKey),
+        dependsHash: dependsHash(task.depends),
+      };
+      const existing = await this.opts.worktreeManager.get(cacheKey);
       // When the plan's on-conflict mode is `agent`, dep-branch merge conflicts
       // are left in place for the agent to resolve rather than aborting the
       // task — see WorktreeRequest.onConflict.
@@ -141,6 +152,9 @@ export class Lifecycle {
           rootDir: this.opts.rootDir,
           worktreeRoot: this.opts.plan.config['worktree-root'],
           onConflict,
+          planName: cacheKey.planName,
+          promptHash: cacheKey.promptHash,
+          dependsHash: cacheKey.dependsHash,
         }));
 
       // 1.5) Pre-task setup: run any shell commands declared in `task.setup`

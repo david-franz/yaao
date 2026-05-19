@@ -6,6 +6,7 @@ import { runPlan } from '../../../src/exec/runner.js';
 import { fakeResolved } from '../../helpers/plan.js';
 import { createTestRepo, type TestRepo } from '../../helpers/repo.js';
 import { FakeBackend } from '../../../src/agents/fake.js';
+import { dependsHash, hashKey } from '../../../src/git/worktree-manager.js';
 
 describe('yaao run --resume on interrupted (running) tasks', () => {
   let repo: TestRepo | undefined;
@@ -61,6 +62,12 @@ describe('yaao run --resume on interrupted (running) tasks', () => {
         taskId: 'a',
         branch: 'rr/a',
         baseCommit: execaSync('git', ['rev-parse', 'HEAD'], { cwd }).stdout.trim(),
+        // Cache-key fields must match what the lifecycle computes for the task
+        // below ('p' prompt, no depends) for the resume path to reuse the
+        // stamped worktree instead of refusing as a legacy stamp.
+        planName: 'rr',
+        promptHash: hashKey('p'),
+        dependsHash: dependsHash([]),
       }),
     );
 
