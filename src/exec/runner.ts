@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve as resolvePath } from 'node:path';
 import type { ResolvedPlan, ResolvedTask } from '../plan/schema/types.js';
+import { resolveBranchPolicy } from '../plan/schema/types.js';
 import type { YaaoConfig } from '../config/types.js';
 import { Scheduler, type SchedulerEvent } from './scheduler.js';
 import { Lifecycle } from './lifecycle.js';
@@ -98,6 +99,26 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
     planName: opts.plan.plan.name,
   });
 
+  // Resolve branch policy once and use it everywhere downstream — pre-creating
+  // featureBranch, recording it in the journal, and (via lifecycle) routing
+  // auto-merges to it.
+  const policy = resolveBranchPolicy(opts.plan);
+  if (policy.featureBranch && (await git.isRepo(opts.rootDir))) {
+    const exists = await git.branchExists(policy.featureBranch, opts.rootDir);
+    if (!exists) {
+      try {
+        await git.createBranch(policy.featureBranch, policy.baseBranch, opts.rootDir);
+      } catch (e) {
+        throw new YaaoError({
+          code: 'YAAO_FEATURE_BRANCH_CREATE',
+          message: `failed to create featureBranch '${policy.featureBranch}' from '${policy.baseBranch}': ${(e as Error).message}`,
+          hint: `make sure '${policy.baseBranch}' exists locally, or create '${policy.featureBranch}' yourself before running.`,
+          cause: e,
+        });
+      }
+    }
+  }
+
   const journal: RunJournal = await openJournal(opts.runId, { dir: journalDir });
   const planContents = readFileSync(opts.planFile, 'utf8');
   await journal.append({
@@ -109,8 +130,9 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
     ...(planState.commit !== undefined ? { planCommit: planState.commit } : {}),
     ...(planState.blob !== undefined ? { planBlob: planState.blob } : {}),
     config: {
-      baseBranch: opts.plan.config['base-branch'],
+      baseBranch: policy.baseBranch,
       maxParallel: opts.trial ? 1 : opts.plan.config['max-parallel'],
+      ...(policy.featureBranch !== undefined ? { featureBranch: policy.featureBranch } : {}),
     },
   });
   bus.emit({ type: 'run:start', runId: opts.runId, planFile: opts.planFile });

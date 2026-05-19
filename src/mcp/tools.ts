@@ -11,6 +11,7 @@
 
 import { existsSync, readFileSync, readdirSync, rmdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import type { YaaoConfig } from '../config/types.js';
 import {
   resolveSkill,
@@ -157,6 +158,9 @@ export interface ConvertToolInput {
   input: string;
   out?: string;
   inferDeps?: 'off' | 'suggest' | 'auto';
+  /** Written verbatim into the generated YAML as `plan.featureBranch`.
+   * Absent → field omitted; the plan author can add it later by hand. */
+  featureBranch?: string;
 }
 
 export async function yaaoConvertTool(input: ConvertToolInput, ctx: ToolContext): Promise<ToolCallResult> {
@@ -167,6 +171,7 @@ export async function yaaoConvertTool(input: ConvertToolInput, ctx: ToolContext)
       input: input.input,
       ...(input.out !== undefined ? { out: input.out } : {}),
       ...(input.inferDeps !== undefined ? { infer: input.inferDeps } : {}),
+      ...(input.featureBranch !== undefined ? { featureBranch: input.featureBranch } : {}),
     });
     const fileEntry = { path: relPath(ctx.cwd, r.outPath), action: r.outAction };
     // `inferDeps: 'auto'` returning `inferred: []` is ambiguous (nothing to
@@ -193,6 +198,7 @@ export async function yaaoConvertTool(input: ConvertToolInput, ctx: ToolContext)
         tasks: r.plan.tasks.length,
         inferred: r.inferred,
         inferDisposition,
+        featureBranch: r.plan.plan.featureBranch ?? null,
       },
     };
   });
@@ -218,12 +224,29 @@ export async function yaaoValidateTool(input: ValidateToolInput, ctx: ToolContex
     });
     const errs = issues.filter((i) => i.severity === 'error');
     const warns = issues.filter((i) => i.severity !== 'error');
+    const extraWarnings: string[] = [];
+    // Surface a typo-catching warning when plan.featureBranch is set but the
+    // named branch doesn't exist locally. Not an error: yaao_run creates it
+    // from base-branch if missing, so a brand-new feature branch is fine.
+    const featureBranch = loaded.plan.plan.featureBranch;
+    if (featureBranch) {
+      const git = ctx.git ?? defaultGit;
+      if (await git.isRepo(ctx.cwd)) {
+        const exists = await git.branchExists(featureBranch, ctx.cwd);
+        if (!exists) {
+          extraWarnings.push(
+            `plan.featureBranch '${featureBranch}' does not exist locally — yaao_run will create it from base-branch on first run`,
+          );
+        }
+      }
+    }
+    const allWarnings = [...warns.map((w) => w.message), ...extraWarnings];
     return {
-      text: errs.length === 0 ? '✔ plan ok' : `${errs.length} error(s); ${warns.length} warning(s)`,
+      text: errs.length === 0 ? '✔ plan ok' : `${errs.length} error(s); ${allWarnings.length} warning(s)`,
       structuredContent: {
         ok: errs.length === 0,
         files: [{ path: relPath(ctx.cwd, planAbs), action: 'unchanged' as const }],
-        warnings: warns.map((w) => w.message),
+        warnings: allWarnings,
         errors: errs.map((e) => ({ code: e.code, message: e.message })),
         issues,
       },
@@ -245,6 +268,18 @@ export interface RunToolInput {
    * big-blast-radius default of yaao_run merging straight into main.
    */
   noMerge?: boolean;
+  /**
+   * Override `plan.featureBranch` for this invocation. Empty string clears the
+   * field (run with no integration branch). Precedence:
+   *   runtime arg > plan.featureBranch > none (merge into baseBranch directly).
+   */
+  featureBranch?: string;
+  /**
+   * Override the workspace base-branch for this invocation. Emergency escape
+   * hatch (testing a plan against a scratch repo state). Precedence:
+   *   runtime arg > workspace config base-branch > "main".
+   */
+  baseBranch?: string;
 }
 
 export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promise<ToolCallResult> {
@@ -252,6 +287,18 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
     const cwd = resolve(ctx.cwd);
     const planAbs = resolve(cwd, input.plan);
     const loaded = await loadPlan(planAbs, { cwd, config: ctx.config });
+    if (input.baseBranch) {
+      loaded.plan.config['base-branch'] = input.baseBranch;
+    }
+    if (input.featureBranch !== undefined) {
+      // Empty string clears the field (run trunk-based even when the plan
+      // declares a feature branch); any non-empty value overrides it.
+      if (input.featureBranch === '') {
+        delete loaded.plan.plan.featureBranch;
+      } else {
+        loaded.plan.plan.featureBranch = input.featureBranch;
+      }
+    }
     const runId = `run-${Date.now().toString(36)}`;
     const result = await runPlan({
       runId,
@@ -267,6 +314,8 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
       ...(input.noMerge !== undefined ? { noMerge: input.noMerge } : {}),
     });
     const { tasks, unmerged, planCommit, warnings } = await buildRunSummaryPayload(cwd, runId);
+    const resolvedBaseBranch = loaded.plan.config['base-branch'];
+    const resolvedFeatureBranch = loaded.plan.plan.featureBranch;
     return {
       text: `run ${runId} ${result.status} in ${result.durationMs}ms`,
       structuredContent: {
@@ -278,6 +327,8 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
         status: result.status,
         durationMs: result.durationMs,
         ...(planCommit !== undefined ? { planCommit } : {}),
+        resolvedBaseBranch,
+        resolvedFeatureBranch: resolvedFeatureBranch ?? null,
         tasks,
         unmerged,
       },
@@ -379,6 +430,21 @@ export async function yaaoResumeTool(input: ResumeToolInput, ctx: ToolContext): 
       });
     }
     const loaded = await loadPlan(prior.planFile, { cwd, config: ctx.config });
+    // Pin to the plan-as-committed values: a resume must never silently
+    // change merge routing across attempts. The original run's resolved
+    // baseBranch + featureBranch live in the journal's `run:start` config
+    // block — restore them here, overriding whatever the on-disk plan or
+    // workspace config now says.
+    if (prior.config?.baseBranch) {
+      loaded.plan.config['base-branch'] = prior.config.baseBranch;
+    }
+    if (prior.config?.featureBranch !== undefined) {
+      loaded.plan.plan.featureBranch = prior.config.featureBranch;
+    } else {
+      // Original run had no feature branch — make sure a freshly-added
+      // featureBranch on disk doesn't sneak in on resume.
+      delete loaded.plan.plan.featureBranch;
+    }
     const retryFailed = input.retryFailed ?? true;
     const reskip = input.reskip ?? false;
     const skipIds: string[] = [];
@@ -415,6 +481,8 @@ export async function yaaoResumeTool(input: ResumeToolInput, ctx: ToolContext): 
         status: result.status,
         durationMs: result.durationMs,
         ...(planCommit !== undefined ? { planCommit } : {}),
+        resolvedBaseBranch: loaded.plan.config['base-branch'],
+        resolvedFeatureBranch: loaded.plan.plan.featureBranch ?? null,
         tasks,
         unmerged,
       },
@@ -619,6 +687,8 @@ export async function yaaoInspectTool(input: InspectToolInput, ctx: ToolContext)
         row['execPath'] = relPath(cwd, execAbs);
         row['execMtimeMs'] = safeMtimeMs(execAbs);
         row['execHash'] = safeHash(execAbs);
+        const fb = safePeekFeatureBranch(execAbs);
+        row['featureBranch'] = fb ?? null;
         if (inRepo) {
           const execRel = relative(cwd, execAbs);
           // eslint-disable-next-line no-await-in-loop -- per-file probes are sequential
@@ -1070,6 +1140,22 @@ function slugFromPath(p: string): string {
 function safeHash(p: string): string | undefined {
   try {
     return hashKey(readFileSync(p, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Cheap peek at `plan.featureBranch` in an execution YAML — used by
+ * yaao_inspect to render the per-plan integration branch without paying for a
+ * full plan load + schema validation. Returns undefined if the file is
+ * missing, unparseable, or doesn't declare the field.
+ */
+function safePeekFeatureBranch(p: string): string | undefined {
+  try {
+    const doc = parseYaml(readFileSync(p, 'utf8')) as { plan?: { featureBranch?: unknown } } | undefined;
+    const fb = doc?.plan?.featureBranch;
+    return typeof fb === 'string' && fb.length > 0 ? fb : undefined;
   } catch {
     return undefined;
   }

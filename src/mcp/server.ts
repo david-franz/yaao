@@ -74,6 +74,12 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
         input: z.string(),
         out: z.string().optional(),
         inferDeps: z.enum(['off', 'suggest', 'auto']).optional(),
+        featureBranch: z
+          .string()
+          .optional()
+          .describe(
+            'Write as plan.featureBranch in the generated YAML. Per-plan integration branch; absent → tasks merge straight into base-branch.',
+          ),
       },
     },
     async (args) => asSdkResult(await yaaoConvertTool(args, ctx)),
@@ -102,6 +108,18 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
           .optional()
           .describe(
             'Skip the post-task auto-merge — tasks land on their own branches only. Use when you want to review or PR before landing on base-branch.',
+          ),
+        featureBranch: z
+          .string()
+          .optional()
+          .describe(
+            "Override plan.featureBranch for this invocation. Empty string clears it (run trunk-based). Precedence: runtime arg > plan.featureBranch > none.",
+          ),
+        baseBranch: z
+          .string()
+          .optional()
+          .describe(
+            'Override the workspace base-branch for this invocation. Escape hatch for testing a plan against a scratch repo state.',
           ),
       },
     },

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, resolve as resolvePath } from 'node:path';
 import type { ResolvedPlan, ResolvedTask } from '../plan/schema/types.js';
+import { resolveBranchPolicy } from '../plan/schema/types.js';
 import type { Scheduler } from './scheduler.js';
 import { dependsHash, hashKey, type WorktreeManager, type WorktreeStampKey } from '../git/worktree-manager.js';
 import type { Git } from '../git/git.js';
@@ -431,11 +432,10 @@ export class Lifecycle {
               `validation pass/fail must be the pipeline exit code under bash -o pipefail.`,
           });
         }
+        const policy = resolveBranchPolicy(this.opts.plan);
         const target =
           task.merge.into ??
-          (task.merge.strategy === 'auto'
-            ? this.opts.plan.config['base-branch']
-            : undefined);
+          (task.merge.strategy === 'auto' ? policy.mergeTarget : undefined);
         if (target) {
           await this.mergeIntoTarget(task, wt.branch, branchEntry.baseBranch, target);
         }

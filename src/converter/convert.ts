@@ -19,6 +19,12 @@ export interface ConvertOptions {
   infer?: InferMode;
   inferThreshold?: number;
   apiAvailable?: boolean;
+  /** When set, written verbatim into the generated YAML as `plan.featureBranch`.
+   * Omitted → field absent (the plan author can add it later by hand, or the
+   * run can override via runtime arg). We deliberately do not infer from the
+   * current git branch or workspace config — featureBranch is a per-plan
+   * authoring decision. */
+  featureBranch?: string;
 }
 
 export interface ConvertResult {
@@ -97,7 +103,12 @@ export async function convertPlan(opts: ConvertOptions): Promise<ConvertResult> 
   });
 
   const plan: Plan = {
-    plan: { name: planName, version: 1, ...(parsed.description ? { description: parsed.description } : {}) },
+    plan: {
+      name: planName,
+      version: 1,
+      ...(parsed.description ? { description: parsed.description } : {}),
+      ...(opts.featureBranch ? { featureBranch: opts.featureBranch } : {}),
+    },
     config: undefined,
     context: undefined,
     includes: [],

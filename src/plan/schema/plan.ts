@@ -176,6 +176,13 @@ export const PlanHeaderSchema = z
     name: z.string().regex(SLUG_RE, { message: 'plan.name must be a slug' }),
     version: z.literal(1),
     description: z.string().optional(),
+    /**
+     * Per-plan integration branch. When set, the run creates it from
+     * `base-branch` if missing, routes layer-0 task branches off it, and
+     * auto-merges task work into it instead of `base-branch`. Absent →
+     * tasks merge straight into the workspace base-branch.
+     */
+    featureBranch: z.string().min(1).optional(),
   })
   .strict();
 

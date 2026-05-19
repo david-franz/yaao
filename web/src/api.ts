@@ -20,6 +20,8 @@ export interface WorkspacePlan {
   execMtimeMs?: number;
   execTracked?: boolean;
   execCommit?: string | null;
+  /** Per-plan integration branch from plan.featureBranch (yaml). null when absent. */
+  featureBranch?: string | null;
   lastRunId?: string;
   lastRunStatus?: string;
   lastRunEndedAt?: string;

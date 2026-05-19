@@ -123,6 +123,32 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
  * either the shorthand strategy string or the full object; falls back to the
  * plan-level strategy when the task says nothing.
  */
+/**
+ * Single point of truth for "where does this plan's work live, and where does
+ * it land?" Every consumer (runner, lifecycle, inspect, validate) reads branch
+ * policy through this helper instead of poking at `plan.config['base-branch']`
+ * + `plan.plan.featureBranch` independently, so the precedence rules stay in
+ * one place: `featureBranch = plan.plan.featureBranch` (or absent → tasks
+ * merge straight into base-branch), `baseBranch = plan.config['base-branch']`
+ * (resolved from workspace defaults at load time).
+ */
+export interface BranchPolicy {
+  baseBranch: string;
+  featureBranch?: string;
+  /** Auto-merge target: featureBranch when set, otherwise baseBranch. */
+  mergeTarget: string;
+}
+
+export function resolveBranchPolicy(plan: ResolvedPlan): BranchPolicy {
+  const baseBranch = plan.config['base-branch'];
+  const featureBranch = plan.plan.featureBranch;
+  return {
+    baseBranch,
+    ...(featureBranch !== undefined ? { featureBranch } : {}),
+    mergeTarget: featureBranch ?? baseBranch,
+  };
+}
+
 function resolveTaskMerge(
   raw: Task['merge'],
   planStrategy: 'auto' | 'pr' | 'manual',

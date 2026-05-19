@@ -7,6 +7,10 @@ export type RunStatus = 'running' | 'success' | 'failed' | 'cancelled';
 export interface SerializedConfigSubset {
   baseBranch: string;
   maxParallel: number;
+  /** Resolved per-plan integration branch. Absent → tasks merged directly
+   * into baseBranch. Captured so a resumed run can be audited against the
+   * same merge routing it started with. */
+  featureBranch?: string;
 }
 
 export type JournalEvent =
@@ -116,6 +120,8 @@ export interface RunSummary {
   planCommit?: string;
   /** Blob SHA of the plan file at run-start. */
   planBlob?: string;
+  /** Resolved baseBranch + featureBranch the run started with. */
+  config?: SerializedConfigSubset;
   startedAt: string;
   endedAt?: string;
   status: RunStatus;
@@ -298,6 +304,7 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
       next.planHash = ev.planHash;
       if (ev.planCommit !== undefined) next.planCommit = ev.planCommit;
       if (ev.planBlob !== undefined) next.planBlob = ev.planBlob;
+      next.config = ev.config;
       next.startedAt = ev.time;
       next.status = 'running';
       return next;

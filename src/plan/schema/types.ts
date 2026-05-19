@@ -22,5 +22,6 @@ export type {
   ResolvedPlanConfig,
   ResolvedPlanContext,
   ResolveOptions,
+  BranchPolicy,
 } from './resolve.js';
-export { resolvePlan } from './resolve.js';
+export { resolvePlan, resolveBranchPolicy } from './resolve.js';

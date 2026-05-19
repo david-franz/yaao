@@ -1,4 +1,5 @@
 import type { ResolvedPlan, ResolvedTask } from '../plan/schema/resolve.js';
+import { resolveBranchPolicy } from '../plan/schema/resolve.js';
 
 export interface TaskBranchEntry {
   branch: string;
@@ -15,7 +16,12 @@ export interface BranchPlan {
 
 export function planBranches(plan: ResolvedPlan): BranchPlan {
   const byTask = new Map<string, TaskBranchEntry>();
-  const baseBranch = plan.config['base-branch'];
+  const policy = resolveBranchPolicy(plan);
+  // Layer-0 tasks branch off `featureBranch` when set, so the plan's prior
+  // integration commits flow into every task; otherwise they branch off the
+  // workspace base-branch (status-quo behaviour).
+  const layer0Source = policy.featureBranch ?? policy.baseBranch;
+  const baseBranch = policy.baseBranch;
   const idToTask = new Map(plan.tasks.map((t) => [t.id, t]));
 
   const descendants = computeDescendantCounts(plan.tasks);
@@ -23,7 +29,7 @@ export function planBranches(plan: ResolvedPlan): BranchPlan {
   for (const t of plan.tasks) {
     const branch = t.branch;
     if (t.depends.length === 0) {
-      byTask.set(t.id, { branch, baseBranch, parentBranches: [] });
+      byTask.set(t.id, { branch, baseBranch: layer0Source, parentBranches: [] });
       continue;
     }
     if (t.depends.length === 1) {
