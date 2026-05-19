@@ -55,12 +55,29 @@ export interface LogEntry {
   date: string;
 }
 
+export interface PlanGitState {
+  /** True when the file is recorded in HEAD's tree. */
+  tracked: boolean;
+  /** True when the working-tree copy differs from HEAD (modified or staged). */
+  dirty: boolean;
+  /** The committed blob SHA in HEAD, when tracked. Anchors a run to a real commit. */
+  blobSha?: string;
+  /** HEAD commit SHA at the moment of the check. */
+  headSha?: string;
+}
+
 export interface Git {
   rootDir(cwd?: string): Promise<string>;
   isRepo(cwd?: string): Promise<boolean>;
   currentBranch(cwd?: string): Promise<string>;
   status(cwd?: string): Promise<GitStatus>;
   hasUncommitted(cwd?: string): Promise<boolean>;
+  /**
+   * Inspect a single file's git state. Used by `yaao run` to refuse starting
+   * when the plan file isn't anchored to a commit — otherwise the audit trail
+   * is half-broken (you'd have commits made from an unrecorded plan).
+   */
+  planFileState(path: string, cwd?: string): Promise<PlanGitState>;
   revParse(ref: string, cwd?: string): Promise<string>;
   branchExists(branch: string, cwd?: string): Promise<boolean>;
   createBranch(branch: string, base: string, cwd?: string): Promise<void>;
@@ -200,6 +217,22 @@ export const git: Git = {
   async hasUncommitted(cwd) {
     const s = await this.status(cwd);
     return s.files.length > 0 || s.untracked.length > 0 || s.renamed.length > 0;
+  },
+  async planFileState(path, cwd) {
+    // ls-files --error-unmatch: exits 0 iff the path is tracked at HEAD's tree.
+    const ls = await run(['ls-files', '--error-unmatch', '--', path], cwd);
+    const tracked = ls.exitCode === 0;
+    if (!tracked) return { tracked: false, dirty: true };
+    // diff --quiet HEAD -- path: exits 0 when working-tree matches HEAD.
+    // Captures both staged and unstaged changes against the recorded blob.
+    const diff = await run(['diff', '--quiet', 'HEAD', '--', path], cwd);
+    const dirty = diff.exitCode !== 0;
+    const blob = await run(['rev-parse', `HEAD:${path}`], cwd);
+    const head = await run(['rev-parse', 'HEAD'], cwd);
+    const out: PlanGitState = { tracked: true, dirty };
+    if (blob.exitCode === 0) out.blobSha = blob.stdout.trim();
+    if (head.exitCode === 0) out.headSha = head.stdout.trim();
+    return out;
   },
   async revParse(ref, cwd) {
     return (await runOk(['rev-parse', '--verify', ref], cwd)).trim();

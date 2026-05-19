@@ -36,6 +36,7 @@ describe('agent produced no new work', () => {
 
     const failures: { msg: string }[] = [];
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r1',
       plan,
       planFile,
@@ -79,6 +80,7 @@ describe('agent produced no new work', () => {
       },
     });
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r2',
       plan,
       planFile,

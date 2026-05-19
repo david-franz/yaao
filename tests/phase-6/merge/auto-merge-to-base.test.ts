@@ -40,6 +40,7 @@ describe('merge.strategy: auto', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'ram',
       plan,
       planFile,
@@ -83,6 +84,7 @@ describe('merge.strategy: auto', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'ram2',
       plan,
       planFile,

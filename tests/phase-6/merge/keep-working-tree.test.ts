@@ -44,6 +44,7 @@ describe('auto-merge keeps the root working tree in sync', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rkw',
       plan,
       planFile,
@@ -90,6 +91,7 @@ describe('auto-merge keeps the root working tree in sync', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rkwr',
       plan,
       planFile,

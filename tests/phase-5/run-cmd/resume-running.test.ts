@@ -82,6 +82,7 @@ describe('yaao run --resume on interrupted (running) tasks', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rr',
       plan,
       planFile,

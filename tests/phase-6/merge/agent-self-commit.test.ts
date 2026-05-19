@@ -50,6 +50,7 @@ describe('auto-merge triggers when the agent self-commits', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rac',
       plan,
       planFile,

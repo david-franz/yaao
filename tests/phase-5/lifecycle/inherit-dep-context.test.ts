@@ -54,6 +54,7 @@ describe('inherit-dep-context', () => {
     const plan = buildPlanWithDownstreamOptOut(false);
     const observed: { id: string; prompt: string }[] = [];
     await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r1',
       plan,
       planFile,
@@ -73,6 +74,7 @@ describe('inherit-dep-context', () => {
     const plan = buildPlanWithDownstreamOptOut(true);
     const observed: { id: string; prompt: string }[] = [];
     await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r1',
       plan,
       planFile,

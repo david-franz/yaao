@@ -51,6 +51,7 @@ describe('automatic retries', () => {
 
     const events: RunEvent[] = [];
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rretry',
       plan,
       planFile,
@@ -92,6 +93,7 @@ describe('automatic retries', () => {
 
     const failures: { msg: string; stderrTail?: string }[] = [];
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rfail',
       plan,
       planFile,

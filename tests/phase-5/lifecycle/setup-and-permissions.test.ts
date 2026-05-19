@@ -44,6 +44,7 @@ describe('task setup + permissions', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rsetup',
       plan,
       planFile,
@@ -81,6 +82,7 @@ describe('task setup + permissions', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rsetup-fail',
       plan,
       planFile,
@@ -117,6 +119,7 @@ describe('task setup + permissions', () => {
     });
 
     await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rperms',
       plan,
       planFile,

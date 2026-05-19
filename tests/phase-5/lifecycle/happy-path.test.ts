@@ -47,6 +47,7 @@ tasks:
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r1',
       plan,
       planFile,

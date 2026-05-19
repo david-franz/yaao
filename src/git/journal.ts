@@ -10,7 +10,23 @@ export interface SerializedConfigSubset {
 }
 
 export type JournalEvent =
-  | { t: 'run:start'; time: string; runId: string; planFile: string; planHash: string; config: SerializedConfigSubset }
+  | {
+      t: 'run:start';
+      time: string;
+      runId: string;
+      planFile: string;
+      planHash: string;
+      /** HEAD commit at run-start when the plan file was tracked. Anchors the
+       * run to a real point in history so "where did this commit come from?"
+       * can be answered from git alone. Omitted when the run started against
+       * an untracked plan (config: run.require-tracked-plan != 'error'). */
+      planCommit?: string;
+      /** Blob SHA of the plan file in HEAD at run-start. Combined with
+       * planCommit gives a precise content-anchor independent of any
+       * post-run history rewrites. */
+      planBlob?: string;
+      config: SerializedConfigSubset;
+    }
   | { t: 'task:queued'; time: string; taskId: string; depends: string[] }
   | { t: 'task:ready'; time: string; taskId: string }
   | { t: 'task:running'; time: string; taskId: string; agent: string; model?: string; worktree: string; branch: string; pid: number }
@@ -65,6 +81,10 @@ export interface RunSummary {
   runId: string;
   planFile: string;
   planHash: string;
+  /** Commit at run-start; present when the plan file was tracked. */
+  planCommit?: string;
+  /** Blob SHA of the plan file at run-start. */
+  planBlob?: string;
   startedAt: string;
   endedAt?: string;
   status: RunStatus;
@@ -222,6 +242,8 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
       next.runId = ev.runId;
       next.planFile = ev.planFile;
       next.planHash = ev.planHash;
+      if (ev.planCommit !== undefined) next.planCommit = ev.planCommit;
+      if (ev.planBlob !== undefined) next.planBlob = ev.planBlob;
       next.startedAt = ev.time;
       next.status = 'running';
       return next;

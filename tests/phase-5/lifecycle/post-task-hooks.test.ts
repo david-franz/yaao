@@ -42,6 +42,7 @@ describe('plan.config.hooks.post-task', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r1',
       plan,
       planFile,
@@ -89,6 +90,7 @@ describe('plan.config.hooks.post-task', () => {
 
     const failures: { msg: string; stderrTail?: string }[] = [];
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r1',
       plan,
       planFile,

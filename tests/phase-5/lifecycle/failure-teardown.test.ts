@@ -32,6 +32,7 @@ describe('Lifecycle on failure', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rfail',
       plan,
       planFile,

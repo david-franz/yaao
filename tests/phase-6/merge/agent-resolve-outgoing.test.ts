@@ -71,6 +71,7 @@ describe('on-conflict=agent for outgoing merges', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rar',
       plan,
       planFile,

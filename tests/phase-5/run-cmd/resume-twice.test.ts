@@ -41,6 +41,7 @@ describe('yaao run --resume (idempotent)', () => {
     // Inject a failing validation on b via a wrapped plan.
     plan.tasks[1]!.validation = { command: 'test -f marker.txt', 'must-pass': true };
     const r1 = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rt',
       plan,
       planFile,
@@ -67,6 +68,7 @@ describe('yaao run --resume (idempotent)', () => {
       },
     });
     const r2 = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rt',
       plan,
       planFile,
@@ -95,6 +97,7 @@ describe('yaao run --resume (idempotent)', () => {
       },
     });
     const r3 = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rt',
       plan,
       planFile,

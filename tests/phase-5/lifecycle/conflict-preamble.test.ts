@@ -55,6 +55,7 @@ describe('lifecycle prepends conflict-resolution preamble', () => {
 
     const config = (await import('../../../src/config/types.js')).DEFAULT_CONFIG;
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rcp',
       plan,
       planFile,

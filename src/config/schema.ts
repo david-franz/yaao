@@ -102,6 +102,21 @@ export const ConfigSchema = z
         'exec-dir': z.string().default('.yaao/exec'),
       })
       .default({}),
+    run: z
+      .object({
+        /**
+         * Gate on `yaao run` when the plan file isn't recorded in git. Stops
+         * a run from leaving merged commits on main whose source-of-truth plan
+         * is sitting untracked in the working tree — the audit trail problem
+         * the original feedback was about.
+         *
+         * - `error` (default): refuse to start with a clear hint.
+         * - `warn`: log a warning and continue.
+         * - `off`: skip the check entirely.
+         */
+        'require-tracked-plan': z.enum(['error', 'warn', 'off']).default('error'),
+      })
+      .default({}),
     convert: z
       .object({
         /** Project-level agent-routing rules consulted by `yaao convert`. User

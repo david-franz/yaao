@@ -40,6 +40,7 @@ describe('merge.history: rebase', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rrb',
       plan,
       planFile,

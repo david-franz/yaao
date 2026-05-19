@@ -40,6 +40,7 @@ describe('ctx-sys directive injection', () => {
     });
     const captured: SpawnOptions[] = [];
     await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r',
       plan,
       planFile,
@@ -61,6 +62,7 @@ describe('ctx-sys directive injection', () => {
     });
     const captured: SpawnOptions[] = [];
     await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r',
       plan,
       planFile,
@@ -91,6 +93,7 @@ describe('ctx-sys directive injection', () => {
     });
     const captured: SpawnOptions[] = [];
     await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r',
       plan,
       planFile,

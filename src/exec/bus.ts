@@ -11,6 +11,7 @@ export type RunEvent =
   | { type: 'task:merged'; taskId: string; into: string; mergeCommit: string }
   | { type: 'task:merge-failed'; taskId: string; into: string; reason: string; conflicts: string[] }
   | { type: 'run:start'; runId: string; planFile: string }
+  | { type: 'run:warning'; runId: string; message: string }
   | { type: 'run:end'; runId: string; status: 'success' | 'failed' | 'cancelled' }
   | { type: 'task:retry-attempt'; taskId: string; attempt: number; error: YaaoError; outcome: TaskOutcome | undefined };
 

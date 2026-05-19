@@ -52,6 +52,7 @@ tasks:
       { name: 'ctx-sys', command: 'ctx-sys', args: ['serve', '--socket', '/tmp/x'], env: {} },
     ];
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r1',
       plan,
       planFile,

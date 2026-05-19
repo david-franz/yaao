@@ -48,6 +48,7 @@ describe('validation.cwd', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rvc',
       plan,
       planFile,

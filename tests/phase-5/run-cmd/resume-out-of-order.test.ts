@@ -74,6 +74,7 @@ describe('yaao run --resume with non-topological priorSummary order', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'oo',
       plan,
       planFile,

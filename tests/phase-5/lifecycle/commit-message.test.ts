@@ -41,6 +41,7 @@ describe('commit message body', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rcm',
       plan,
       planFile,

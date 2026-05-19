@@ -47,6 +47,7 @@ describe('validation that looks like prose', () => {
 
     const failures: { msg: string }[] = [];
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'r1',
       plan,
       planFile,

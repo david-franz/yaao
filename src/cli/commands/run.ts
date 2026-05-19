@@ -30,6 +30,8 @@ interface RunFlags {
   skip?: string;
   resume?: string;
   force?: boolean;
+  allowUntrackedPlan?: boolean;
+  commitPlan?: boolean;
 }
 
 export const runCommand: CommandModule = {
@@ -51,6 +53,14 @@ export const runCommand: CommandModule = {
       .option(
         '--force',
         'accept blocking conditions on resume AND wipe any leftover worktrees/branches from prior failed runs of this plan',
+      )
+      .option(
+        '--allow-untracked-plan',
+        'downgrade run.require-tracked-plan to a warning for this run (skip the committed-plan gate)',
+      )
+      .option(
+        '--commit-plan',
+        "auto-commit the plan file before starting the run, so the run is anchored to '[yaao] plan <name> (<runId>)'",
       )
       .action(async (planPath: string, flags: RunFlags) => {
         if (flags.only && flags.skip) {
@@ -109,6 +119,8 @@ export const runCommand: CommandModule = {
         if (filter !== undefined) opts.filter = filter;
         if (flags.trial) opts.trial = true;
         if (flags.resume) opts.resume = true;
+        if (flags.allowUntrackedPlan) opts.requireTrackedPlan = 'warn';
+        if (flags.commitPlan) opts.commitPlan = true;
         // No-TUI mode and JSON mode both suppress the live reporter: JSON wants a
         // single structured line on stdout, --no-tui leaves journal tailing to the
         // user. Otherwise stream progress to stderr.
@@ -353,6 +365,9 @@ function makeRunProgressReporter(totalTasks: number, isTty: boolean): (ev: RunEv
       case 'run:start':
         writeLine(`yaao run: ${ev.runId} (${totalTasks} task${totalTasks === 1 ? '' : 's'})`);
         startTicker();
+        return;
+      case 'run:warning':
+        writeLine(`  ⚠ ${ev.message}`);
         return;
       case 'task:queued':
         return; // noisy at scale; skip

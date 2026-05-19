@@ -49,6 +49,7 @@ describe('task:merge-failed is journaled', () => {
     });
 
     await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rmf',
       plan,
       planFile,

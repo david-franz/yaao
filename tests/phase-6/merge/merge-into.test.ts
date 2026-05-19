@@ -42,6 +42,7 @@ describe('Per-task merge.into', () => {
     });
 
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rmerge',
       plan,
       planFile,
@@ -101,6 +102,7 @@ describe('Per-task merge.into', () => {
 
     const events: { type: string; reason?: string }[] = [];
     const result = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rmerge-missing',
       plan,
       planFile,

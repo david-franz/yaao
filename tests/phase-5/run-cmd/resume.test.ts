@@ -56,6 +56,7 @@ describe('yaao run --resume', () => {
       },
     });
     const r1 = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rresume',
       plan,
       planFile,
@@ -89,6 +90,7 @@ describe('yaao run --resume', () => {
     });
 
     const r2 = await runPlan({
+      requireTrackedPlan: 'off',
       runId: 'rresume',
       plan,
       planFile,

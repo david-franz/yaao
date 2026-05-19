@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync } from 'node:fs';
-import { join, resolve as resolvePath } from 'node:path';
+import { join, relative, resolve as resolvePath } from 'node:path';
 import type { ResolvedPlan, ResolvedTask } from '../plan/schema/types.js';
 import type { YaaoConfig } from '../config/types.js';
 import { Scheduler, type SchedulerEvent } from './scheduler.js';
@@ -39,6 +39,19 @@ export interface RunOptions {
   /** When true, look up the prior summary for `runId` and treat completed
    * tasks as already-done, retrying failed tasks with their captured context. */
   resume?: boolean;
+  /**
+   * Per-invocation override of `config.run.require-tracked-plan`. Used by the
+   * CLI `--allow-untracked-plan` flag (which downgrades to 'warn').
+   */
+  requireTrackedPlan?: 'error' | 'warn' | 'off';
+  /**
+   * When true, auto-commit the plan file to the base-branch (or current
+   * branch when checked out at rootDir) before the run starts, so every run
+   * is anchored to a recorded plan. Subject mirrors the post-run commit
+   * style: `[yaao] plan <name> (<runId>)`. Wired by the CLI `--commit-plan`
+   * flag.
+   */
+  commitPlan?: boolean;
 }
 
 export interface RunResult {
@@ -60,6 +73,24 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
     bus.subscribe(opts.onProgress);
   }
 
+  // Plan-tracking gate: refuse-or-warn when the plan file isn't recorded in
+  // git, so a run can't merge work whose source-of-truth plan is sitting
+  // untracked. Anchors the run to a commit/blob SHA when it _is_ tracked.
+  const planState = await resolvePlanState({
+    git,
+    rootDir: opts.rootDir,
+    planFile: opts.planFile,
+    requireMode: opts.requireTrackedPlan ?? opts.config.run['require-tracked-plan'],
+    commitPlan: opts.commitPlan ?? false,
+    bus,
+    onCommitPlan: async (relPath, message) => {
+      await git.add([relPath], opts.rootDir);
+      return git.commit(message, undefined, opts.rootDir);
+    },
+    runId: opts.runId,
+    planName: opts.plan.plan.name,
+  });
+
   const journal: RunJournal = await openJournal(opts.runId, { dir: journalDir });
   const planContents = readFileSync(opts.planFile, 'utf8');
   await journal.append({
@@ -68,6 +99,8 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
     runId: opts.runId,
     planFile: opts.planFile,
     planHash: hashPlan(planContents),
+    ...(planState.commit !== undefined ? { planCommit: planState.commit } : {}),
+    ...(planState.blob !== undefined ? { planBlob: planState.blob } : {}),
     config: {
       baseBranch: opts.plan.config['base-branch'],
       maxParallel: opts.trial ? 1 : opts.plan.config['max-parallel'],
@@ -288,4 +321,81 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
 export function liftError(err: unknown): YaaoError {
   if (err instanceof YaaoError) return err;
   return new YaaoError({ code: 'YAAO_RUN', message: (err as Error)?.message ?? String(err), cause: err });
+}
+
+interface ResolvePlanStateOptions {
+  git: Git;
+  rootDir: string;
+  planFile: string;
+  requireMode: 'error' | 'warn' | 'off';
+  commitPlan: boolean;
+  bus: RunBus;
+  onCommitPlan: (relPath: string, message: string) => Promise<string>;
+  runId: string;
+  planName: string;
+}
+
+interface PlanStateOutcome {
+  commit?: string;
+  blob?: string;
+}
+
+/**
+ * Implements the plan-tracking gate. Returns the planCommit/planBlob to record
+ * in the journal; throws YAAO_PLAN_UNTRACKED when the run must refuse to start.
+ */
+async function resolvePlanState(opts: ResolvePlanStateOptions): Promise<PlanStateOutcome> {
+  if (opts.requireMode === 'off' && !opts.commitPlan) return {};
+  if (!(await opts.git.isRepo(opts.rootDir))) {
+    // Outside a git repo, the gate is meaningless. Skip silently — the user
+    // ran `yaao run` without source control and that's their call.
+    return {};
+  }
+  const rel = relative(opts.rootDir, opts.planFile) || opts.planFile;
+  const state = await opts.git.planFileState(rel, opts.rootDir);
+  const isClean = state.tracked && !state.dirty;
+  if (isClean) {
+    const out: PlanStateOutcome = {};
+    if (state.headSha) out.commit = state.headSha;
+    if (state.blobSha) out.blob = state.blobSha;
+    return out;
+  }
+  if (opts.commitPlan) {
+    // Auto-commit path: pre-run "[yaao] plan <name> (<runId>)" so the run is
+    // anchored to a commit even when the user hadn't checked the plan in yet.
+    const msg = `[yaao] plan ${opts.planName} (${opts.runId})`;
+    try {
+      const sha = await opts.onCommitPlan(rel, msg);
+      // Re-read state so callers get the now-committed blob SHA.
+      const after = await opts.git.planFileState(rel, opts.rootDir);
+      const out: PlanStateOutcome = { commit: sha };
+      if (after.blobSha) out.blob = after.blobSha;
+      return out;
+    } catch (e) {
+      throw new YaaoError({
+        code: 'YAAO_PLAN_COMMIT_FAILED',
+        message: `--commit-plan: failed to commit ${rel}: ${(e as Error).message}`,
+        hint: 'Stage the plan file yourself with `git add` + `git commit`, then rerun without --commit-plan.',
+        cause: e,
+      });
+    }
+  }
+  if (opts.requireMode === 'warn') {
+    opts.bus.emit({
+      type: 'run:warning',
+      runId: opts.runId,
+      message: state.tracked
+        ? `plan file ${rel} has uncommitted changes — the run will not be anchored to a recorded plan`
+        : `plan file ${rel} is not tracked in git — the run will not be anchored to a recorded plan`,
+    });
+    return {};
+  }
+  // requireMode === 'error' and we don't have a clean tracked plan.
+  throw new YaaoError({
+    code: 'YAAO_PLAN_UNTRACKED',
+    message: state.tracked
+      ? `plan file ${rel} has uncommitted changes; refusing to start a run from an unrecorded plan`
+      : `plan file ${rel} is not tracked in git; refusing to start a run from an unrecorded plan`,
+    hint: 'Commit the plan file (`git add <plan> && git commit`), pass `--commit-plan` to let yaao do it, or pass `--allow-untracked-plan` to downgrade to a warning.',
+  });
 }
