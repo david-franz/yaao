@@ -266,54 +266,7 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
       ...(input.trial !== undefined ? { trial: input.trial } : {}),
       ...(input.noMerge !== undefined ? { noMerge: input.noMerge } : {}),
     });
-    // Pull the full summary back out of the journal so we can emit a per-task
-    // array without forcing a follow-up yaao_status call. The summary lives at
-    // .yaao/runs/<runId>/summary.json and already has filesChanged, merge SHA,
-    // and the cachedFromRunId we just plumbed in.
-    const journalDir = join(cwd, '.yaao', 'runs');
-    let tasks: unknown[] = [];
-    let planCommit: string | undefined;
-    let unmerged: { taskId: string; into: string; conflicts: string[] }[] = [];
-    try {
-      const { summary } = await loadRun(runId, journalDir);
-      planCommit = summary.planCommit;
-      tasks = Object.entries(summary.tasks).map(([id, t]) => ({
-        id,
-        status: t.status,
-        ...(t.agent !== undefined ? { agent: t.agent } : {}),
-        ...(t.branch !== undefined ? { branch: t.branch } : {}),
-        ...(t.worktree !== undefined ? { worktree: t.worktree } : {}),
-        ...(t.durationMs !== undefined ? { durationMs: t.durationMs } : {}),
-        ...(t.filesChanged !== undefined ? { filesChanged: t.filesChanged } : {}),
-        ...(t.commit !== undefined ? { commit: t.commit } : {}),
-        ...(t.mergeStatus !== undefined ? { mergeStatus: t.mergeStatus } : {}),
-        ...(t.mergeInto !== undefined ? { mergeInto: t.mergeInto } : {}),
-        ...(t.mergeCommit !== undefined ? { mergeCommit: t.mergeCommit } : {}),
-        ...(t.mergeConflicts !== undefined ? { mergeConflicts: t.mergeConflicts } : {}),
-        ...(t.mergeReason !== undefined ? { mergeReason: t.mergeReason } : {}),
-        ...(t.cachedFromRunId !== undefined
-          ? { cached: true, cachedFromRunId: t.cachedFromRunId }
-          : {}),
-        ...(t.validation !== undefined ? { validation: t.validation } : {}),
-      }));
-      unmerged = Object.entries(summary.tasks)
-        .filter(([, t]) => t.mergeStatus === 'merge-failed')
-        .map(([id, t]) => ({
-          taskId: id,
-          into: t.mergeInto ?? '',
-          conflicts: t.mergeConflicts ?? [],
-        }));
-    } catch {
-      // Journal missing/corrupt — fall back to the bare envelope below.
-    }
-    const warnings: string[] = [];
-    if (unmerged.length > 0) {
-      warnings.push(
-        `${unmerged.length} task(s) committed work but failed to merge: ${unmerged
-          .map((u) => `${u.taskId} → ${u.into}`)
-          .join(', ')}`,
-      );
-    }
+    const { tasks, unmerged, planCommit, warnings } = await buildRunSummaryPayload(cwd, runId);
     return {
       text: `run ${runId} ${result.status} in ${result.durationMs}ms`,
       structuredContent: {
@@ -322,6 +275,143 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
         warnings,
         errors: [],
         runId,
+        status: result.status,
+        durationMs: result.durationMs,
+        ...(planCommit !== undefined ? { planCommit } : {}),
+        tasks,
+        unmerged,
+      },
+    };
+  });
+}
+
+interface RunSummaryPayload {
+  tasks: unknown[];
+  unmerged: { taskId: string; into: string; conflicts: string[] }[];
+  planCommit?: string;
+  warnings: string[];
+}
+
+/**
+ * Load the per-run summary and shape it for the MCP response on yaao_run and
+ * yaao_resume. Identical envelope on both so callers can swap entry points
+ * without retraining their parsers. Failures here fall back to an empty
+ * payload — the run already happened; we just couldn't enrich the response.
+ */
+async function buildRunSummaryPayload(cwd: string, runId: string): Promise<RunSummaryPayload> {
+  const journalDir = join(cwd, '.yaao', 'runs');
+  const result: RunSummaryPayload = { tasks: [], unmerged: [], warnings: [] };
+  try {
+    const { summary } = await loadRun(runId, journalDir);
+    if (summary.planCommit !== undefined) result.planCommit = summary.planCommit;
+    result.tasks = Object.entries(summary.tasks).map(([id, t]) => ({
+      id,
+      status: t.status,
+      ...(t.agent !== undefined ? { agent: t.agent } : {}),
+      ...(t.branch !== undefined ? { branch: t.branch } : {}),
+      ...(t.worktree !== undefined ? { worktree: t.worktree } : {}),
+      ...(t.durationMs !== undefined ? { durationMs: t.durationMs } : {}),
+      ...(t.filesChanged !== undefined ? { filesChanged: t.filesChanged } : {}),
+      ...(t.commit !== undefined ? { commit: t.commit } : {}),
+      ...(t.mergeStatus !== undefined ? { mergeStatus: t.mergeStatus } : {}),
+      ...(t.mergeInto !== undefined ? { mergeInto: t.mergeInto } : {}),
+      ...(t.mergeCommit !== undefined ? { mergeCommit: t.mergeCommit } : {}),
+      ...(t.mergeConflicts !== undefined ? { mergeConflicts: t.mergeConflicts } : {}),
+      ...(t.mergeReason !== undefined ? { mergeReason: t.mergeReason } : {}),
+      ...(t.cachedFromRunId !== undefined
+        ? { cached: true, cachedFromRunId: t.cachedFromRunId }
+        : {}),
+      ...(t.validation !== undefined ? { validation: t.validation } : {}),
+    }));
+    result.unmerged = Object.entries(summary.tasks)
+      .filter(([, t]) => t.mergeStatus === 'merge-failed')
+      .map(([id, t]) => ({
+        taskId: id,
+        into: t.mergeInto ?? '',
+        conflicts: t.mergeConflicts ?? [],
+      }));
+    if (result.unmerged.length > 0) {
+      result.warnings.push(
+        `${result.unmerged.length} task(s) committed work but failed to merge: ${result.unmerged
+          .map((u) => `${u.taskId} → ${u.into}`)
+          .join(', ')}`,
+      );
+    }
+  } catch {
+    // Journal missing/corrupt — fall back to the bare envelope.
+  }
+  return result;
+}
+
+/** ---- yaao_resume --------------------------------------------------------------- */
+
+export interface ResumeToolInput {
+  runId: string;
+  /** Re-run anything not in {completed, cached}. Default true. */
+  retryFailed?: boolean;
+  /** Leave previously-skipped tasks skipped. Default false. */
+  reskip?: boolean;
+}
+
+/**
+ * Continue a prior run under the same runId. Reuses runPlan's existing
+ * `resume: true` mode — completed tasks are synthesised as already-done, the
+ * scheduler picks up failed / pending / interrupted tasks naturally. The
+ * audit trail stays continuous: one runId, one journal, start → fail →
+ * resume → success in one timeline.
+ *
+ * Thin wrapper: this exists so MCP callers don't have to spell out the
+ * `resume + filter` recipe themselves and to keep the input vocabulary
+ * (`retryFailed`, `reskip`) closer to how users think about the operation.
+ */
+export async function yaaoResumeTool(input: ResumeToolInput, ctx: ToolContext): Promise<ToolCallResult> {
+  return envelope(async () => {
+    const cwd = resolve(ctx.cwd);
+    const journalDir = join(cwd, '.yaao', 'runs');
+    // Confirm the run exists and pull its summary so we know the plan file
+    // and which tasks were failed / skipped.
+    const { summary: prior } = await loadRun(input.runId, journalDir);
+    if (!prior.planFile) {
+      throw new YaaoError({
+        code: 'YAAO_RESUME_NO_PLAN',
+        message: `run ${input.runId} has no recorded planFile — cannot resume`,
+        hint: 'run might be corrupt or pre-date the planFile recording.',
+      });
+    }
+    const loaded = await loadPlan(prior.planFile, { cwd, config: ctx.config });
+    const retryFailed = input.retryFailed ?? true;
+    const reskip = input.reskip ?? false;
+    const skipIds: string[] = [];
+    if (reskip) {
+      for (const [id, t] of Object.entries(prior.tasks)) {
+        if (t.status === 'skipped') skipIds.push(id);
+      }
+    }
+    if (!retryFailed) {
+      for (const [id, t] of Object.entries(prior.tasks)) {
+        if (t.status === 'failed' && !skipIds.includes(id)) skipIds.push(id);
+      }
+    }
+    const result = await runPlan({
+      runId: input.runId,
+      plan: loaded.plan,
+      planFile: prior.planFile,
+      rootDir: cwd,
+      config: ctx.config,
+      backendFor: (task) => (ctx.backendFor ?? defaultBackendFor)(task.agent),
+      resume: true,
+      ...(skipIds.length > 0 ? { filter: { skip: skipIds } } : {}),
+    });
+    const { tasks, unmerged, planCommit, warnings } = await buildRunSummaryPayload(cwd, input.runId);
+    return {
+      text: `resumed run ${input.runId} ${result.status} in ${result.durationMs}ms`,
+      structuredContent: {
+        ok: result.status === 'success',
+        files: [],
+        warnings,
+        errors: [],
+        runId: input.runId,
+        resumed: true,
         status: result.status,
         durationMs: result.durationMs,
         ...(planCommit !== undefined ? { planCommit } : {}),

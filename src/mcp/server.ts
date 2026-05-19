@@ -10,6 +10,7 @@ import {
   yaaoConvertTool,
   yaaoValidateTool,
   yaaoRunTool,
+  yaaoResumeTool,
   yaaoStatusTool,
   yaaoAgentsTool,
   yaaoPlansTool,
@@ -103,6 +104,26 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
       },
     },
     async (args) => asSdkResult(await yaaoRunTool(args, ctx)),
+  );
+
+  server.registerTool(
+    'yaao_resume',
+    {
+      description:
+        'Continue a prior run under the same runId. Re-runs failed / interrupted tasks; previously-completed tasks are synthesised as done without re-running. Audit trail stays continuous: one runId carries through start → fail → resume → success.',
+      inputSchema: {
+        runId: z.string().describe('runId of the prior run to continue.'),
+        retryFailed: z
+          .boolean()
+          .optional()
+          .describe('Re-run anything not in {completed, cached}. Default true.'),
+        reskip: z
+          .boolean()
+          .optional()
+          .describe('Leave previously-skipped tasks skipped. Default false.'),
+      },
+    },
+    async (args) => asSdkResult(await yaaoResumeTool(args, ctx)),
   );
 
   server.registerTool(
