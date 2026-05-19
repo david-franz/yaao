@@ -273,7 +273,7 @@ Expose yaao itself as an MCP server. **This is the canonical way every agent —
 
 **Key Deliverables:**
 
-- `yaao serve` exposes an MCP server over stdio (default), socket, or HTTP.
+- `yaao serve` exposes an MCP server over stdio. Spawned by AI clients (Claude Code, Cursor, Copilot, Codex), not directly by humans. The HTTP+SSE viewer lives separately as `yaao web` (Phase 14).
 - `yaao_plan` mirrors `yaao plan`; returns the plan body plus the path written.
 - `yaao_convert` mirrors `yaao convert`; returns YAML and validates.
 - `yaao_run` starts a run asynchronously; `yaao_status` reports live state. Long-running progress flows via MCP progress notifications.
@@ -310,7 +310,7 @@ The browser surface for everything that isn't actually starting a run. Run launc
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F14.1** | `yaao serve --web` HTTP+SSE server | [F14.1-web-server.md](phase-14/F14.1-web-server.md) |
+| **F14.1** | `yaao web` HTTP+SSE server | [F14.1-web-server.md](phase-14/F14.1-web-server.md) |
 | **F14.2** | DAG view with live-reload | [F14.2-web-dag-view.md](phase-14/F14.2-web-dag-view.md) |
 | **F14.3** | Live run view + activity stream | [F14.3-web-run-view.md](phase-14/F14.3-web-run-view.md) |
 | **F14.4** | Workspace page (yaao_inspect + yaao_prune) | [F14.4-web-workspace-view.md](phase-14/F14.4-web-workspace-view.md) |
@@ -319,12 +319,12 @@ The browser surface for everything that isn't actually starting a run. Run launc
 
 **Key Deliverables:**
 
-- `yaao serve --web` runs the HTTP+SSE listener in the same process as the F12.1 MCP stdio server. One server, two transports; in-memory state (FS watcher from F12.6, tool catalog, journal directory) is shared. Defaults to `127.0.0.1` with no auth.
+- `yaao web` is a separate process from F12.1's `yaao serve` MCP stdio server — AI clients spawn `yaao serve`, humans run `yaao web` from a terminal. They share state through the filesystem, not in-process: every process runs F12.6's FS watcher, and the journal (`.yaao/runs/<id>/journal.jsonl`) is the cross-process event channel. A run started by Claude Code via `yaao_run` is watchable in the web viewer in real time via journal tail. Defaults to `127.0.0.1` with no auth; non-loopback binds require `--token`.
 - **Run creation is deliberately not in the API.** Start a run from your terminal (`yaao run`) or your MCP-aware editor (`yaao_run`); come to the web view to watch it. Keeping spawning in one place simplifies the lifecycle story and aligns the UI with how users actually work.
 - **Activity stream, not log tail.** F14.3 forwards every `RunEvent` over SSE — `task:agent-event` (with `ev.type` ∈ `{stdout, stderr, thinking, tool-use}`), `task:retry-attempt`, `task:diff`, `task:committed`, `task:merged`, `task:failed`. The browser renders these as a unified stream with thinking blocks collapsed by default and tool-use calls one-line summarized. The validation outcome (`exitCode`, `decisionReason`) is rendered prominently on the task detail pane — the lifecycle records the verdict on `task:completed`, the web viewer makes it impossible to miss.
 - **Workspace page** wraps `yaao_inspect` and `yaao_prune` so cleanup affordances live in the browser. Each prune action defaults to a dry-run preview; the apply call is a separate click. The structural safety rails (base-branch never deleted, worktrees with uncommitted changes require explicit force) carry through from the MCP tool.
 - **Plan editor (F14.5)** is Monaco with the execution-plan JSON Schema attached for live diagnostics, plus a split DAG pane that re-renders on debounced input. Save goes through `PUT /api/plans/:slug/raw`, which runs the full `validatePlan` pipeline server-side — schema-valid plans with dependency cycles are caught before write. Live-reload via `/api/plans/:slug/watch` cooperates with the user's IDE: edits in either place show up in the other; the editor surfaces a non-modal "file changed on disk" banner if there are unsaved changes locally.
-- **Config editor (F14.6)** ships a form view rendered from the JSON Schema (the surface most users will live in) plus a raw Monaco view. Secrets handling is the load-bearing rule: the editor only ever shows `${ENV_VAR}` placeholders, never resolved values; `PUT /api/config/raw` runs the same literal-secret detector `loadConfig` uses and rejects any commit containing a literal API key. Changes to `mcp-servers.*` surface a "Reload MCP servers" affordance that re-spawns affected backends without restarting the whole `yaao serve` process.
+- **Config editor (F14.6)** ships a form view rendered from the JSON Schema (the surface most users will live in) plus a raw Monaco view. Secrets handling is the load-bearing rule: the editor only ever shows `${ENV_VAR}` placeholders, never resolved values; `PUT /api/config/raw` runs the same literal-secret detector `loadConfig` uses and rejects any commit containing a literal API key. Config changes apply to new runs automatically (each process re-reads config on the next task spawn); a yellow toast on save notes that in-flight runs use the old config.
 
 ---
 
