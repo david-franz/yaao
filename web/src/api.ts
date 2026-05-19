@@ -163,7 +163,7 @@ export const api = {
     });
     return (await r.json()) as PutPlanResp;
   },
-  runs: () => getJson<{ ok: boolean; runs: { runId: string; status: string; startedAt: string; planFile: string }[] }>('/api/runs'),
+  runs: () => getJson<{ ok: boolean; runs: { runId: string; status: string; startedAt: string; planFile: string; tasks: Record<string, { status: string }> }[] }>('/api/runs'),
   run: (runId: string) => getJson<RunSummaryShape>(`/api/runs/${encodeURIComponent(runId)}`),
   prune: async (req: PruneRequest): Promise<PruneResponse> => {
     const r = await fetch('/api/prune', {
