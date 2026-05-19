@@ -19,8 +19,13 @@ describe('F12.5 skill-as-MCP-tool', () => {
     expect((meta['inputs'] as { description: string }).description).toBe('Build OAuth');
   });
 
-  it('throws when a skill is missing', () => {
+  it('returns a structured error envelope when a skill is missing', () => {
     const ctx: ToolContext = { cwd: '/tmp/yaao-mcp-test', config: DEFAULT_CONFIG };
-    expect(() => yaaoSkillTool('does-not-exist', {}, ctx)).toThrow(/skill not found/);
+    const r = yaaoSkillTool('does-not-exist', {}, ctx);
+    expect(r.structuredContent['ok']).toBe(false);
+    const errs = r.structuredContent['errors'] as { code: string; message: string; hint?: string }[];
+    expect(errs[0]?.code).toBe('YAAO_SKILL_NOT_FOUND');
+    expect(errs[0]?.message).toMatch(/skill not found/);
+    expect(errs[0]?.hint).toMatch(/yaao skills list/);
   });
 });

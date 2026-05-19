@@ -2,10 +2,15 @@
  * Pure tool handlers used by the yaao MCP server. Each handler returns a structured
  * result + a content string (the latter is what an MCP client surfaces to a user).
  * Wiring into the SDK lives in src/mcp/server.ts.
+ *
+ * All tools build a common envelope (see {@link ToolEnvelope}) so MCP callers
+ * can rely on `ok`, `files`, `warnings`, and `errors` being present everywhere
+ * — even on the error path. Tool-specific keys (e.g. `tasks`, `runId`) ride
+ * alongside the envelope rather than replacing it.
  */
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import type { YaaoConfig } from '../config/types.js';
 import {
   resolveSkill,
@@ -26,6 +31,52 @@ import { CursorBackend } from '../agents/cursor.js';
 import { CopilotBackend } from '../agents/copilot.js';
 import { CodexBackend } from '../agents/codex.js';
 import { YaaoError } from '../log/errors.js';
+
+/**
+ * Common envelope every tool's `structuredContent` extends. Designed so a
+ * caller can do `if (!r.ok) for (const e of r.errors) ...` without needing
+ * per-tool knowledge of which field carries the failure.
+ */
+export interface ToolEnvelope {
+  ok: boolean;
+  files: { path: string; action: 'created' | 'overwrote' | 'unchanged' }[];
+  warnings: string[];
+  errors: { code: string; message: string; hint?: string }[];
+}
+
+/**
+ * Wrap a tool body so that any thrown {@link YaaoError} becomes a structured
+ * error envelope on `ok: false` rather than propagating out as an MCP-level
+ * transport error. Anything else still bubbles up — those are real bugs.
+ */
+async function envelope(
+  fn: () => Promise<ToolCallResult>,
+): Promise<ToolCallResult> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!(e instanceof YaaoError)) throw e;
+    return errorResult(e);
+  }
+}
+
+function errorResult(e: YaaoError): ToolCallResult {
+  const err = { code: e.code, message: e.message, ...(e.hint ? { hint: e.hint } : {}) };
+  return {
+    text: `${e.code}: ${e.message}${e.hint ? `\n  hint: ${e.hint}` : ''}`,
+    structuredContent: {
+      ok: false,
+      files: [],
+      warnings: [],
+      errors: [err],
+    },
+  };
+}
+
+function relPath(cwd: string, p: string): string {
+  const r = relative(cwd, p);
+  return r.length > 0 && !r.startsWith('..') ? r : p;
+}
 
 export interface ToolContext {
   cwd: string;
@@ -52,28 +103,46 @@ export interface PlanToolInput {
 }
 
 export async function yaaoPlanTool(input: PlanToolInput, ctx: ToolContext): Promise<ToolCallResult> {
-  const agent = input.agent ?? ctx.config.defaults.agent;
-  const backend = (ctx.backendFor ?? defaultBackendFor)(agent);
-  const result = await runPlanner({
-    cwd: ctx.cwd,
-    config: ctx.config,
-    description: input.description,
-    ...(input.scope !== undefined ? { scope: input.scope } : {}),
-    ...(input.format !== undefined ? { format: input.format } : {}),
-    ...(input.out !== undefined ? { outDir: input.out } : {}),
-    backend,
+  return envelope(async () => {
+    const agent = input.agent ?? ctx.config.defaults.agent;
+    const backend = (ctx.backendFor ?? defaultBackendFor)(agent);
+    const result = await runPlanner({
+      cwd: ctx.cwd,
+      config: ctx.config,
+      description: input.description,
+      ...(input.scope !== undefined ? { scope: input.scope } : {}),
+      ...(input.format !== undefined ? { format: input.format } : {}),
+      ...(input.out !== undefined ? { outDir: input.out } : {}),
+      backend,
+    });
+    const files = result.files.map((f) => ({ path: relPath(ctx.cwd, f.path), action: f.action }));
+    const created = files.filter((f) => f.action === 'created').length;
+    const overwrote = files.filter((f) => f.action === 'overwrote').length;
+    const unchanged = files.filter((f) => f.action === 'unchanged').length;
+    const text =
+      created + overwrote > 0
+        ? `Wrote ${created + overwrote} plan file(s):\n${files
+            .filter((f) => f.action !== 'unchanged')
+            .map((f) => `  ${f.action === 'created' ? '+' : '~'} ${f.path}`)
+            .join('\n')}`
+        : unchanged > 0
+          ? `No new plan files written; ${unchanged} existing plan file(s):\n${files
+              .map((f) => `  = ${f.path}`)
+              .join('\n')}`
+          : '(no files written)';
+    return {
+      text,
+      structuredContent: {
+        ok: result.ok,
+        files,
+        warnings: result.warnings,
+        errors: [],
+        tasks: result.plan?.tasks.length ?? 0,
+        scope: result.scope,
+        format: result.format,
+      },
+    };
   });
-  const files = result.files.map((f) => f.replace(`${resolve(ctx.cwd)}/`, ''));
-  return {
-    text: files.length > 0 ? `Wrote ${files.length} plan file(s):\n${files.join('\n')}` : '(no files written)',
-    structuredContent: {
-      ok: result.ok,
-      files,
-      tasks: result.plan?.tasks.length ?? 0,
-      scope: result.scope,
-      format: result.format,
-    },
-  };
 }
 
 /** ---- yaao_convert -------------------------------------------------------------- */
@@ -85,22 +154,42 @@ export interface ConvertToolInput {
 }
 
 export async function yaaoConvertTool(input: ConvertToolInput, ctx: ToolContext): Promise<ToolCallResult> {
-  const r = await convertPlan({
-    cwd: ctx.cwd,
-    config: ctx.config,
-    input: input.input,
-    ...(input.out !== undefined ? { out: input.out } : {}),
-    ...(input.inferDeps !== undefined ? { infer: input.inferDeps } : {}),
+  return envelope(async () => {
+    const r = await convertPlan({
+      cwd: ctx.cwd,
+      config: ctx.config,
+      input: input.input,
+      ...(input.out !== undefined ? { out: input.out } : {}),
+      ...(input.inferDeps !== undefined ? { infer: input.inferDeps } : {}),
+    });
+    const fileEntry = { path: relPath(ctx.cwd, r.outPath), action: r.outAction };
+    // `inferDeps: 'auto'` returning `inferred: []` is ambiguous (nothing to
+    // infer vs. inferrer gave up). Distinguish in the disposition string so the
+    // caller doesn't have to guess.
+    const inferDisposition =
+      input.inferDeps === undefined
+        ? 'skipped'
+        : input.inferDeps === 'off'
+          ? 'skipped'
+          : r.inferred.length === 0
+            ? 'no-candidates-found'
+            : input.inferDeps === 'auto'
+              ? 'applied'
+              : 'suggested';
+    return {
+      text: `${r.outAction === 'created' ? 'Wrote' : 'Overwrote'} ${r.outPath} with ${r.plan.tasks.length} task(s).`,
+      structuredContent: {
+        ok: true,
+        files: [fileEntry],
+        warnings: r.warnings,
+        errors: [],
+        outPath: r.outPath,
+        tasks: r.plan.tasks.length,
+        inferred: r.inferred,
+        inferDisposition,
+      },
+    };
   });
-  return {
-    text: `Wrote ${r.outPath} with ${r.plan.tasks.length} task(s).`,
-    structuredContent: {
-      outPath: r.outPath,
-      tasks: r.plan.tasks.length,
-      warnings: r.warnings,
-      inferred: r.inferred,
-    },
-  };
 }
 
 /** ---- yaao_validate ------------------------------------------------------------- */
@@ -110,21 +199,30 @@ export interface ValidateToolInput {
 }
 
 export async function yaaoValidateTool(input: ValidateToolInput, ctx: ToolContext): Promise<ToolCallResult> {
-  const planAbs = resolve(ctx.cwd, input.plan);
-  if (!existsSync(planAbs)) {
-    throw new YaaoError({ code: 'YAAO_PLAN_NOT_FOUND', message: `plan not found: ${planAbs}` });
-  }
-  const { validatePlan } = await import('../plan/validate/index.js');
-  const loaded = await loadPlan(planAbs, { cwd: resolve(ctx.cwd), config: ctx.config });
-  const issues = validatePlan(loaded.plan, loaded.source, {
-    cwd: ctx.cwd,
-    config: ctx.config,
+  return envelope(async () => {
+    const planAbs = resolve(ctx.cwd, input.plan);
+    if (!existsSync(planAbs)) {
+      throw new YaaoError({ code: 'YAAO_PLAN_NOT_FOUND', message: `plan not found: ${planAbs}` });
+    }
+    const { validatePlan } = await import('../plan/validate/index.js');
+    const loaded = await loadPlan(planAbs, { cwd: resolve(ctx.cwd), config: ctx.config });
+    const issues = validatePlan(loaded.plan, loaded.source, {
+      cwd: ctx.cwd,
+      config: ctx.config,
+    });
+    const errs = issues.filter((i) => i.severity === 'error');
+    const warns = issues.filter((i) => i.severity !== 'error');
+    return {
+      text: errs.length === 0 ? '✔ plan ok' : `${errs.length} error(s); ${warns.length} warning(s)`,
+      structuredContent: {
+        ok: errs.length === 0,
+        files: [{ path: relPath(ctx.cwd, planAbs), action: 'unchanged' as const }],
+        warnings: warns.map((w) => w.message),
+        errors: errs.map((e) => ({ code: e.code, message: e.message })),
+        issues,
+      },
+    };
   });
-  const errs = issues.filter((i) => i.severity === 'error');
-  return {
-    text: errs.length === 0 ? '✔ plan ok' : `${errs.length} error(s); ${issues.length - errs.length} warning(s)`,
-    structuredContent: { ok: errs.length === 0, issues },
-  };
 }
 
 /** ---- yaao_run + yaao_status ---------------------------------------------------- */
@@ -137,26 +235,36 @@ export interface RunToolInput {
 }
 
 export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promise<ToolCallResult> {
-  const cwd = resolve(ctx.cwd);
-  const planAbs = resolve(cwd, input.plan);
-  const loaded = await loadPlan(planAbs, { cwd, config: ctx.config });
-  const runId = `run-${Date.now().toString(36)}`;
-  const result = await runPlan({
-    runId,
-    plan: loaded.plan,
-    planFile: planAbs,
-    rootDir: cwd,
-    config: ctx.config,
-    backendFor: (task) => (ctx.backendFor ?? defaultBackendFor)(task.agent),
-    ...(input.only || input.skip
-      ? { filter: { ...(input.only ? { only: input.only } : {}), ...(input.skip ? { skip: input.skip } : {}) } }
-      : {}),
-    ...(input.trial !== undefined ? { trial: input.trial } : {}),
+  return envelope(async () => {
+    const cwd = resolve(ctx.cwd);
+    const planAbs = resolve(cwd, input.plan);
+    const loaded = await loadPlan(planAbs, { cwd, config: ctx.config });
+    const runId = `run-${Date.now().toString(36)}`;
+    const result = await runPlan({
+      runId,
+      plan: loaded.plan,
+      planFile: planAbs,
+      rootDir: cwd,
+      config: ctx.config,
+      backendFor: (task) => (ctx.backendFor ?? defaultBackendFor)(task.agent),
+      ...(input.only || input.skip
+        ? { filter: { ...(input.only ? { only: input.only } : {}), ...(input.skip ? { skip: input.skip } : {}) } }
+        : {}),
+      ...(input.trial !== undefined ? { trial: input.trial } : {}),
+    });
+    return {
+      text: `run ${runId} ${result.status} in ${result.durationMs}ms`,
+      structuredContent: {
+        ok: result.status === 'success',
+        files: [],
+        warnings: [],
+        errors: [],
+        runId,
+        status: result.status,
+        durationMs: result.durationMs,
+      },
+    };
   });
-  return {
-    text: `run ${runId} ${result.status} in ${result.durationMs}ms`,
-    structuredContent: { runId, status: result.status, durationMs: result.durationMs },
-  };
 }
 
 export interface StatusToolInput {
@@ -164,54 +272,116 @@ export interface StatusToolInput {
 }
 
 export async function yaaoStatusTool(input: StatusToolInput, ctx: ToolContext): Promise<ToolCallResult> {
-  const cwd = resolve(ctx.cwd);
-  const journalDir = join(cwd, '.yaao', 'runs');
-  const runs = await listRuns(journalDir);
-  const target = input.runId ? runs.find((r) => r.runId === input.runId) : runs[0];
-  if (!target) {
-    throw new YaaoError({ code: 'YAAO_NO_RUNS', message: 'no runs found' });
-  }
-  const { summary } = await loadRun(target.runId, journalDir);
-  return {
-    text: `run ${summary.runId} status=${summary.status}`,
-    structuredContent: { ...summary },
-  };
+  return envelope(async () => {
+    const cwd = resolve(ctx.cwd);
+    const journalDir = join(cwd, '.yaao', 'runs');
+    const runs = await listRuns(journalDir);
+    const target = input.runId ? runs.find((r) => r.runId === input.runId) : runs[0];
+    if (!target) {
+      throw new YaaoError({
+        code: 'YAAO_NO_RUNS',
+        message: 'no runs found',
+        hint: input.runId
+          ? `no run with id ${input.runId} in .yaao/runs/`
+          : 'run `yaao run <plan.yaml>` first, or pass an explicit runId.',
+      });
+    }
+    const { summary } = await loadRun(target.runId, journalDir);
+    return {
+      text: `run ${summary.runId} status=${summary.status}`,
+      structuredContent: {
+        ok: summary.status === 'success',
+        files: [],
+        warnings: [],
+        errors: [],
+        ...summary,
+      },
+    };
+  });
 }
 
 /** ---- yaao_agents --------------------------------------------------------------- */
 
 export async function yaaoAgentsTool(_input: Record<string, never>, ctx: ToolContext): Promise<ToolCallResult> {
-  const { detectAgents } = await import('../agents/detect.js');
-  const r = await detectAgents(ctx.config);
-  const list: Record<string, { available: boolean; version?: string; reason?: string }> = {};
-  for (const [name, report] of r.byName) {
-    list[name] = {
-      available: report.available,
-      ...(report.version !== undefined ? { version: report.version } : {}),
-      ...(report.reason !== undefined ? { reason: report.reason } : {}),
+  return envelope(async () => {
+    const { detectAgents } = await import('../agents/detect.js');
+    const r = await detectAgents(ctx.config);
+    const list: Record<string, { available: boolean; version?: string; reason?: string }> = {};
+    for (const [name, report] of r.byName) {
+      list[name] = {
+        available: report.available,
+        ...(report.version !== undefined ? { version: report.version } : {}),
+        ...(report.reason !== undefined ? { reason: report.reason } : {}),
+      };
+    }
+    return {
+      text: Object.entries(list)
+        .map(([k, v]) => `${v.available ? '✔' : '✘'} ${k}`)
+        .join('\n'),
+      structuredContent: { ok: true, files: [], warnings: [], errors: [], agents: list },
     };
-  }
-  return {
-    text: Object.entries(list)
-      .map(([k, v]) => `${v.available ? '✔' : '✘'} ${k}`)
-      .join('\n'),
-    structuredContent: { agents: list },
-  };
+  });
 }
 
 /** ---- yaao_plans ---------------------------------------------------------------- */
 
 export async function yaaoPlansTool(_input: Record<string, never>, ctx: ToolContext): Promise<ToolCallResult> {
-  const cwd = resolve(ctx.cwd);
-  const dirs: { plans: string[]; exec: string[] } = { plans: [], exec: [] };
-  const plansDir = join(cwd, '.yaao', 'plans');
-  const execDir = join(cwd, '.yaao', 'exec');
-  if (existsSync(plansDir)) dirs.plans = readdirSync(plansDir).filter((f) => f.endsWith('.md'));
-  if (existsSync(execDir)) dirs.exec = readdirSync(execDir).filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'));
-  return {
-    text: `plans: ${dirs.plans.length}\nexec: ${dirs.exec.length}`,
-    structuredContent: dirs as unknown as Record<string, unknown>,
-  };
+  return envelope(async () => {
+    const cwd = resolve(ctx.cwd);
+    const plansDir = join(cwd, '.yaao', 'plans');
+    const execDir = join(cwd, '.yaao', 'exec');
+    const planFiles: string[] = existsSync(plansDir)
+      ? readdirSync(plansDir).filter((f) => f.endsWith('.md'))
+      : [];
+    const execFiles: string[] = existsSync(execDir)
+      ? readdirSync(execDir).filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
+      : [];
+    // Surface mtime per file plus whether each plan has a paired exec YAML.
+    // Saves callers from having to ls + read YAML to know the workspace state.
+    const execSlugs = new Set(execFiles.map((f) => f.replace(/\.ya?ml$/, '')));
+    const plans = planFiles.map((f) => {
+      const abs = join(plansDir, f);
+      const slug = f.replace(/\.md$/, '');
+      return {
+        path: relPath(cwd, abs),
+        mtimeMs: safeMtimeMs(abs),
+        hasExec: execSlugs.has(slug),
+      };
+    });
+    const planSlugs = new Set(planFiles.map((f) => f.replace(/\.md$/, '')));
+    const exec = execFiles.map((f) => {
+      const abs = join(execDir, f);
+      const slug = f.replace(/\.ya?ml$/, '');
+      return {
+        path: relPath(cwd, abs),
+        mtimeMs: safeMtimeMs(abs),
+        hasPlan: planSlugs.has(slug),
+      };
+    });
+    const files = [
+      ...plans.map((p) => ({ path: p.path, action: 'unchanged' as const })),
+      ...exec.map((p) => ({ path: p.path, action: 'unchanged' as const })),
+    ];
+    return {
+      text: `plans: ${plans.length}\nexec: ${exec.length}`,
+      structuredContent: {
+        ok: true,
+        files,
+        warnings: [],
+        errors: [],
+        plans,
+        exec,
+      },
+    };
+  });
+}
+
+function safeMtimeMs(p: string): number {
+  try {
+    return statSync(p).mtimeMs;
+  } catch {
+    return 0;
+  }
 }
 
 /** ---- yaao_skill_<name>  -------------------------------------------------------- */
@@ -269,10 +439,13 @@ export function yaaoSkillTool(skillName: string, input: SkillToolInput, ctx: Too
     ...(builtinDir !== undefined ? { builtinDir } : {}),
   });
   if (!skill) {
-    throw new YaaoError({
-      code: 'YAAO_SKILL_NOT_FOUND',
-      message: `skill not found: ${skillName}`,
-    });
+    return errorResult(
+      new YaaoError({
+        code: 'YAAO_SKILL_NOT_FOUND',
+        message: `skill not found: ${skillName}`,
+        hint: 'Run `yaao skills list` to see registered skills, or check .yaao/skills/.',
+      }),
+    );
   }
   const values: Record<string, string> = {};
   for (const [k, v] of Object.entries(input)) if (v !== undefined) values[k] = v;
@@ -280,6 +453,10 @@ export function yaaoSkillTool(skillName: string, input: SkillToolInput, ctx: Too
   return {
     text: body,
     structuredContent: {
+      ok: true,
+      files: [],
+      warnings: [],
+      errors: [],
       skill: skill.metadata.name,
       version: skill.metadata.version,
       inputs: values,

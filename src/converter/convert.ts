@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, basename, extname } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import type { YaaoConfig } from '../config/types.js';
@@ -24,6 +24,8 @@ export interface ConvertOptions {
 export interface ConvertResult {
   plan: Plan;
   outPath: string;
+  /** Whether outPath existed before this run — lets callers distinguish `created` vs `overwrote`. */
+  outAction: 'created' | 'overwrote';
   warnings: string[];
   inferred: { from: string; on: string; confidence: number; reason: string }[];
 }
@@ -112,6 +114,7 @@ export async function convertPlan(opts: ConvertOptions): Promise<ConvertResult> 
   }
 
   const outPath = resolveOutPath(cwd, opts.out, planName);
+  const outAction: 'created' | 'overwrote' = existsSync(outPath) ? 'overwrote' : 'created';
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, stringifyYaml(parsedPlan.data));
 
@@ -120,7 +123,7 @@ export async function convertPlan(opts: ConvertOptions): Promise<ConvertResult> 
       warnings.push(`inferred dep ${i.from} → ${i.on} (confidence ${i.confidence}) — not applied (suggest mode)`);
     }
   }
-  return { plan: parsedPlan.data, outPath, warnings, inferred };
+  return { plan: parsedPlan.data, outPath, outAction, warnings, inferred };
 }
 
 function resolveOutPath(cwd: string, out: string | undefined, planName: string): string {

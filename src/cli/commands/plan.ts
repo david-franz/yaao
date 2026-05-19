@@ -71,7 +71,11 @@ export const planCommand: CommandModule = {
           if (result.files.length === 0) {
             ctx.logger.warn('planner did not produce any files in the output directory');
           } else {
-            for (const f of result.files) ctx.logger.info(`  wrote: ${f}`);
+            for (const f of result.files) {
+              const verb = f.action === 'overwrote' ? 'overwrote' : f.action === 'unchanged' ? 'unchanged' : 'wrote';
+              ctx.logger.info(`  ${verb}: ${f.path}`);
+            }
+            for (const w of result.warnings) ctx.logger.warn(`  ${w}`);
             if (result.plan) {
               ctx.logger.info(`tasks: ${result.plan.tasks.length}`);
               for (const issue of result.issues) ctx.logger.warn(`  ${issue.code}: ${issue.message}`);

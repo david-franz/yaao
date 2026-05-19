@@ -57,6 +57,7 @@ describe('yaao plan honors plan.out-dir from config', () => {
       backend,
     });
     expect(r.ok).toBe(true);
-    expect(r.files[0]).toBe(join(outDir, 'x.md'));
+    expect(r.files[0]?.path).toBe(join(outDir, 'x.md'));
+    expect(r.files[0]?.action).toBe('created');
   });
 });

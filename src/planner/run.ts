@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, extname } from 'node:path';
 import type { AgentBackend, AgentEvent, SpawnOptions } from '../agents/backend.js';
 import type { YaaoConfig } from '../config/types.js';
 import { resolveSkill, substitutePlaceholders, type LoadedSkill } from '../skills/format.js';
@@ -50,18 +50,37 @@ export type ProgressEvent =
   | { type: 'tick'; elapsedMs: number }
   | { type: 'done'; durationMs: number; files: string[] };
 
+export type PlanFileAction = 'created' | 'overwrote' | 'unchanged';
+
+export interface PlanFileResult {
+  path: string;
+  action: PlanFileAction;
+}
+
 export interface RunPlannerResult {
   ok: boolean;
   scope: PlanScope;
   format: 'markdown' | 'speckit' | 'both';
   /** Resolved prompt body sent to the agent (handy for --dry-run). */
   prompt: string;
-  /** Paths to the plan file(s) that were produced/found. */
-  files: string[];
+  /**
+   * Plan file(s) the run touched. Includes any pre-existing files reported as
+   * `unchanged` when the agent did not produce new output — gives MCP callers
+   * an idempotency signal instead of an empty `files: []` they have to
+   * interpret. Newly-written files use `created`; in-place rewrites of an
+   * existing path use `overwrote`.
+   */
+  files: PlanFileResult[];
   /** Parsed plan IR, when at least one file parsed. */
   plan?: ParsedPlan;
   /** Issues raised by the format parser. */
   issues: { code: string; message: string }[];
+  /**
+   * Non-fatal advice for the caller — populated when we detect a situation the
+   * MCP envelope should surface as a warning (e.g. agent produced no new
+   * files but plans already exist on disk).
+   */
+  warnings: string[];
 }
 
 export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerResult> {
@@ -82,6 +101,28 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
   const format = opts.format ?? 'markdown';
   const outDir = opts.outDir ?? join(cwd, '.yaao', 'plans');
 
+  // Guard against a common caller mistake: passing a file path (e.g.
+  // `.yaao/plans/timer-pit.md`) for the planner output. The planner writes
+  // _into_ a directory and would otherwise leak ENOTDIR from a deep readdir
+  // call. Surface a clear error with a hint instead.
+  if (existsSync(outDir) && statSync(outDir).isFile()) {
+    throw new YaaoError({
+      code: 'YAAO_PLAN_OUT_NOT_DIR',
+      message: `plan out path is a file, expected a directory: ${outDir}`,
+      hint: "Pass the parent directory instead — e.g. '.yaao/plans/' rather than '.yaao/plans/<slug>.md'.",
+    });
+  }
+  if (!existsSync(outDir)) {
+    const ext = extname(outDir).toLowerCase();
+    if (ext === '.md' || ext === '.yaml' || ext === '.yml') {
+      throw new YaaoError({
+        code: 'YAAO_PLAN_OUT_NOT_DIR',
+        message: `plan out path looks like a file, expected a directory: ${outDir}`,
+        hint: "yaao_plan's `out` is a directory the plan file(s) are written into. Drop the filename suffix.",
+      });
+    }
+  }
+
   const prompt = substitutePlaceholders(
     skill.prompt,
     {
@@ -94,7 +135,7 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
   );
 
   if (opts.dryRun) {
-    return { ok: true, scope, format, prompt, files: [], issues: [] };
+    return { ok: true, scope, format, prompt, files: [], issues: [], warnings: [] };
   }
 
   // Pre-flight: backend must be available.
@@ -109,8 +150,11 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
   // Ensure the output directory exists so the agent doesn't have to mkdir via Bash.
   const { mkdirSync } = await import('node:fs');
   mkdirSync(outDir, { recursive: true });
-  // Snapshot the out directory so we can detect what the agent wrote.
+  // Snapshot the out directory so we can detect what the agent wrote — both
+  // the file set and per-file mtimes, so an in-place overwrite of an existing
+  // plan is reported as `overwrote` rather than silently missed.
   const before = snapshot(outDir);
+  const beforeMtimes = mtimes(before);
 
   // Spawn the agent. The skill prompt instructs it to write the plan file(s) to outDir.
   // `allow-all` matches the runner default: non-interactive `--print` runs can't
@@ -144,10 +188,38 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
   }
 
   const after = snapshot(outDir);
-  const newFiles = after.filter((f) => !before.includes(f));
+  const afterMtimes = mtimes(after);
+  const created = after.filter((f) => !before.includes(f));
+  const overwrote = after.filter(
+    (f) => before.includes(f) && (beforeMtimes.get(f) ?? 0) !== (afterMtimes.get(f) ?? 0),
+  );
+  const touched = [...created, ...overwrote];
+  const files: PlanFileResult[] = [
+    ...created.map((path) => ({ path, action: 'created' as const })),
+    ...overwrote.map((path) => ({ path, action: 'overwrote' as const })),
+  ];
+  // Idempotency signal: agent produced no new or overwritten files, but plans
+  // are sitting on disk. Surface them as `unchanged` (plus a warning) so the
+  // caller knows the run was a no-op rather than treating the empty list as a
+  // silent failure.
+  const warnings: string[] = [];
+  if (touched.length === 0 && after.length > 0) {
+    for (const path of after) files.push({ path, action: 'unchanged' });
+    warnings.push(
+      'planner wrote no new files; plan output directory already contains plan file(s) — agent may have decided the plan already exists',
+    );
+  }
   const issues: { code: string; message: string }[] = [];
   let parsed: ParsedPlan | undefined;
-  for (const f of newFiles) {
+  // Parse anything we actually touched; if nothing was touched, parse the most
+  // recently-modified existing plan so the caller still gets `tasks` count.
+  const toParse =
+    touched.length > 0
+      ? touched
+      : after.length > 0
+        ? [after.reduce((a, b) => ((afterMtimes.get(b) ?? 0) > (afterMtimes.get(a) ?? 0) ? b : a))]
+        : [];
+  for (const f of toParse) {
     const body = readFileSync(f, 'utf8');
     if (f.endsWith('tasks.md')) {
       parsed = parseSpecKit({ tasks: body });
@@ -157,16 +229,31 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
     if (parsed) for (const i of parsed.issues) issues.push(i);
   }
 
-  opts.onProgress?.({ type: 'done', durationMs: Date.now() - startedAt, files: newFiles });
+  opts.onProgress?.({ type: 'done', durationMs: Date.now() - startedAt, files: touched });
   return {
-    ok: newFiles.length > 0 && issues.every((i) => !i.code.startsWith('YAAO_PLAN_TASK_ID_INVALID')),
+    ok:
+      (touched.length > 0 || after.length > 0) &&
+      issues.every((i) => !i.code.startsWith('YAAO_PLAN_TASK_ID_INVALID')),
     scope,
     format,
     prompt,
-    files: newFiles,
+    files,
     ...(parsed !== undefined ? { plan: parsed } : {}),
     issues,
+    warnings,
   };
+}
+
+function mtimes(files: string[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const f of files) {
+    try {
+      m.set(f, statSync(f).mtimeMs);
+    } catch {
+      // ignore — file may have vanished between snapshot and stat
+    }
+  }
+  return m;
 }
 
 function snapshot(dir: string): string[] {
