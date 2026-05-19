@@ -11,6 +11,8 @@ import {
   yaaoStatusTool,
   yaaoAgentsTool,
   yaaoPlansTool,
+  yaaoInspectTool,
+  yaaoPruneTool,
   yaaoSkillTool,
   discoverSkills,
   type ToolContext,
@@ -124,6 +126,42 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
       inputSchema: {},
     },
     async () => asSdkResult(await yaaoPlansTool({}, ctx)),
+  );
+
+  server.registerTool(
+    'yaao_inspect',
+    {
+      description:
+        'One-call workspace snapshot: workspace config, every plan + exec pair (with git-tracked status, mtime, hash, planCommit), and every run (status, task counts, branchesAlive). Pair with yaao_prune({dryRun: true}) for "see and preview".',
+      inputSchema: {
+        slug: z
+          .string()
+          .optional()
+          .describe('Restrict to a single plan slug (filename without extension); omit for the full workspace.'),
+      },
+    },
+    async (args) => asSdkResult(await yaaoInspectTool(args, ctx)),
+  );
+
+  server.registerTool(
+    'yaao_prune',
+    {
+      description:
+        'Structured cleanup of yaao state. Targets one run, one plan, or all completed/failed/older-than runs, and removes some scope (worktrees, branches, runs). dryRun defaults to true — pass dryRun: false to actually mutate. Refuses to delete the configured base-branch, worktrees with uncommitted changes, or branches not merged into their target unless force: true.',
+      inputSchema: {
+        target: z.enum(['run', 'plan', 'all-completed', 'all-failed', 'older-than']),
+        runId: z.string().optional(),
+        planSlug: z.string().optional(),
+        olderThanDays: z.number().optional(),
+        scope: z.array(z.enum(['worktrees', 'branches', 'runs'])).optional(),
+        dryRun: z.boolean().optional().describe('Default true — preview only.'),
+        force: z
+          .boolean()
+          .optional()
+          .describe('Required to remove worktrees with uncommitted changes or branches not yet merged.'),
+      },
+    },
+    async (args) => asSdkResult(await yaaoPruneTool(args, ctx)),
   );
 
   // F12.5: auto-register every discoverable skill as `yaao_skill_<name>`.

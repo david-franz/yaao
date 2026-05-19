@@ -24,8 +24,12 @@ import { runPlanner } from '../planner/run.js';
 import { convertPlan } from '../converter/convert.js';
 import { loadPlan } from '../plan/yaml/loader.js';
 import { runPlan } from '../exec/runner.js';
-import { listRuns, loadRun } from '../git/journal.js';
+import { listRuns, loadRun, type RunSummary } from '../git/journal.js';
+import { git as defaultGit, type Git } from '../git/git.js';
+import { configPaths } from '../config/loader.js';
+import { hashKey, WorktreeManager } from '../git/worktree-manager.js';
 import type { AgentBackend, AgentName } from '../agents/backend.js';
+import { rmSync } from 'node:fs';
 import { ClaudeCodeBackend } from '../agents/claude-code.js';
 import { CursorBackend } from '../agents/cursor.js';
 import { CopilotBackend } from '../agents/copilot.js';
@@ -83,6 +87,8 @@ export interface ToolContext {
   config: YaaoConfig;
   /** Override the backend factory (tests use this to inject a FakeBackend). */
   backendFor?: (agent: AgentName) => AgentBackend;
+  /** Override the git wrapper (tests use this to drive yaao_inspect/yaao_prune). */
+  git?: Git;
 }
 
 export interface ToolCallResult {
@@ -439,6 +445,414 @@ function safeMtimeMs(p: string): number {
     return statSync(p).mtimeMs;
   } catch {
     return 0;
+  }
+}
+
+/** ---- yaao_inspect -------------------------------------------------------------- */
+
+export interface InspectToolInput {
+  /** Restrict the response to a single plan slug; omit for the full workspace snapshot. */
+  slug?: string;
+}
+
+/**
+ * Single-call workspace snapshot — joins plan files, exec files, run journals,
+ * and git state so a caller landing cold in a workspace doesn't have to
+ * triangulate via `ls` + `git status` + reading YAML.
+ *
+ * Intentionally read-only and cheap. Validation status is NOT computed here
+ * (would force a full plan-load per slug); callers wanting that should call
+ * yaao_validate explicitly.
+ */
+export async function yaaoInspectTool(input: InspectToolInput, ctx: ToolContext): Promise<ToolCallResult> {
+  return envelope(async () => {
+    const cwd = resolve(ctx.cwd);
+    const git = ctx.git ?? defaultGit;
+    const plansDir = join(cwd, '.yaao', 'plans');
+    const execDir = join(cwd, '.yaao', 'exec');
+    const runsDir = join(cwd, '.yaao', 'runs');
+
+    const planFiles = existsSync(plansDir)
+      ? readdirSync(plansDir).filter((f) => f.endsWith('.md'))
+      : [];
+    const execFiles = existsSync(execDir)
+      ? readdirSync(execDir).filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'))
+      : [];
+
+    const inRepo = await git.isRepo(cwd);
+    const allRuns = await listRuns(runsDir);
+
+    // Index runs by the plan slug they ran against (matched on the plan file's
+    // basename). Lets each plan row report a `lastRun*` triple without a
+    // second scan.
+    const runsBySlug = new Map<string, typeof allRuns>();
+    for (const r of allRuns) {
+      const planSlug = r.planFile ? slugFromPath(r.planFile) : '';
+      const arr = runsBySlug.get(planSlug) ?? [];
+      arr.push(r);
+      runsBySlug.set(planSlug, arr);
+    }
+
+    const execBySlug = new Map<string, string>();
+    for (const f of execFiles) execBySlug.set(slugFromPath(f), join(execDir, f));
+
+    // Build plan rows. The slug is the plan file's basename without extension;
+    // an exec file with the same slug is reported as the pair.
+    const planSlugs = new Set<string>();
+    for (const f of planFiles) planSlugs.add(slugFromPath(f));
+    for (const slug of execBySlug.keys()) planSlugs.add(slug);
+
+    const wantSlugs = input.slug ? new Set([input.slug]) : planSlugs;
+    const plans: Record<string, unknown>[] = [];
+
+    for (const slug of wantSlugs) {
+      if (!planSlugs.has(slug)) continue;
+      const planAbs = planFiles.includes(`${slug}.md`) ? join(plansDir, `${slug}.md`) : undefined;
+      const execAbs = execBySlug.get(slug);
+      const row: Record<string, unknown> = { slug };
+      if (planAbs !== undefined) {
+        row['planPath'] = relPath(cwd, planAbs);
+        row['planMtimeMs'] = safeMtimeMs(planAbs);
+        row['planHash'] = safeHash(planAbs);
+        if (inRepo) {
+          const planRel = relative(cwd, planAbs);
+          // eslint-disable-next-line no-await-in-loop -- per-file probes are sequential
+          const state = await git.planFileState(planRel, cwd);
+          row['tracked'] = state.tracked && !state.dirty;
+          row['dirty'] = state.dirty;
+          // eslint-disable-next-line no-await-in-loop -- per-file probes are sequential
+          row['planCommit'] = (await git.lastCommitFor(planRel, cwd)) ?? null;
+        }
+      }
+      if (execAbs !== undefined) {
+        row['execPath'] = relPath(cwd, execAbs);
+        row['execMtimeMs'] = safeMtimeMs(execAbs);
+        row['execHash'] = safeHash(execAbs);
+        if (inRepo) {
+          const execRel = relative(cwd, execAbs);
+          // eslint-disable-next-line no-await-in-loop -- per-file probes are sequential
+          const state = await git.planFileState(execRel, cwd);
+          row['execTracked'] = state.tracked && !state.dirty;
+          // eslint-disable-next-line no-await-in-loop -- per-file probes are sequential
+          row['execCommit'] = (await git.lastCommitFor(execRel, cwd)) ?? null;
+        }
+      }
+      const slugRuns = runsBySlug.get(slug) ?? [];
+      // listRuns returns newest-first.
+      const last = slugRuns[0];
+      if (last) {
+        row['lastRunId'] = last.runId;
+        row['lastRunStatus'] = last.status;
+        if (last.endedAt) row['lastRunEndedAt'] = last.endedAt;
+      }
+      plans.push(row);
+    }
+
+    // Build run rows with task-status counts and live-branch joins.
+    const runs: Record<string, unknown>[] = [];
+    for (const r of allRuns) {
+      const taskEntries = Object.values(r.tasks);
+      let completed = 0;
+      let failed = 0;
+      let skipped = 0;
+      const branchSet = new Set<string>();
+      for (const t of taskEntries) {
+        if (t.status === 'completed') completed += 1;
+        else if (t.status === 'failed') failed += 1;
+        else if (t.status === 'skipped') skipped += 1;
+        if (t.branch) branchSet.add(t.branch);
+      }
+      const branchesAlive: string[] = [];
+      if (inRepo) {
+        for (const b of branchSet) {
+          // eslint-disable-next-line no-await-in-loop -- one branch probe at a time
+          if (await git.branchExists(b, cwd)) branchesAlive.push(b);
+        }
+      }
+      runs.push({
+        runId: r.runId,
+        planSlug: slugFromPath(r.planFile),
+        status: r.status,
+        startedAt: r.startedAt,
+        ...(r.endedAt ? { endedAt: r.endedAt } : {}),
+        tasksTotal: taskEntries.length,
+        tasksCompleted: completed,
+        tasksFailed: failed,
+        tasksSkipped: skipped,
+        worktreeRoot: ctx.config.defaults['worktree-root'],
+        branchesAlive,
+      });
+    }
+
+    const cfgPaths = configPaths(cwd);
+    const workspace = {
+      cwd,
+      configPath: cfgPaths.project ?? cfgPaths.global ?? null,
+      baseBranch: ctx.config.defaults['base-branch'],
+      defaultAgent: ctx.config.defaults.agent,
+      worktreeRoot: ctx.config.defaults['worktree-root'],
+      inRepo,
+    };
+
+    const text = [
+      `workspace: ${workspace.cwd}`,
+      `  base-branch: ${workspace.baseBranch}, default-agent: ${workspace.defaultAgent}`,
+      `plans: ${plans.length}`,
+      `runs: ${runs.length}`,
+    ].join('\n');
+
+    return {
+      text,
+      structuredContent: {
+        ok: true,
+        files: [],
+        warnings: [],
+        errors: [],
+        workspace,
+        plans,
+        runs,
+      },
+    };
+  });
+}
+
+/** ---- yaao_prune ---------------------------------------------------------------- */
+
+export type PruneTarget = 'run' | 'plan' | 'all-completed' | 'all-failed' | 'older-than';
+export type PruneScope = 'worktrees' | 'branches' | 'runs';
+
+export interface PruneToolInput {
+  target: PruneTarget;
+  runId?: string;
+  planSlug?: string;
+  olderThanDays?: number;
+  scope?: PruneScope[];
+  /** Preview only. Defaults to true — destructive defaults are not the right shape for an MCP tool. */
+  dryRun?: boolean;
+  /** Required to remove worktrees with uncommitted changes (or other safety-net-tripping cases). */
+  force?: boolean;
+}
+
+interface PruneSkip {
+  kind: 'worktree' | 'branch' | 'runDir';
+  path: string;
+  reason: string;
+}
+
+interface PruneRemoved {
+  worktrees: string[];
+  branches: string[];
+  runDirs: string[];
+}
+
+/**
+ * Structured cleanup. Targets a set of runs (or a plan's runs, or all
+ * completed/failed/older-than runs) and removes some scope of artifacts from
+ * each. Safety rails:
+ *
+ *   - dryRun: true by default — preview only, never destructive on the first call.
+ *   - Refuses to delete base-branch (configured `defaults.base-branch`).
+ *   - Refuses to remove a worktree whose working tree has uncommitted changes
+ *     unless force: true. Same for branches not merged into their mergeInto.
+ *   - Survives partial failure: each removal is independent; failures are
+ *     collected in `errors[]` and the rest of the work still happens.
+ */
+export async function yaaoPruneTool(input: PruneToolInput, ctx: ToolContext): Promise<ToolCallResult> {
+  return envelope(async () => {
+    const cwd = resolve(ctx.cwd);
+    const git = ctx.git ?? defaultGit;
+    const baseBranch = ctx.config.defaults['base-branch'];
+    const worktreeRoot = ctx.config.defaults['worktree-root'];
+    const journalDir = join(cwd, '.yaao', 'runs');
+    const scope: PruneScope[] =
+      input.scope && input.scope.length > 0 ? input.scope : ['worktrees', 'branches', 'runs'];
+    // dryRun default = true. Destructive defaults are wrong for an MCP tool;
+    // callers explicitly pass dryRun: false to mutate.
+    const dryRun = input.dryRun ?? true;
+    const force = input.force ?? false;
+
+    const all = await listRuns(journalDir);
+    const targets = pickPruneTargets(all, input);
+    if (targets.length === 0) {
+      return pruneResult(dryRun, { worktrees: [], branches: [], runDirs: [] }, [], [
+        {
+          code: 'YAAO_PRUNE_NO_MATCH',
+          message: `no runs matched target=${input.target}`,
+          hint:
+            input.target === 'run'
+              ? 'pass an existing runId — see yaao_inspect().runs'
+              : input.target === 'plan'
+                ? 'pass an existing planSlug — see yaao_inspect().plans'
+                : 'no runs in .yaao/runs/ match the target',
+        },
+      ]);
+    }
+
+    const removed: PruneRemoved = { worktrees: [], branches: [], runDirs: [] };
+    const skipped: PruneSkip[] = [];
+    const errors: { code: string; message: string; hint?: string }[] = [];
+
+    const wtManager = new WorktreeManager({ git, rootDir: cwd, worktreeRoot });
+    const knownWorktrees = await wtManager.list();
+    const worktreesByRunId = new Map<string, typeof knownWorktrees>();
+    for (const w of knownWorktrees) {
+      if (!w.sourceRunId) continue;
+      const arr = worktreesByRunId.get(w.sourceRunId) ?? [];
+      arr.push(w);
+      worktreesByRunId.set(w.sourceRunId, arr);
+    }
+
+    for (const target of targets) {
+      if (scope.includes('worktrees')) {
+        for (const w of worktreesByRunId.get(target.runId) ?? []) {
+          // Refuse to remove a worktree with uncommitted changes unless force.
+          let dirty = false;
+          try {
+            dirty = await git.hasUncommitted(w.path);
+          } catch {
+            // worktree may have been removed manually — proceed with deletion.
+          }
+          if (dirty && !force) {
+            skipped.push({
+              kind: 'worktree',
+              path: w.path,
+              reason: 'uncommitted-changes',
+            });
+            continue;
+          }
+          if (dryRun) {
+            removed.worktrees.push(w.path);
+            continue;
+          }
+          try {
+            await wtManager.remove(w.taskId, { force: true });
+            removed.worktrees.push(w.path);
+          } catch (e) {
+            errors.push({
+              code: 'YAAO_PRUNE_WORKTREE',
+              message: `failed to remove worktree ${w.path}: ${(e as Error).message}`,
+            });
+          }
+        }
+      }
+      if (scope.includes('branches')) {
+        for (const [taskId, t] of Object.entries(target.tasks)) {
+          const branch = t.branch;
+          if (!branch) continue;
+          if (branch === baseBranch) {
+            // Hard rule: never delete the configured base-branch, no matter
+            // what the journal claims a task ran on.
+            skipped.push({
+              kind: 'branch',
+              path: branch,
+              reason: `is-base-branch (refusing to delete ${baseBranch})`,
+            });
+            continue;
+          }
+          // Refuse to delete branches with unmerged commits unless force.
+          // A task whose mergeStatus is 'merged' is safe; anything else
+          // (failed, merge-failed, never-merged) is preserved by default.
+          if (!force && t.mergeStatus !== 'merged') {
+            skipped.push({
+              kind: 'branch',
+              path: branch,
+              reason: t.mergeStatus === 'merge-failed' ? 'unmerged-commits' : 'never-merged',
+            });
+            continue;
+          }
+          if (dryRun) {
+            removed.branches.push(branch);
+            continue;
+          }
+          try {
+            await git.deleteBranch(branch, { force: true }, cwd);
+            removed.branches.push(branch);
+          } catch (e) {
+            errors.push({
+              code: 'YAAO_PRUNE_BRANCH',
+              message: `failed to delete branch ${branch} (task ${taskId}): ${(e as Error).message}`,
+            });
+          }
+        }
+      }
+      if (scope.includes('runs')) {
+        const runPath = join(journalDir, target.runId);
+        if (dryRun) {
+          removed.runDirs.push(runPath);
+        } else {
+          try {
+            rmSync(runPath, { recursive: true, force: true });
+            removed.runDirs.push(runPath);
+          } catch (e) {
+            errors.push({
+              code: 'YAAO_PRUNE_RUNDIR',
+              message: `failed to remove run dir ${runPath}: ${(e as Error).message}`,
+            });
+          }
+        }
+      }
+    }
+
+    return pruneResult(dryRun, removed, skipped, errors);
+  });
+}
+
+function pruneResult(
+  dryRun: boolean,
+  removed: PruneRemoved,
+  skipped: PruneSkip[],
+  errors: { code: string; message: string; hint?: string }[],
+): ToolCallResult {
+  const summary = `${dryRun ? '(dry-run) ' : ''}removed: ${removed.worktrees.length} worktree(s), ${removed.branches.length} branch(es), ${removed.runDirs.length} run dir(s)`;
+  return {
+    text: skipped.length > 0 ? `${summary}; skipped ${skipped.length}` : summary,
+    structuredContent: {
+      ok: errors.length === 0,
+      files: [],
+      warnings: skipped.map((s) => `${s.kind} ${s.path}: ${s.reason}`),
+      errors,
+      dryRun,
+      removed,
+      skipped,
+    },
+  };
+}
+
+function pickPruneTargets(all: RunSummary[], input: PruneToolInput): RunSummary[] {
+  switch (input.target) {
+    case 'run':
+      return input.runId ? all.filter((r) => r.runId === input.runId) : [];
+    case 'plan':
+      return input.planSlug
+        ? all.filter((r) => slugFromPath(r.planFile) === input.planSlug)
+        : [];
+    case 'all-completed':
+      return all.filter((r) => r.status === 'success');
+    case 'all-failed':
+      return all.filter((r) => r.status === 'failed' || r.status === 'cancelled');
+    case 'older-than': {
+      const days = input.olderThanDays;
+      if (typeof days !== 'number' || !Number.isFinite(days) || days < 0) return [];
+      const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+      return all.filter((r) => {
+        const stamp = r.endedAt ?? r.startedAt;
+        const ms = stamp ? Date.parse(stamp) : 0;
+        return ms > 0 && ms < cutoff;
+      });
+    }
+  }
+}
+
+function slugFromPath(p: string): string {
+  const base = p.split(/[\\/]/).pop() ?? p;
+  return base.replace(/\.(md|ya?ml)$/, '');
+}
+
+function safeHash(p: string): string | undefined {
+  try {
+    return hashKey(readFileSync(p, 'utf8'));
+  } catch {
+    return undefined;
   }
 }
 

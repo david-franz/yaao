@@ -78,6 +78,12 @@ export interface Git {
    * is half-broken (you'd have commits made from an unrecorded plan).
    */
   planFileState(path: string, cwd?: string): Promise<PlanGitState>;
+  /**
+   * Returns the SHA of the most recent commit that touched `path`, or
+   * undefined when the path isn't tracked. Cheap join used by `yaao_inspect`
+   * to anchor each plan to a commit without forcing callers to shell out.
+   */
+  lastCommitFor(path: string, cwd?: string): Promise<string | undefined>;
   revParse(ref: string, cwd?: string): Promise<string>;
   branchExists(branch: string, cwd?: string): Promise<boolean>;
   createBranch(branch: string, base: string, cwd?: string): Promise<void>;
@@ -233,6 +239,12 @@ export const git: Git = {
     if (blob.exitCode === 0) out.blobSha = blob.stdout.trim();
     if (head.exitCode === 0) out.headSha = head.stdout.trim();
     return out;
+  },
+  async lastCommitFor(path, cwd) {
+    const r = await run(['log', '-1', '--format=%H', '--', path], cwd);
+    if (r.exitCode !== 0) return undefined;
+    const sha = r.stdout.trim();
+    return sha.length > 0 ? sha : undefined;
   },
   async revParse(ref, cwd) {
     return (await runOk(['rev-parse', '--verify', ref], cwd)).trim();
