@@ -22,7 +22,7 @@ yaao is implemented in 15 phases, progressing from foundational CLI infrastructu
 | 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Shipped |
 | 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Shipped (text-mode) |
 | 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Shipped |
-| 13 | Web viewer | HTTP+SSE server, DAG view, live run view, workspace, plan + config editors | Planned |
+| 13 | Web viewer | HTTP+SSE server, DAG view, live run view, workspace, plan + config editors | Shipped |
 | 14 | Session → Skill distillation | `yaao-distiller` skill, session readers, `yaao_distill` MCP tool, refinement | Planned |
 | 15 | Distribution & polish       | npm publish, `doctor`, docs site | Planned |
 
@@ -281,19 +281,19 @@ Expose yaao itself as an MCP server. **This is the canonical way every agent —
 
 ---
 
-## Phase 13: Web Viewer
+## Phase 13: Web Viewer **(shipped)**
 
 The browser surface for everything that isn't actually starting a run. Run launching stays with the CLI / MCP (`yaao_run`, `yaao_resume`); the web viewer is where you point a browser to watch a run happen, browse history, manage workspace state, and edit plans and config.
 
-| Feature | Description | Doc |
-| --- | --- | --- |
-| **F13.0** | Scaffold: `yaao web` CLI command, hono listener, `web/` workspace, build pipeline, smoke tests | [F13.0-scaffold.md](phase-13/F13.0-scaffold.md) |
-| **F13.1** | `yaao web` HTTP+SSE server | [F13.1-web-server.md](phase-13/F13.1-web-server.md) |
-| **F13.2** | DAG view with live-reload | [F13.2-web-dag-view.md](phase-13/F13.2-web-dag-view.md) |
-| **F13.3** | Live run view + activity stream | [F13.3-web-run-view.md](phase-13/F13.3-web-run-view.md) |
-| **F13.4** | Workspace page (yaao_inspect + yaao_prune) | [F13.4-web-workspace-view.md](phase-13/F13.4-web-workspace-view.md) |
-| **F13.5** | Plan editor (Monaco + schema + DAG live) | [F13.5-web-plan-editor.md](phase-13/F13.5-web-plan-editor.md) |
-| **F13.6** | Config editor (form + raw, secrets-aware) | [F13.6-web-config-editor.md](phase-13/F13.6-web-config-editor.md) |
+| Feature | Description | Status | Doc |
+| --- | --- | --- | --- |
+| **F13.0** | Scaffold: `yaao web` CLI command, hono listener, `web/` workspace, build pipeline, smoke tests | shipped | [F13.0-scaffold.md](phase-13/F13.0-scaffold.md) |
+| **F13.1** | `yaao web` HTTP+SSE server | shipped | [F13.1-web-server.md](phase-13/F13.1-web-server.md) |
+| **F13.2** | DAG view with live-reload | shipped | [F13.2-web-dag-view.md](phase-13/F13.2-web-dag-view.md) |
+| **F13.3** | Live run view + activity stream | shipped | [F13.3-web-run-view.md](phase-13/F13.3-web-run-view.md) |
+| **F13.4** | Workspace page (yaao_inspect + yaao_prune) | shipped | [F13.4-web-workspace-view.md](phase-13/F13.4-web-workspace-view.md) |
+| **F13.5** | Plan editor (textarea + live DAG preview) | shipped (textarea v1) | [F13.5-web-plan-editor.md](phase-13/F13.5-web-plan-editor.md) |
+| **F13.6** | Config editor (form + raw, secrets-aware) | shipped | [F13.6-web-config-editor.md](phase-13/F13.6-web-config-editor.md) |
 
 **Key Deliverables:**
 
@@ -301,8 +301,8 @@ The browser surface for everything that isn't actually starting a run. Run launc
 - **Run creation is deliberately not in the API.** Start a run from your terminal (`yaao run`) or your MCP-aware editor (`yaao_run`); come to the web view to watch it. Keeping spawning in one place simplifies the lifecycle story and aligns the UI with how users actually work.
 - **Activity stream, not log tail.** F13.3 forwards every `RunEvent` over SSE — `task:agent-event` (with `ev.type` ∈ `{stdout, stderr, thinking, tool-use}`), `task:retry-attempt`, `task:diff`, `task:committed`, `task:merged`, `task:failed`. The browser renders these as a unified stream with thinking blocks collapsed by default and tool-use calls one-line summarized. The validation outcome (`exitCode`, `decisionReason`) is rendered prominently on the task detail pane — the lifecycle records the verdict on `task:completed`, the web viewer makes it impossible to miss.
 - **Workspace page** wraps `yaao_inspect` and `yaao_prune` so cleanup affordances live in the browser. Each prune action defaults to a dry-run preview; the apply call is a separate click. The structural safety rails (base-branch never deleted, worktrees with uncommitted changes require explicit force) carry through from the MCP tool.
-- **Plan editor (F13.5)** is Monaco with the execution-plan JSON Schema attached for live diagnostics, plus a split DAG pane that re-renders on debounced input. Save goes through `PUT /api/plans/:slug/raw`, which runs the full `validatePlan` pipeline server-side — schema-valid plans with dependency cycles are caught before write. Live-reload via `/api/plans/:slug/watch` cooperates with the user's IDE: edits in either place show up in the other; the editor surfaces a non-modal "file changed on disk" banner if there are unsaved changes locally.
-- **Config editor (F13.6)** ships a form view rendered from the JSON Schema (the surface most users will live in) plus a raw Monaco view. Secrets handling is the load-bearing rule: the editor only ever shows `${ENV_VAR}` placeholders, never resolved values; `PUT /api/config/raw` runs the same literal-secret detector `loadConfig` uses and rejects any commit containing a literal API key. Config changes apply to new runs automatically (each process re-reads config on the next task spawn); a yellow toast on save notes that in-flight runs use the old config.
+- **Plan editor (F13.5)** ships as a pragmatic textarea-based v1 (no Monaco dep) with a split DAG pane that re-renders on debounced input via a lightweight client-side YAML preview parser. Save goes through `PUT /api/plans/:slug/raw`, which runs the full `validatePlan` pipeline server-side — schema-valid plans with dependency cycles are caught before write, so structural validity is always the server's verdict. Live-reload via `/api/plans/:slug/watch` cooperates with the user's IDE: edits in either place show up in the other; the editor surfaces a non-modal "file changed on disk" banner if there are unsaved changes locally.
+- **Config editor (F13.6)** ships a form view for the common settings (defaults, merge, run gates, API providers) plus a raw JSON view; both edit the same buffer. Secrets handling is the load-bearing rule: the editor only ever shows `${ENV_VAR}` placeholders, never resolved values; `PUT /api/config/raw` runs the same literal-secret detector `loadConfig` uses and rejects any commit containing a literal API key. Config changes apply to new runs automatically (each process re-reads config on the next task spawn).
 
 ---
 

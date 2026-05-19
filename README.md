@@ -15,11 +15,10 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 ## Status
 
-**MVP + MCP shipped.** Phases 1-12 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, the merge engine, optional ctx-sys integration, the skills system, the yaao-planner skill, the yaao-converter skill, the text-mode TUI, and **yaao-as-MCP** — `yaao serve` exposes `yaao_plan` / `yaao_convert` / `yaao_validate` / `yaao_run` / `yaao_resume` / `yaao_status` / `yaao_agents` / `yaao_plans` / `yaao_inspect` / `yaao_prune` as MCP tools, plus auto-registers every discoverable skill as `yaao_skill_<name>` with hot reload. This is the integration story that lets Claude Code, Cursor, Copilot, Codex, and other MCP clients drive yaao end-to-end without duplicating prompts across four agent formats.
+**MVP + MCP + Web Viewer shipped.** Phases 1-13 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, the merge engine, optional ctx-sys integration, the skills system, the yaao-planner skill, the yaao-converter skill, the text-mode TUI, **yaao-as-MCP** — `yaao serve` exposes `yaao_plan` / `yaao_convert` / `yaao_validate` / `yaao_run` / `yaao_resume` / `yaao_status` / `yaao_agents` / `yaao_plans` / `yaao_inspect` / `yaao_prune` as MCP tools, plus auto-registers every discoverable skill as `yaao_skill_<name>` with hot reload — and **`yaao web`**, the browser viewer for DAGs, live runs, workspace cleanup, and plan + config editing. This is the integration story that lets Claude Code, Cursor, Copilot, Codex, and other MCP clients drive yaao end-to-end without duplicating prompts across four agent formats.
 
 Planned phases (in this order):
 
-- **Phase 13 — Web Viewer** (`yaao web`): browser-based DAG view, live run view with full agent-activity stream (stdout / stderr / thinking / tool-use), workspace page wrapping `yaao_inspect` + `yaao_prune`, plan editor (Monaco + schema), config editor.
 - **Phase 14 — Session → Skill Distillation**: capture useful patterns from a finished chat session and crystallise them into a reusable yaao skill via a new `yaao_distill` MCP tool.
 - **Phase 15 — Distribution & Polish**: `yaao doctor`, npm publish, docs site.
 
@@ -182,8 +181,7 @@ yaao run --resume <run-id>
 | `yaao agents` | Report which agent backends are available and their versions. (Subsumed by `yaao doctor` in Phase 15.) |
 | `yaao skills install` | (Re)install skill/agent files for Claude Code, Cursor, Copilot, Codex. |
 | `yaao serve` | Start the MCP stdio server. Spawned by AI clients (Claude Code, Cursor, etc.) via their MCP config; not run directly by humans. |
-
-A standalone `yaao web` HTTP+SSE viewer is in Phase 13.
+| `yaao web` | Start the local HTTP+SSE web viewer. Defaults to `http://127.0.0.1:8787`. Flags: `--host`, `--port`, `--token`, `--no-open`. Non-loopback binds require `--token`. |
 
 ---
 
@@ -334,7 +332,49 @@ yaao ships a **text-mode** progress reporter, not a full interactive Ink dashboa
 - **`yaao view <exec-plan>`** — prints the DAG, per-task agent/model/skills, and dependency edges to the terminal. Static, one-shot output.
 - **`yaao run <exec-plan>`** — streams structured events to stderr as the run progresses: per-task state transitions (`▶ active`, `✔ completed`, `✖ failed`, `↪ merged`, etc.), tool-use captions, agent stdout, a ticker so a long-running task doesn't look hung. `--no-tui` switches off the live reporter; structured progress still lands in the journal at `.yaao/runs/<run-id>/journal.jsonl`.
 
-A browser-based viewer with an interactive DAG, a live agent-activity stream, and in-browser plan + config editors is in Phase 13 (`yaao web`).
+For a browser-based experience, run **`yaao web`** from the project root. It serves an interactive DAG view, a live agent-activity stream (stdout / stderr / thinking / tool-use), a workspace page wrapping `yaao_inspect` / `yaao_prune`, a plan editor with a live DAG preview, and a secrets-aware config editor. Defaults to `http://127.0.0.1:8787`; binds beyond loopback require `--token`. See [Running the web viewer](#running-the-web-viewer) below.
+
+---
+
+## Running the web viewer
+
+`yaao web` is a separate process from `yaao serve` (the MCP stdio server). AI clients spawn `yaao serve`; humans run `yaao web` from a terminal. They share state through the filesystem — every process tails the run journal at `.yaao/runs/<id>/journal.jsonl`, so a run started by Claude Code via `yaao_run` is watchable in real time in the browser.
+
+```bash
+# From an installed yaao
+yaao web                        # listens on http://127.0.0.1:8787 and opens a browser
+yaao web --port 9000            # custom port
+yaao web --no-open              # don't auto-open the browser
+yaao web --host 0.0.0.0 --token $YAAO_WEB_TOKEN   # non-loopback binds REQUIRE --token
+```
+
+What you get in the browser:
+
+- **Workspace** — wraps `yaao_inspect` + `yaao_prune` with a dry-run preview before each apply.
+- **Plans** — list every plan in `.yaao/exec/`; click into one for an interactive DAG, or open the editor (textarea + live DAG preview; validation is server-side).
+- **Latest run** — full activity stream: state transitions, agent stdout/stderr, thinking blocks (collapsed by default), tool-use one-liners, validation verdict, merge outcome.
+- **Config** — form view for the common knobs (defaults, merge, run gates, API providers) plus a raw JSON view. Secrets only show `${ENV_VAR}` placeholders; the server rejects any save containing a literal API key.
+
+### Running from a source checkout
+
+The web bundle lives in a workspace under `web/`. Build it once before starting the engine, or use the dev server for HMR:
+
+```bash
+npm install        # installs root + web workspace deps
+npm run build      # builds the engine and copies web/dist into dist/web
+node dist/bin/yaao.js web
+
+# OR — full hot-reload during development:
+npm run dev:web    # Vite dev server on :5173, proxies /api to :8787
+# in another terminal:
+node dist/bin/yaao.js web --no-open --port 8787
+# then open http://localhost:5173
+```
+
+### Auth model
+
+- **Loopback (`127.0.0.1`)** — no auth. Local-user trust model; anyone who can hit your loopback already has shell.
+- **Non-loopback** — `--token <hex>` is **required** at startup and must be presented as `Authorization: Bearer <token>` on every request. The browser app picks the token up from the query string on first load.
 
 ---
 
