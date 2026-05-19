@@ -60,6 +60,20 @@ export type JournalEvent =
        * different agent — the sticky-completion replay then preserves both
        * status and the completing agent. */
       agent?: string;
+      /**
+       * Proof of the validation verdict. When present, the task had a
+       * validation command and yaao decided pass/fail based strictly on
+       * `decisionReason`. Recorded on every completion (including success)
+       * so the run summary can answer "why did yaao consider this passed?"
+       * without a second source of truth.
+       */
+      validation?: {
+        command: string;
+        exitCode: number;
+        durationMs: number;
+        decisionReason: 'exit-code';
+        mustPass: boolean;
+      };
     }
   | {
       t: 'task:failed';
@@ -114,9 +128,22 @@ export interface RunSummary {
       worktree?: string;
       durationMs?: number;
       error?: { code: string; message: string };
-      /** Last captured validation tails — used by `--resume` to seed the next
-       * attempt's prompt with the prior failure context. */
-      validation?: { command: string; stdoutTail?: string; stderrTail?: string };
+      /**
+       * Validation outcome the task's pass/fail was decided on. `exitCode`
+       * and `decisionReason` are populated by `task:completed`; `stdoutTail`
+       * / `stderrTail` are populated by `task:failed` / `task:retry-attempt`
+       * so `--resume` can seed the next attempt's prompt with the prior
+       * failure context.
+       */
+      validation?: {
+        command: string;
+        exitCode?: number;
+        durationMs?: number;
+        decisionReason?: 'exit-code';
+        mustPass?: boolean;
+        stdoutTail?: string;
+        stderrTail?: string;
+      };
       /** Attempts consumed by this task, including retries. */
       attempts?: number;
       /** When skipped, why: cascade from a failed dep, or filtered out via
@@ -310,6 +337,10 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
         // it, so the status table reports who actually did the work — not who
         // was reassigned and crashed.
         ...(ev.agent !== undefined ? { agent: ev.agent } : {}),
+        // Surface the validation verdict's proof. Without this, a caller can't
+        // tell from `yaao_status` why a task was considered passing — only
+        // that it was.
+        ...(ev.validation !== undefined ? { validation: ev.validation } : {}),
       };
       return next;
     case 'task:failed':

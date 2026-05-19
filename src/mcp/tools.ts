@@ -294,6 +294,7 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
         ...(t.cachedFromRunId !== undefined
           ? { cached: true, cachedFromRunId: t.cachedFromRunId }
           : {}),
+        ...(t.validation !== undefined ? { validation: t.validation } : {}),
       }));
       unmerged = Object.entries(summary.tasks)
         .filter(([, t]) => t.mergeStatus === 'merge-failed')

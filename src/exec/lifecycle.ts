@@ -22,6 +22,20 @@ export interface PriorFailureContext {
   validation?: { command: string; stdoutTail?: string; stderrTail?: string };
 }
 
+/**
+ * Captured proof of a validation run's verdict. The contract is: pass/fail is
+ * the pipeline exit code, full stop. Recording the exit code + decision
+ * reason on every event (including success) makes "why did yaao decide this
+ * passed?" an answerable question from the journal alone.
+ */
+interface ValidationOutcome {
+  command: string;
+  exitCode: number;
+  durationMs: number;
+  decisionReason: 'exit-code';
+  mustPass: boolean;
+}
+
 type RunAttemptResult =
   | { ok: true }
   | { ok: false; error: YaaoError; failure: PriorFailureContext };
@@ -268,11 +282,24 @@ export class Lifecycle {
       stdout = result.stdout;
 
       // 4) Validation command (optional)
+      let validationOutcome: ValidationOutcome | undefined;
       if (task.validation?.command) {
         const validationCwd = task.validation.cwd
           ? resolvePath(wt.path, task.validation.cwd)
           : wt.path;
+        const vStart = Date.now();
         const v = await this.runShell(task.validation.command, validationCwd);
+        validationOutcome = {
+          command: task.validation.command,
+          exitCode: v.exitCode,
+          durationMs: Date.now() - vStart,
+          // The contract is fixed: pass/fail is the pipeline exit code, full
+          // stop. Recording the reason on every event makes it impossible for
+          // a future code change to silently flip the signal without leaving
+          // a paper trail.
+          decisionReason: 'exit-code',
+          mustPass: task.validation['must-pass'],
+        };
         if (v.exitCode !== 0 && task.validation['must-pass']) {
           const stdoutTail = tail(v.stdout, 30);
           const stderrTail = tail(v.stderr, 30);
@@ -383,6 +410,27 @@ export class Lifecycle {
         Boolean(commitOutcome.commit) ||
         (headBeforeSpawn !== '' && headAfterCommit !== '' && headAfterCommit !== headBeforeSpawn);
       if (taskMadeProgress && task.merge.when === 'completed' && !this.opts.noMerge) {
+        // Defensive invariant: a task with must-pass validation MUST have
+        // passed validation by the time we get here. Today step 4 throws on
+        // non-zero exit + must-pass, so this is unreachable via control flow.
+        // The assertion exists so any future bypass — a refactor that moves
+        // merge before validation, a code path that catches and swallows the
+        // validation throw, etc. — is caught at runtime rather than landing
+        // unvalidated code on main. False positive on a merge would burn
+        // reviewer trust; false negative just retries.
+        if (
+          task.validation?.command &&
+          task.validation['must-pass'] &&
+          (validationOutcome === undefined || validationOutcome.exitCode !== 0)
+        ) {
+          throw new YaaoError({
+            code: 'YAAO_INVARIANT_MERGE_WITHOUT_VALIDATION',
+            message:
+              `refusing to merge ${task.id}: must-pass validation did not pass ` +
+              `(exitCode=${validationOutcome?.exitCode ?? 'unrun'}). This is a yaao bug — ` +
+              `validation pass/fail must be the pipeline exit code under bash -o pipefail.`,
+          });
+        }
         const target =
           task.merge.into ??
           (task.merge.strategy === 'auto'
@@ -421,6 +469,7 @@ export class Lifecycle {
         filesChanged: diffStats.filesChanged,
         commit: commitOutcome.commit ?? '',
         agent: backend.name,
+        ...(validationOutcome !== undefined ? { validation: validationOutcome } : {}),
       });
       return { ok: true };
     } catch (err) {
