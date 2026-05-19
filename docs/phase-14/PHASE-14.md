@@ -1,4 +1,4 @@
-# Phase 13: Session → Skill Distillation
+# Phase 14: Session → Skill Distillation
 
 **Status**: Planned
 **Depends on**: Phase 8 (skills system), Phase 12 (yaao-as-MCP — specifically F12.5 auto-registration *and* [F12.6](../phase-12/F12.6-skill-hot-reload.md) hot reload, which delivers the "callable across all connected agents within the same MCP session" UX this phase relies on)
@@ -7,7 +7,7 @@
 
 Capture the useful patterns from a finished chat session — the conventions discovered, the file/dir focus areas, the user's corrections, the ordered approach that actually worked — and crystallize them into a reusable yaao skill. The skill is then immediately available to **every** agent connected to yaao's MCP server (Claude Code, Cursor, Copilot, Codex, raw API), regardless of which agent the original session ran in.
 
-This phase closes a missing half of the skill lifecycle: yaao already makes a written skill *portable*. Phase 13 makes the act of *writing* the skill cheap by lifting it out of a representative session you already had.
+This phase closes a missing half of the skill lifecycle: yaao already makes a written skill *portable*. Phase 14 makes the act of *writing* the skill cheap by lifting it out of a representative session you already had.
 
 ## Why this belongs in yaao
 
@@ -23,11 +23,11 @@ A skill written from a Claude Code session is therefore usable from Cursor, Copi
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F13.1** | `yaao-distiller` built-in skill (prompt + metadata) | [F13.1-distiller-skill.md](F13.1-distiller-skill.md) |
-| **F13.2** | In-session capture (structured self-summary contract, redaction) | [F13.2-session-readers.md](F13.2-session-readers.md) |
-| **F13.3** | Skill emission, validation, and post-emit `skills install` | [F13.3-skill-emission.md](F13.3-skill-emission.md) |
-| **F13.4** | `yaao_distill` MCP tool (sole entry point) | [F13.4-distill-mcp-tool.md](F13.4-distill-mcp-tool.md) |
-| **F13.5** | Skill refinement (re-distill with new session, diff review) | [F13.5-skill-refinement.md](F13.5-skill-refinement.md) |
+| **F14.1** | `yaao-distiller` built-in skill (prompt + metadata) | [F14.1-distiller-skill.md](F14.1-distiller-skill.md) |
+| **F14.2** | In-session capture (structured self-summary contract, redaction) | [F14.2-session-readers.md](F14.2-session-readers.md) |
+| **F14.3** | Skill emission, validation, and post-emit `skills install` | [F14.3-skill-emission.md](F14.3-skill-emission.md) |
+| **F14.4** | `yaao_distill` MCP tool (sole entry point) | [F14.4-distill-mcp-tool.md](F14.4-distill-mcp-tool.md) |
+| **F14.5** | Skill refinement (re-distill with new session, diff review) | [F14.5-skill-refinement.md](F14.5-skill-refinement.md) |
 
 ## Key Deliverables
 
@@ -39,17 +39,17 @@ A skill written from a Claude Code session is therefore usable from Cursor, Copi
 
 ## Implementation Order
 
-F13.1, F13.2, and F13.3 are tightly coupled and should land as a single PR, not three:
+F14.1, F14.2, and F14.3 are tightly coupled and should land as a single PR, not three:
 
-- F13.1's prompt has to know what shape of `SessionRecord` to expect (defined in F13.2).
-- F13.1's emitted output has to pass `validateSkill` as F13.3 calls it; if the prompt is wrong the validator rejects.
-- F13.3's idempotency guarantees (atomic write, refuse-overwrite-without-merge) only matter if F13.1 is actually producing files.
+- F14.1's prompt has to know what shape of `SessionRecord` to expect (defined in F14.2).
+- F14.1's emitted output has to pass `validateSkill` as F14.3 calls it; if the prompt is wrong the validator rejects.
+- F14.3's idempotency guarantees (atomic write, refuse-overwrite-without-merge) only matter if F14.1 is actually producing files.
 
 Sequence:
 
-1. **F13.1 + F13.2 + F13.3** together — `SessionRecord` contract, distiller prompt, emission pipeline. End state: a hand-built `SessionRecord` fed into `runPlanner`-style harness produces a written, validated skill on disk.
-2. **F13.4** — the MCP tool wires everything together end-to-end and surfaces it to calling agents. F12.6 hot reload (already shipped) makes the new tool callable in the same session.
-3. **F13.5** last — refinement is the multiplier, but only meaningful once F13.1–F13.4 have produced a few real skills.
+1. **F14.1 + F14.2 + F14.3** together — `SessionRecord` contract, distiller prompt, emission pipeline. End state: a hand-built `SessionRecord` fed into `runPlanner`-style harness produces a written, validated skill on disk.
+2. **F14.4** — the MCP tool wires everything together end-to-end and surfaces it to calling agents. F12.6 hot reload (already shipped) makes the new tool callable in the same session.
+3. **F14.5** last — refinement is the multiplier, but only meaningful once F14.1–F14.4 have produced a few real skills.
 
 ## Removing a bad skill
 
@@ -58,7 +58,7 @@ A distilled skill that turns out wrong is recovered by deleting `.yaao/skills/<n
 ## Non-goals
 
 - **Auto-detecting when a session is "skill-worthy."** The user knows whether they'll do this kind of work again better than any heuristic. Distillation is always user-invoked.
-- **A `yaao distill` CLI command.** Distillation is in-context only — see Key Deliverables. Skill *management* commands (list, view, remove) may live under `yaao skills` later, but those are Phase 8 surface, not Phase 13.
+- **A `yaao distill` CLI command.** Distillation is in-context only — see Key Deliverables. Skill *management* commands (list, view, remove) may live under `yaao skills` later, but those are Phase 8 surface, not Phase 14.
 - **Running the distilled skill server-side.** Same model as F12.5 — yaao produces the skill; the calling agent uses it.
-- **Cross-session synthesis** (combining N unrelated sessions into one skill). Out of scope for v1; refinement (F13.5) handles the iterative case.
+- **Cross-session synthesis** (combining N unrelated sessions into one skill). Out of scope for v1; refinement (F14.5) handles the iterative case.
 - **`yaao_prune` coverage for skills.** Recovery is `rm -rf` + `skills install`; see above.
