@@ -232,6 +232,13 @@ export interface RunToolInput {
   only?: string[];
   skip?: string[];
   trial?: boolean;
+  /**
+   * Skip the post-task auto-merge into base-branch. Tasks land on their own
+   * branches only. Caller gets `tasks[].branch` + `commit` in the response and
+   * lands the work themselves (e.g. via `gh pr create`). Addresses the
+   * big-blast-radius default of yaao_run merging straight into main.
+   */
+  noMerge?: boolean;
 }
 
 export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promise<ToolCallResult> {
@@ -251,6 +258,7 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
         ? { filter: { ...(input.only ? { only: input.only } : {}), ...(input.skip ? { skip: input.skip } : {}) } }
         : {}),
       ...(input.trial !== undefined ? { trial: input.trial } : {}),
+      ...(input.noMerge !== undefined ? { noMerge: input.noMerge } : {}),
     });
     // Pull the full summary back out of the journal so we can emit a per-task
     // array without forcing a follow-up yaao_status call. The summary lives at

@@ -88,6 +88,12 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
         only: z.array(z.string()).optional(),
         skip: z.array(z.string()).optional(),
         trial: z.boolean().optional(),
+        noMerge: z
+          .boolean()
+          .optional()
+          .describe(
+            'Skip the post-task auto-merge — tasks land on their own branches only. Use when you want to review or PR before landing on base-branch.',
+          ),
       },
     },
     async (args) => asSdkResult(await yaaoRunTool(args, ctx)),

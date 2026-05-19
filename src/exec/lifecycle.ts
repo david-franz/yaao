@@ -46,6 +46,12 @@ export interface LifecycleOptions {
   mcpServers?: McpServerConfig[];
   /** Optional system-prompt directive prepended to every task (F7.3). */
   ctxSysDirective?: string;
+  /**
+   * When true, skip the post-task auto-merge step entirely. Branches still
+   * carry the task's commits; the user lands them manually. Wired by
+   * `yaao run --no-merge` (and the `noMerge` MCP tool option).
+   */
+  noMerge?: boolean;
 }
 
 export class Lifecycle {
@@ -362,7 +368,7 @@ export class Lifecycle {
       const taskMadeProgress =
         Boolean(commitOutcome.commit) ||
         (headBeforeSpawn !== '' && headAfterCommit !== '' && headAfterCommit !== headBeforeSpawn);
-      if (taskMadeProgress && task.merge.when === 'completed') {
+      if (taskMadeProgress && task.merge.when === 'completed' && !this.opts.noMerge) {
         const target =
           task.merge.into ??
           (task.merge.strategy === 'auto'

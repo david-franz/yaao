@@ -32,6 +32,7 @@ interface RunFlags {
   force?: boolean;
   allowUntrackedPlan?: boolean;
   commitPlan?: boolean;
+  noMerge?: boolean;
 }
 
 export const runCommand: CommandModule = {
@@ -61,6 +62,10 @@ export const runCommand: CommandModule = {
       .option(
         '--commit-plan',
         "auto-commit the plan file before starting the run, so the run is anchored to '[yaao] plan <name> (<runId>)'",
+      )
+      .option(
+        '--no-merge',
+        'skip the post-task auto-merge into base-branch — tasks land on their own branches only, so you can review and PR them yourself',
       )
       .action(async (planPath: string, flags: RunFlags) => {
         if (flags.only && flags.skip) {
@@ -121,6 +126,11 @@ export const runCommand: CommandModule = {
         if (flags.resume) opts.resume = true;
         if (flags.allowUntrackedPlan) opts.requireTrackedPlan = 'warn';
         if (flags.commitPlan) opts.commitPlan = true;
+        // commander turns `--no-merge` into `flags.merge = false`. The compiled
+        // type carries `noMerge?` because the CLI surface uses `--no-merge`
+        // (commander negates the boolean) — read both shapes defensively.
+        const flagsAny = flags as RunFlags & { merge?: boolean };
+        if (flags.noMerge === true || flagsAny.merge === false) opts.noMerge = true;
         // No-TUI mode and JSON mode both suppress the live reporter: JSON wants a
         // single structured line on stdout, --no-tui leaves journal tailing to the
         // user. Otherwise stream progress to stderr.

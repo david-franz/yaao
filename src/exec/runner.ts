@@ -52,6 +52,13 @@ export interface RunOptions {
    * flag.
    */
   commitPlan?: boolean;
+  /**
+   * When true, skip the lifecycle's auto-merge step. Tasks still complete on
+   * their own branches; the user lands them manually (or via `gh pr create`).
+   * This is the "preview" / "PR-only" mode that addresses the
+   * big-blast-radius default — see CLI `--no-merge`.
+   */
+  noMerge?: boolean;
 }
 
 export interface RunResult {
@@ -202,6 +209,7 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
     backendFor: opts.backendFor,
     runDir,
     promptRefBaseDir: resolvePath(opts.rootDir),
+    noMerge: opts.noMerge ?? false,
     ...(opts.mcpServers !== undefined ? { mcpServers: opts.mcpServers } : {}),
     ...(opts.ctxSysDirective !== undefined ? { ctxSysDirective: opts.ctxSysDirective } : {}),
   });
