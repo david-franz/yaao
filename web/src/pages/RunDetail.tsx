@@ -263,40 +263,48 @@ function RunView({ runId }: { runId: string }): JSX.Element {
   const filtered = filterTask ? state.activity.filter((r) => r.taskId === filterTask || (r.kind === 'lifecycle' && r.taskId === filterTask)) : state.activity;
 
   const selectedTaskData = selectedTask ? state.tasks[selectedTask] : undefined;
+  const showMeta = Boolean(selectedTaskData);
   return (
-    // Side-by-side layout mirroring PlanDetail: the DAG owns the left
-    // column at full height (no vh cap, scrolls inside its card if a long
-    // plan overflows), and the activity stream sits in a fixed-width
-    // right column so it stays a comfortable reading width independent of
-    // viewport. Selecting a task swaps the activity column's header for
-    // an inline metadata card; no separate side pane.
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'minmax(0, 1fr) minmax(420px, 560px)',
-      gap: 'var(--space-4)',
-      height: '100%',
-    }}>
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, gap: 'var(--space-3)' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flex: 1, minWidth: 0 }}>
-            <Link to="/workspace">← workspace</Link>
-            <strong style={{ fontSize: 'var(--fs-lg)' }}>{runId}</strong>
-            <StatusBadge status={state.status} />
-            {state.planFile ? <span className="muted" style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.planFile.split('/').slice(-2).join('/')}</span> : null}
-          </div>
-          <Controls runId={runId} runStatus={state.status} />
-        </header>
+    // Plan-panel-on-top, activity-below. The top row mirrors PlanDetail's
+    // layout exactly (DAG + side pane for the selected task's metadata);
+    // the bottom row is the live activity stream, filterable by clicking
+    // a node in the DAG. Top and bottom share the remaining vertical
+    // space equally — flex: 1 1 0 with minHeight: 0 lets each get a 50%
+    // slice and scroll internally without crowding the other.
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', height: '100%' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flex: 1, minWidth: 0 }}>
+          <Link to="/workspace">← workspace</Link>
+          <strong style={{ fontSize: 'var(--fs-lg)' }}>{runId}</strong>
+          <StatusBadge status={state.status} />
+          {state.planFile ? <span className="muted" style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.planFile.split('/').slice(-2).join('/')}</span> : null}
+        </div>
+        <Controls runId={runId} runStatus={state.status} />
+      </header>
+
+      {/* Top half: plan-panel-style DAG + optional metadata side pane */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: showMeta ? 'minmax(0, 1fr) minmax(320px, 400px)' : 'minmax(0, 1fr)',
+        gap: 'var(--space-3)',
+        flex: '1 1 0',
+        minHeight: 0,
+      }}>
         <TaskDag tasks={state.tasks} depends={state.depends} selectedId={selectedTask} onSelect={(id) => { setSelectedTask(id); setFilterTask(id); }} />
-      </div>
-      <aside style={{ display: 'flex', flexDirection: 'column', minHeight: 0, gap: 'var(--space-3)' }}>
-        {error ? <div className="banner banner--danger">{error}</div> : null}
-        {selectedTaskData ? (
-          <TaskMetaCard
-            id={selectedTask!}
-            task={selectedTaskData}
-            onClose={() => { setSelectedTask(null); setFilterTask(null); }}
-          />
+        {showMeta ? (
+          <aside className="card card--padded card--scroll">
+            <TaskMetaCard
+              id={selectedTask!}
+              task={selectedTaskData!}
+              onClose={() => { setSelectedTask(null); setFilterTask(null); }}
+            />
+          </aside>
         ) : null}
+      </div>
+
+      {/* Bottom half: filterable activity stream */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', flex: '1 1 0', minHeight: 0 }}>
+        {error ? <div className="banner banner--danger">{error}</div> : null}
         <ActivityHeader
           filterTask={filterTask}
           taskCount={allTaskIds.length}
@@ -305,7 +313,7 @@ function RunView({ runId }: { runId: string }): JSX.Element {
           onClearFilter={() => { setFilterTask(null); setSelectedTask(null); }}
         />
         <ActivityStream rows={filtered} filter={filterTask} onClearFilter={() => setFilterTask(null)} />
-      </aside>
+      </div>
     </div>
   );
 }
@@ -557,8 +565,10 @@ function ActivityRowView({ row }: { row: ActivityRow }): JSX.Element {
 }
 
 function TaskMetaCard({ id, task, onClose }: { id: string; task: RunSummaryTask; onClose: () => void }): JSX.Element {
+  // The caller wraps this in `.card .card--padded .card--scroll` so the
+  // contents take just the header + dl-grid.
   return (
-    <div className="card card--padded">
+    <>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
         <strong>{id}</strong>
         <button className="btn btn--ghost" onClick={onClose} aria-label="Close detail">×</button>
@@ -599,6 +609,6 @@ function TaskMetaCard({ id, task, onClose }: { id: string; task: RunSummaryTask;
         </>
       ) : null}
       </dl>
-    </div>
+    </>
   );
 }
