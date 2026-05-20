@@ -1,0 +1,53 @@
+# Continuous integration: lint, typecheck (engine + web), build, tests.
+#
+# Triggers on:
+#   - direct pushes to main (post-merge gate)
+#   - pull requests targeting main (pre-merge gate)
+#
+# Single Node version (matches .nvmrc) keeps the CI fast — yaao's
+# engines.node is >= 20, and pinning matrix testing is deferred until v1
+# ships and we have real users on a spread of Node versions.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs for the same ref when a new commit lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck (engine)
+        run: npm run typecheck
+
+      - name: Typecheck (web workspace)
+        run: npm --workspace web exec tsc -- --noEmit
+
+      - name: Build (engine + web)
+        run: npm run build
+
+      - name: Tests
+        run: npm test
