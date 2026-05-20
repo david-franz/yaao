@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { api, subscribe, type RunSummaryShape, type RunSummaryTask } from '../api.ts';
 import { Link } from '../Link.tsx';
 import { navigate } from '../router.ts';
+import { layoutDag } from '../dag-layout.ts';
 
 /**
  * F13.3 live run view. Subscribes to `/api/runs/:runId/events` (SSE) and
@@ -49,10 +50,16 @@ export interface RunState {
   status: 'unknown' | 'running' | 'success' | 'failed' | 'cancelled';
   planFile?: string;
   tasks: Record<string, RunSummaryTask>;
+  /** Per-task dependency list, captured from task:queued events. Lets the
+   * page render a DAG ordered by dependency depth instead of the previous
+   * alphabetical task grid. The journal is the only source we have for the
+   * structure (the page doesn't load the resolved plan), so we rely on
+   * task:queued carrying `depends`. */
+  depends: Record<string, string[]>;
   activity: ActivityRow[];
 }
 
-export const initialState: RunState = { status: 'unknown', tasks: {}, activity: [] };
+export const initialState: RunState = { status: 'unknown', tasks: {}, depends: {}, activity: [] };
 
 export interface JournalEvent {
   t: string;
@@ -63,6 +70,7 @@ export interface JournalEvent {
 export function reducer(state: RunState, action: { id: number; ev: JournalEvent }): RunState {
   const { id, ev } = action;
   const tasks = { ...state.tasks };
+  const depends = { ...state.depends };
   const activity = state.activity.slice();
   const upsert = (taskId: string, patch: Partial<RunSummaryTask>): void => {
     tasks[taskId] = { ...(tasks[taskId] ?? { status: 'pending' }), ...patch };
@@ -77,11 +85,20 @@ export function reducer(state: RunState, action: { id: number; ev: JournalEvent 
         activity: [...activity, lifecycleRow(id, ev)],
       };
     case 'task:queued':
+      // task:queued is the one event that carries the dependency list, so
+      // it's our only chance to learn the DAG shape from the journal alone.
+      if (ev.taskId) {
+        upsert(ev.taskId, { status: 'pending' });
+        const d = ev['depends'];
+        if (Array.isArray(d)) depends[ev.taskId] = d as string[];
+      }
+      activity.push(lifecycleRow(id, ev));
+      return { ...state, tasks, depends, activity };
     case 'task:ready':
     case 'task:skipped':
       if (ev.taskId) upsert(ev.taskId, { status: ev.t.replace('task:', '') as RunSummaryTask['status'] });
       activity.push(lifecycleRow(id, ev));
-      return { ...state, tasks, activity };
+      return { ...state, tasks, depends, activity };
     case 'task:running':
       if (ev.taskId)
         upsert(ev.taskId, {
@@ -224,18 +241,27 @@ function RunView({ runId }: { runId: string }): JSX.Element {
   const allTaskIds = useMemo(() => Object.keys(state.tasks).sort(), [state.tasks]);
   const filtered = filterTask ? state.activity.filter((r) => r.taskId === filterTask || (r.kind === 'lifecycle' && r.taskId === filterTask)) : state.activity;
 
+  // Right pane is wasted space until the user clicks a task; collapse to
+  // single column so the activity stream gets the whole width.
+  const showSidePane = Boolean(selectedTask && state.tasks[selectedTask]);
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 'var(--space-4)', height: '100%' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, gap: 'var(--space-2)' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: showSidePane ? '1fr 360px' : '1fr',
+      gap: 'var(--space-4)',
+      height: '100%',
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, gap: 'var(--space-3)' }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flex: 1, minWidth: 0 }}>
+            <Link to="/workspace">← workspace</Link>
             <strong style={{ fontSize: 'var(--fs-lg)' }}>{runId}</strong>
             <StatusBadge status={state.status} />
-            {state.planFile ? <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{state.planFile.split('/').slice(-2).join('/')}</span> : null}
+            {state.planFile ? <span className="muted" style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{state.planFile.split('/').slice(-2).join('/')}</span> : null}
           </div>
           <Controls runId={runId} runStatus={state.status} />
         </header>
-        <TaskGrid tasks={state.tasks} onSelect={setSelectedTask} onFilter={setFilterTask} filter={filterTask} />
+        <TaskDag tasks={state.tasks} depends={state.depends} selectedId={selectedTask} onSelect={(id) => { setSelectedTask(id); setFilterTask(id); }} />
         {error ? <div className="banner banner--danger">{error}</div> : null}
         <ActivityStream rows={filtered} filter={filterTask} onClearFilter={() => setFilterTask(null)} />
         {filterTask ? (
@@ -245,13 +271,11 @@ function RunView({ runId }: { runId: string }): JSX.Element {
         ) : null}
         <small className="subtle">{allTaskIds.length} task{allTaskIds.length === 1 ? '' : 's'} · {state.activity.length} events</small>
       </div>
-      <aside className="card card--padded card--scroll">
-        {selectedTask && state.tasks[selectedTask] ? (
-          <TaskPane id={selectedTask} task={state.tasks[selectedTask]} />
-        ) : (
-          <p className="muted">Click a task to see its detail.</p>
-        )}
-      </aside>
+      {showSidePane ? (
+        <aside className="card card--padded card--scroll">
+          <TaskPane id={selectedTask!} task={state.tasks[selectedTask!]!} onClose={() => setSelectedTask(null)} />
+        </aside>
+      ) : null}
     </div>
   );
 }
@@ -269,14 +293,6 @@ function StatusBadge({ status }: { status: RunState['status'] }): JSX.Element {
 
 function Controls({ runId, runStatus }: { runId: string; runStatus: RunState['status'] }): JSX.Element {
   const [busy, setBusy] = useState(false);
-  const cancel = async (): Promise<void> => {
-    setBusy(true);
-    try {
-      await api.cancel(runId);
-    } finally {
-      setBusy(false);
-    }
-  };
   const resume = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -287,43 +303,121 @@ function Controls({ runId, runStatus }: { runId: string; runStatus: RunState['st
   };
   return (
     <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-      {runStatus === 'running' ? <button className="btn btn--danger" onClick={cancel} disabled={busy}>Cancel</button> : null}
       {(runStatus === 'failed' || runStatus === 'cancelled') ? <button className="btn btn--primary" onClick={resume} disabled={busy}>Resume</button> : null}
-      <Link to="/workspace">← workspace</Link>
     </div>
   );
 }
 
-function TaskGrid({ tasks, onSelect, onFilter, filter }: { tasks: Record<string, RunSummaryTask>; onSelect: (id: string) => void; onFilter: (id: string) => void; filter: string | null }): JSX.Element {
-  const ids = Object.keys(tasks).sort();
+/**
+ * Live DAG of the run, ordered by dependency depth. Each node carries the
+ * task's status colour (completed / running / failed / etc.) and is
+ * clickable to select+filter. Falls back to a flat list when the journal
+ * hasn't yet emitted task:queued events (so we have task ids but no
+ * dependency structure to lay out). Compared to the previous alphabetical
+ * grid, this makes "what's upstream of what" visible at a glance — exactly
+ * the missing context when staring at a wide fan-out run.
+ */
+function TaskDag({ tasks, depends, selectedId, onSelect }: {
+  tasks: Record<string, RunSummaryTask>;
+  depends: Record<string, string[]>;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}): JSX.Element {
+  const ids = Object.keys(tasks);
   if (ids.length === 0) return <p className="muted">Waiting for tasks…</p>;
+  const haveStructure = ids.some((id) => depends[id] !== undefined);
+  if (!haveStructure) {
+    // No task:queued events yet — render a compact list so the user at
+    // least sees task ids while the DAG structure is still arriving.
+    return (
+      <div className="card card--padded" style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+        {ids.sort().map((id) => (
+          <span key={id} className={`pill pill--${pillVariant(tasks[id]!.status)}`}>{id}</span>
+        ))}
+      </div>
+    );
+  }
+  const nodes = ids.map((id) => ({
+    id,
+    title: tasks[id]?.agent ?? '',
+    agent: tasks[id]?.agent ?? '',
+    depends: depends[id] ?? [],
+  }));
+  const layout = layoutDag(nodes);
   return (
-    <div style={{ display: 'grid', gap: 'var(--space-2)', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
-      {ids.map((id) => {
-        const t = tasks[id]!;
-        const isFiltered = filter === id;
-        return (
-          <button
-            key={id}
-            onClick={() => {
-              onSelect(id);
-              onFilter(id);
-            }}
-            className={`task-card task-card--${t.status}${isFiltered ? ' task-card--filtered' : ''}`}
-          >
-            <strong className="task-card__id">{id}</strong>
-            <span className="task-card__meta">
-              {t.status}
-              {t.agent ? ` · ${t.agent}` : ''}
-              {t.mergeStatus === 'merged' ? ' · merged' : ''}
-              {t.mergeStatus === 'merge-failed' ? ' · merge-failed' : ''}
-              {t.validation ? ` · validation ${t.validation.exitCode === 0 ? '✓' : '✗'}` : ''}
-            </span>
-          </button>
-        );
-      })}
+    <div className="card card--scroll" style={{ maxHeight: '40vh' }}>
+      <svg
+        className="dag-svg"
+        width={layout.width}
+        height={layout.height}
+        viewBox={`0 0 ${layout.width} ${layout.height}`}
+        preserveAspectRatio="xMinYMin meet"
+        style={{ display: 'block' }}
+      >
+        {layout.edges.map((e) => (
+          <path
+            key={`${e.fromId}->${e.toId}`}
+            className="dag-edge"
+            d={`M ${e.fromX} ${e.fromY} C ${e.fromX + 30} ${e.fromY}, ${e.toX - 30} ${e.toY}, ${e.toX} ${e.toY}`}
+            strokeWidth={1.5}
+          />
+        ))}
+        {layout.nodes.map((n) => {
+          const task = tasks[n.id]!;
+          const isSel = n.id === selectedId;
+          const stroke = statusStroke(task.status);
+          return (
+            <g
+              key={n.id}
+              transform={`translate(${n.x}, ${n.y})`}
+              style={{ cursor: 'pointer' }}
+              onClick={() => onSelect(n.id)}
+            >
+              <title>{`${n.id} · ${task.status}${task.agent ? ` · ${task.agent}` : ''}${task.mergeStatus ? ` · ${task.mergeStatus}` : ''}`}</title>
+              <rect
+                width={n.width}
+                height={n.height}
+                rx={6}
+                stroke={stroke}
+                strokeWidth={isSel ? 2.5 : 1.5}
+                className={isSel ? 'selected' : ''}
+              />
+              <text x={12} y={22} fontSize={13} fontWeight={600} className="dag-id">
+                {n.id}
+              </text>
+              <text x={12} y={40} fontSize={11} className="dag-title">
+                {task.status}{task.agent ? ` · ${task.agent}` : ''}
+              </text>
+              {task.validation ? (
+                <text x={n.width - 12} y={22} fontSize={11} textAnchor="end" fill={task.validation.exitCode === 0 ? 'var(--success)' : 'var(--danger)'}>
+                  {task.validation.exitCode === 0 ? '✓' : '✗'}
+                </text>
+              ) : null}
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
+}
+
+function statusStroke(status: string): string {
+  switch (status) {
+    case 'completed': return 'var(--success)';
+    case 'failed': return 'var(--danger)';
+    case 'running': return 'var(--accent)';
+    case 'skipped': return 'var(--border-strong)';
+    default: return 'var(--border-strong)';
+  }
+}
+
+function pillVariant(status: string): 'success' | 'danger' | 'running' | 'neutral' {
+  switch (status) {
+    case 'completed': return 'success';
+    case 'failed': return 'danger';
+    case 'running': return 'running';
+    default: return 'neutral';
+  }
 }
 
 function ActivityStream({ rows, filter: _filter, onClearFilter: _onClearFilter }: { rows: ActivityRow[]; filter: string | null; onClearFilter: () => void }): JSX.Element {
@@ -388,8 +482,13 @@ function ActivityRowView({ row }: { row: ActivityRow }): JSX.Element {
   return <div className="activity-row activity-row--stdout">{row.taskId}: {row.data}</div>;
 }
 
-function TaskPane({ id, task }: { id: string; task: RunSummaryTask }): JSX.Element {
+function TaskPane({ id, task, onClose }: { id: string; task: RunSummaryTask; onClose: () => void }): JSX.Element {
   return (
+    <>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
+        <strong>{id}</strong>
+        <button className="btn btn--ghost" onClick={onClose} aria-label="Close detail">×</button>
+      </header>
     <dl className="dl-grid">
       <dt>id</dt><dd>{id}</dd>
       <dt>status</dt><dd>{task.status}</dd>
@@ -426,5 +525,6 @@ function TaskPane({ id, task }: { id: string; task: RunSummaryTask }): JSX.Eleme
         </>
       ) : null}
     </dl>
+    </>
   );
 }
