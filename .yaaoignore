@@ -1,9 +1,0 @@
-# Files / patterns yaao should ignore when scanning the project for context.
-node_modules/
-dist/
-build/
-.next/
-.turbo/
-.yaao/
-.git/
-*.log
