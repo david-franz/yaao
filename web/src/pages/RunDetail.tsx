@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { api, subscribe, type RunSummaryShape, type RunSummaryTask } from '../api.ts';
 import { Link } from '../Link.tsx';
 import { navigate } from '../router.ts';
@@ -356,8 +356,29 @@ function statusBorder(status: string): string {
 }
 
 function ActivityStream({ rows, filter: _filter, onClearFilter: _onClearFilter }: { rows: ActivityRow[]; filter: string | null; onClearFilter: () => void }): JSX.Element {
+  // Stick to bottom while the user is parked at the bottom; if they scroll
+  // up to read history, *stop* auto-scrolling so we don't yank them around.
+  // The threshold gives ~half-a-line of slack so micro-scrolls don't break
+  // the stick.
+  const ref = useRef<HTMLDivElement | null>(null);
+  const stickToBottom = useRef(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (stickToBottom.current) el.scrollTop = el.scrollHeight;
+  }, [rows.length]);
+  const onScroll = (): void => {
+    const el = ref.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
+    stickToBottom.current = distanceFromBottom < 24;
+  };
   return (
-    <div style={{ flex: 1, overflow: 'auto', border: '1px solid #ddd', borderRadius: 4, padding: '0.25rem 0.5rem', background: '#fafafa', fontFamily: 'ui-monospace, monospace', fontSize: 12, lineHeight: 1.4 }}>
+    <div
+      ref={ref}
+      onScroll={onScroll}
+      style={{ flex: 1, overflow: 'auto', border: '1px solid #ddd', borderRadius: 4, padding: '0.25rem 0.5rem', background: '#fafafa', fontFamily: 'ui-monospace, monospace', fontSize: 12, lineHeight: 1.5 }}
+    >
       {rows.map((r) => (
         <ActivityRowView key={r.eventId} row={r} />
       ))}
@@ -366,36 +387,38 @@ function ActivityStream({ rows, filter: _filter, onClearFilter: _onClearFilter }
 }
 
 function ActivityRowView({ row }: { row: ActivityRow }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  // Thinking and tool-use default open: the whole point of the activity
+  // stream is to see what the agent is doing in real time. A collapsed
+  // chevron next to "thinking (1842 chars)" makes everyone reach for the
+  // mouse, which is friction for the common case. Click the row to collapse.
+  const [open, setOpen] = useState(true);
   if (row.kind === 'lifecycle') {
-    return <div style={{ color: '#444' }}>{row.line}</div>;
+    return <div style={{ color: '#444', padding: '1px 0' }}>{row.line}</div>;
   }
   if (row.kind === 'thinking') {
     return (
-      <div style={{ color: '#888' }}>
+      <div style={{ color: '#5a5a5a', padding: '2px 0', borderLeft: '2px solid #d0d0d0', paddingLeft: 8, marginLeft: 2, marginTop: 2, marginBottom: 2 }}>
         <button onClick={() => setOpen(!open)} style={btnStyle}>
-          {open ? '▾' : '▸'}
+          {open ? '▾' : '▸'} {row.taskId} · thinking <span style={{ color: '#999' }}>({row.chars} chars)</span>
         </button>
-        {' '}· {row.taskId} · thinking ({row.chars} chars)
         {open ? <pre style={preStyle}>{row.raw}</pre> : null}
       </div>
     );
   }
   if (row.kind === 'tool-use') {
     return (
-      <div style={{ color: '#0066cc' }}>
+      <div style={{ color: '#0066cc', padding: '2px 0' }}>
         <button onClick={() => setOpen(!open)} style={btnStyle}>
-          {open ? '▾' : '▸'}
+          {open ? '▾' : '▸'} {row.taskId} · 🔧 {row.name}
         </button>
-        {' '}→ {row.taskId} · tool: {row.name}
         {open ? <pre style={preStyle}>{row.raw}</pre> : null}
       </div>
     );
   }
   if (row.kind === 'stderr') {
-    return <div style={{ color: '#a00' }}>{row.taskId}: {row.data}</div>;
+    return <div style={{ color: '#a00', padding: '1px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{row.taskId}: {row.data}</div>;
   }
-  return <div>{row.taskId}: {row.data}</div>;
+  return <div style={{ padding: '1px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{row.taskId}: {row.data}</div>;
 }
 
 const btnStyle: React.CSSProperties = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, fontFamily: 'inherit', fontSize: 'inherit' };

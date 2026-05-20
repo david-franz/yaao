@@ -53,6 +53,19 @@ export type JournalEvent =
     }
   | { t: 'task:output'; time: string; taskId: string; stream: 'stdout' | 'stderr'; chunk: string }
   | {
+      /** Agent activity: stdout/stderr chunks, thinking blocks, tool-use
+       * envelopes. Forwarded from the run bus so the web viewer (which is a
+       * journal-tail consumer) can render the live agent stream — without
+       * this, the journal only carries lifecycle transitions and the web's
+       * activity panel shows nothing between task:running and task:completed.
+       * Can balloon journal size on long thinking traces; size is the cost
+       * of paid for live visibility. */
+      t: 'task:agent-event';
+      time: string;
+      taskId: string;
+      ev: { type: 'stdout' | 'stderr' | 'tool-use' | 'thinking'; data: string; timestamp: string };
+    }
+  | {
       t: 'task:completed';
       time: string;
       taskId: string;

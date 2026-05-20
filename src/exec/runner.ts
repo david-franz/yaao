@@ -186,6 +186,18 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
         reason: ev.reason,
         conflicts: ev.conflicts,
       });
+    } else if (ev.type === 'task:agent-event') {
+      // Forward agent activity to the journal so cross-process consumers
+      // (the web viewer's SSE stream) can render the live agent thoughts,
+      // tool-use, and stdout/stderr. Previously these only fired on the
+      // in-process bus, so `yaao web` showed lifecycle transitions but
+      // nothing between task:running and task:completed.
+      void journal.append({
+        t: 'task:agent-event',
+        time: new Date().toISOString(),
+        taskId: ev.taskId,
+        ev: ev.ev,
+      });
     }
   });
 
