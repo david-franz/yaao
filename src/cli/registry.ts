@@ -4,6 +4,7 @@ import { initCommand } from './commands/init.js';
 import { validateCommand } from './commands/validate.js';
 import { agentsCommand } from './commands/agents.js';
 import { runCommand } from './commands/run.js';
+import { stopCommand } from './commands/stop.js';
 import { mergeCommand } from './commands/merge.js';
 import { cleanCommand } from './commands/clean.js';
 import { skillsCommand } from './commands/skills.js';
@@ -21,6 +22,7 @@ export const COMMAND_MODULES: CommandModule[] = [
   validateCommand,
   viewCommand,
   runCommand,
+  stopCommand,
   statusCommand,
   mergeCommand,
   cleanCommand,
