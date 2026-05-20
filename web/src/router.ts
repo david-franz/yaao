@@ -16,6 +16,7 @@ export type RouteName =
   | 'plans'
   | 'plan-detail'
   | 'plan-edit'
+  | 'plan-source'
   | 'runs-latest'
   | 'run-detail'
   | 'config'
@@ -32,6 +33,7 @@ const ROUTES: { pattern: RegExp; name: RouteName; params?: string[] }[] = [
   { pattern: /^\/workspace\/?$/, name: 'workspace' },
   { pattern: /^\/plans\/?$/, name: 'plans' },
   { pattern: /^\/plans\/([^/]+)\/edit\/?$/, name: 'plan-edit', params: ['slug'] },
+  { pattern: /^\/plans\/([^/]+)\/source\/?$/, name: 'plan-source', params: ['slug'] },
   { pattern: /^\/plans\/([^/]+)\/?$/, name: 'plan-detail', params: ['slug'] },
   { pattern: /^\/runs\/latest\/?$/, name: 'runs-latest' },
   { pattern: /^\/runs\/([^/]+)\/?$/, name: 'run-detail', params: ['runId'] },

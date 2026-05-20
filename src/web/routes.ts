@@ -132,6 +132,17 @@ export function mountRoutes(app: Hono, route: RouteContext): void {
     return c.body(body, 200, { 'content-type': 'application/x-yaml; charset=utf-8' });
   });
 
+  // Implementation-plan source — the human-readable .md authored by
+  // yaao_plan (or by the user directly). Used by the web's plan-source
+  // route to show the rendered markdown. Lives at .yaao/plans/<slug>.md.
+  app.get('/api/plans/:slug/source', (c) => {
+    const slug = c.req.param('slug');
+    const path = join(route.cwd, '.yaao', 'plans', `${slug}.md`);
+    if (!existsSync(path)) return c.json(notFound(slug), 404);
+    const body = readFileSync(path, 'utf8');
+    return c.body(body, 200, { 'content-type': 'text/markdown; charset=utf-8' });
+  });
+
   app.put('/api/plans/:slug/raw', async (c) => {
     const slug = c.req.param('slug');
     const path = resolveExecPath(route.cwd, slug) ?? defaultExecPath(route.cwd, slug);

@@ -721,6 +721,80 @@ hr {
   stroke-width: 3;
 }
 
+/* Rendered markdown — implementation plan source view. Scoped to
+ * .prose so it doesn't bleed into other surfaces. Sized + spaced to
+ * match the typography of the design system. */
+.prose {
+  font-size: var(--fs-md);
+  line-height: 1.6;
+  max-width: 80ch;
+  margin: 0 auto;
+}
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  margin-top: var(--space-5);
+  margin-bottom: var(--space-2);
+}
+.prose h1 { font-size: var(--fs-2xl); }
+.prose h2 { font-size: var(--fs-xl); border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.prose h3 { font-size: var(--fs-lg); }
+.prose h4 { font-size: var(--fs-md); }
+.prose p { margin: var(--space-3) 0; }
+.prose ul,
+.prose ol {
+  margin: var(--space-3) 0;
+  padding-left: 1.5em;
+}
+.prose li { margin: var(--space-1) 0; }
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-2);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+.prose pre {
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+.prose pre code {
+  background: transparent;
+  padding: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+.prose blockquote {
+  margin: var(--space-3) 0;
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-muted);
+}
+.prose a { color: var(--accent); }
+.prose hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: var(--space-5) 0;
+}
+.prose table {
+  border-collapse: collapse;
+  margin: var(--space-3) 0;
+}
+.prose th,
+.prose td {
+  text-align: left;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+}
+.prose th { background: var(--surface-2); font-weight: 600; }
+
 /* PlanEdit task navigator buttons */
 .task-nav-item {
   display: flex;

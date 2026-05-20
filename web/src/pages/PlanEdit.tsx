@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { parse as parseYaml } from 'yaml';
 import { api, subscribe, type PutPlanResp } from '../api.ts';
 import { Link } from '../Link.tsx';
 import { navigate } from '../router.ts';
@@ -290,70 +291,42 @@ function PlanEditFooter({ onNavigate: _onNavigate }: { onNavigate: () => void })
 }
 
 /**
- * Lightweight YAML parse: just enough to extract `tasks[*].id`,
- * `title`, `agent`, `depends`. Avoids pulling a YAML parser into the
- * browser bundle by being explicitly tolerant — anything malformed
- * collapses to `{ error, tasks: [] }`. The server-side validator is
- * the source of truth.
+ * Real YAML parse via the `yaml` package, just extracting the fields
+ * the task navigator needs (id, title, agent, depends). The previous
+ * hand-rolled parser was tolerant but wrong — it missed tasks when
+ * prompts contained folded scalars with code blocks (the closer-look
+ * regex flagged lines inside `>` content as new tasks, and the
+ * top-level `[A-Za-z]` early-break could fire on innocuous content).
+ * Server-side validatePlan is still the source of truth; this is
+ * only the navigator's hint while typing.
  */
 function parsePreview(yaml: string): { error?: string; tasks: { id: string; title: string; agent: string; depends: string[] }[] } {
-  // Find the tasks: block.
-  const tasksIdx = yaml.search(/^tasks:\s*$/m);
-  if (tasksIdx < 0) return { tasks: [] };
-  const lines = yaml.slice(tasksIdx).split('\n').slice(1);
-  const tasks: { id: string; title: string; agent: string; depends: string[] }[] = [];
-  let cur: { id: string; title: string; agent: string; depends: string[] } | null = null;
-  let inDepends = false;
-  for (const rawLine of lines) {
-    if (/^[A-Za-z]/.test(rawLine)) break; // back at top-level block
-    const trimmed = rawLine.trim();
-    if (trimmed === '' || trimmed.startsWith('#')) continue;
-    if (inDepends && cur && trimmed.startsWith('- ')) {
-      // Block-list continuation under `depends:`. Each `- item` line is
-      // a single dependency id, not a new task. Distinguished from the
-      // new-task case by tracking inDepends across iterations.
-      cur.depends.push(trimmed.slice(2).trim().replace(/^["']|["']$/g, ''));
-      continue;
-    }
-    if (trimmed.startsWith('- ')) {
-      if (cur) tasks.push(cur);
-      cur = { id: '', title: '', agent: '', depends: [] };
-      inDepends = false;
-      const rest = trimmed.slice(2).trim();
-      if (rest.startsWith('id:')) cur.id = rest.slice(3).trim().replace(/^["']|["']$/g, '');
-    } else if (cur) {
-      const m = /^([\w-]+):\s*(.*)$/.exec(trimmed);
-      if (m) {
-        const [, key, value] = m;
-        const valTrim = (value ?? '').trim().replace(/^["']|["']$/g, '');
-        if (key === 'id') cur.id = valTrim;
-        else if (key === 'title') cur.title = valTrim;
-        else if (key === 'agent') cur.agent = valTrim;
-        else if (key === 'depends') {
-          inDepends = true;
-          // Inline form: depends: [a, b]
-          if (valTrim.startsWith('[') && valTrim.endsWith(']')) {
-            cur.depends = valTrim
-              .slice(1, -1)
-              .split(',')
-              .map((s) => s.trim().replace(/^["']|["']$/g, ''))
-              .filter(Boolean);
-            inDepends = false;
-          } else if (valTrim) {
-            // single-value form
-            cur.depends = [valTrim];
-            inDepends = false;
-          }
-        } else if (inDepends && trimmed.startsWith('-')) {
-          cur.depends.push(trimmed.slice(1).trim().replace(/^["']|["']$/g, ''));
-        }
-      } else if (inDepends && trimmed.startsWith('-')) {
-        cur.depends.push(trimmed.slice(1).trim().replace(/^["']|["']$/g, ''));
-      }
-    }
+  let doc: unknown;
+  try {
+    doc = parseYaml(yaml);
+  } catch (e) {
+    return { error: (e as Error).message, tasks: [] };
   }
-  if (cur) tasks.push(cur);
-  return { tasks: tasks.filter((t) => t.id) };
+  if (!doc || typeof doc !== 'object') return { tasks: [] };
+  const rawTasks = (doc as { tasks?: unknown }).tasks;
+  if (!Array.isArray(rawTasks)) return { tasks: [] };
+  const tasks: { id: string; title: string; agent: string; depends: string[] }[] = [];
+  for (const t of rawTasks) {
+    if (!t || typeof t !== 'object') continue;
+    const o = t as Record<string, unknown>;
+    const id = typeof o['id'] === 'string' ? o['id'] : '';
+    if (!id) continue;
+    const title = typeof o['title'] === 'string' ? o['title'] : '';
+    const agent = typeof o['agent'] === 'string' ? o['agent'] : '';
+    const dependsRaw = o['depends'];
+    const depends = Array.isArray(dependsRaw)
+      ? dependsRaw.filter((d): d is string => typeof d === 'string')
+      : typeof dependsRaw === 'string'
+        ? [dependsRaw]
+        : [];
+    tasks.push({ id, title, agent, depends });
+  }
+  return { tasks };
 }
 
 export const __testing = { parsePreview };

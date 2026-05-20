@@ -157,6 +157,11 @@ export const api = {
     if (!r.ok) throw new Error(`/api/plans/${slug}/raw → HTTP ${r.status}`);
     return r.text();
   },
+  planSource: async (slug: string): Promise<string> => {
+    const r = await fetch(`/api/plans/${encodeURIComponent(slug)}/source`);
+    if (!r.ok) throw new Error(`/api/plans/${slug}/source → HTTP ${r.status}`);
+    return r.text();
+  },
   putPlanRaw: async (slug: string, body: string): Promise<PutPlanResp> => {
     const r = await fetch(`/api/plans/${encodeURIComponent(slug)}/raw`, {
       method: 'PUT',

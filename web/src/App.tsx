@@ -10,6 +10,7 @@ import { useTheme } from './theme.ts';
 const Workspace = lazy(() => import('./pages/Workspace.tsx').then((m) => ({ default: m.Workspace })));
 const RunDetail = lazy(() => import('./pages/RunDetail.tsx').then((m) => ({ default: m.RunDetail })));
 const PlanEdit = lazy(() => import('./pages/PlanEdit.tsx').then((m) => ({ default: m.PlanEdit })));
+const PlanSource = lazy(() => import('./pages/PlanSource.tsx').then((m) => ({ default: m.PlanSource })));
 const ConfigPage = lazy(() => import('./pages/Config.tsx').then((m) => ({ default: m.ConfigPage })));
 
 export function App(): JSX.Element {
@@ -33,6 +34,7 @@ function Nav({ routeName }: { routeName: ReturnType<typeof useRoute>['name'] }):
     plans: 'plans',
     'plan-detail': 'plans',
     'plan-edit': 'plans',
+    'plan-source': 'plans',
     'run-detail': 'runs',
     'runs-latest': 'runs',
     config: 'config',
@@ -94,6 +96,8 @@ function routeView(route: ReturnType<typeof useRoute>): JSX.Element {
       return <PlanDetail slug={route.params['slug'] ?? ''} />;
     case 'plan-edit':
       return <PlanEdit slug={route.params['slug'] ?? ''} />;
+    case 'plan-source':
+      return <PlanSource slug={route.params['slug'] ?? ''} />;
     case 'run-detail':
       // `key` forces a remount whenever the runId changes — including the
       // resolution from runs-latest → /runs/<id>. Without it, RunDetail's

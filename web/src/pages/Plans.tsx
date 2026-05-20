@@ -51,18 +51,35 @@ export function Plans(): JSX.Element {
           {plans.map((p) => (
             <tr key={p.slug}>
               <td>
-                <strong>{p.slug}</strong>
+                {p.execPath ? (
+                  <Link to={`/plans/${encodeURIComponent(p.slug)}`}>
+                    <strong>{p.slug}</strong>
+                  </Link>
+                ) : p.planPath ? (
+                  // No exec yet — link to the implementation-plan source view
+                  // instead of leaving the slug dead. The /source page is the
+                  // rendered markdown reader added in the same change.
+                  <Link to={`/plans/${encodeURIComponent(p.slug)}/source`}>
+                    <strong>{p.slug}</strong>
+                  </Link>
+                ) : (
+                  <strong>{p.slug}</strong>
+                )}
               </td>
               <td>
                 {p.planPath ? (
-                  <code>{p.planPath}</code>
+                  <Link to={`/plans/${encodeURIComponent(p.slug)}/source`}>
+                    <code>{p.planPath}</code>
+                  </Link>
                 ) : (
                   <span className="subtle">—</span>
                 )}
               </td>
               <td>
                 {p.execPath ? (
-                  <code>{p.execPath}</code>
+                  <Link to={`/plans/${encodeURIComponent(p.slug)}/edit`}>
+                    <code>{p.execPath}</code>
+                  </Link>
                 ) : (
                   <span className="subtle">—</span>
                 )}
@@ -90,6 +107,7 @@ export function Plans(): JSX.Element {
               </td>
               <td>
                 <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                  {p.planPath ? <Link to={`/plans/${encodeURIComponent(p.slug)}/source`}>source</Link> : null}
                   {p.execPath ? (
                     <>
                       <Link to={`/plans/${encodeURIComponent(p.slug)}`}>DAG</Link>
