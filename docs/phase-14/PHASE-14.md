@@ -13,12 +13,11 @@ distillation is ready, without polish gaps waiting in the wings.
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F14.1** | `yaao doctor` — environment audit + folds in `yaao agents` | [F14.1-doctor.md](F14.1-doctor.md) |
+| **F14.1** | `yaao doctor` — environment audit (folds in `yaao agents` + orphan-run detection) | [F14.1-doctor.md](F14.1-doctor.md) |
 | **F14.2** | `yaao init --mcp` — auto-register yaao's MCP server in `.mcp.json` | [F14.2-init-mcp.md](F14.2-init-mcp.md) |
 | **F14.3** | First-use experience — 60-second quickstart + `examples/` directory | [F14.3-first-use.md](F14.3-first-use.md) |
 | **F14.4** | Error message + hint audit | [F14.4-error-hints.md](F14.4-error-hints.md) |
 | **F14.5** | README + IMPLEMENTATION.md accuracy pass | [F14.5-docs-truthup.md](F14.5-docs-truthup.md) |
-| **F14.6** | End-to-end pre-release validation on real projects | [F14.6-prerelease-validation.md](F14.6-prerelease-validation.md) |
 
 ## Why now
 
@@ -35,28 +34,34 @@ load-bearing gaps:
   differently (API backend status, `--scope project` maturity); the docs
   truth-up pass (F14.5) closes that gap before the README becomes the v1
   source of truth.
-- Nothing in the suite tests yaao end-to-end on a real codebase the team
-  doesn't already own (F14.6 — the human-in-the-loop validation that fixes
-  things the unit tests miss).
+- Runs killed outside the CLI's signal path (kill -9, `yaao serve` crash
+  mid-`yaao_run`) leave the journal saying `running` forever. F14.1's
+  doctor now detects these and `yaao_inspect` reports them as
+  `aborted` instead of `running`.
 
 ## Implementation order
 
-1. **F14.1 + F14.2** — high-leverage, low-risk. Once these land the
-   first-use story works end-to-end without docs telling the user to edit
-   JSON files by hand.
-2. **F14.5** — the README pass. Cheap, makes everything downstream truthful.
+1. **F14.2** — `yaao init --mcp`. Highest impact-per-effort; unblocks
+   the quickstart.
+2. **F14.1** — `yaao doctor`. Includes orphan-run detection (shared
+   with the workspace listing's status pill) so a run killed by
+   `kill -9` stops showing as `running` in the web viewer.
 3. **F14.3** — quickstart + examples. Builds on F14.1/F14.2 (they're the
    "first three commands" the quickstart runs).
 4. **F14.4** — error-message audit. Touches every command's failure paths;
    wants the rest of the phase stable first so we're not chasing a moving
    target.
-5. **F14.6** — pre-release validation. Last because it's the gating step
-   before tagging v1; running it earlier just means running it twice.
+5. **F14.5** — the README + IMPLEMENTATION.md truth-up. Runs last so it
+   catches drift introduced by F14.1–F14.4 in the same pass.
 
 ## Out of scope
 
 - New product features. Anything that adds an MCP tool, a CLI command, or a
-  plan schema field belongs to a different phase.
+  plan schema field belongs to a different phase. (`yaao doctor` is
+  on the line — it's a new command, but it folds in the existing
+  `yaao agents` surface and adds no plan-side concepts.)
 - Performance work. Phase 14 is correctness + polish; bench/optimize is v2
-  territory unless something is *visibly* slow during F14.6.
+  territory.
 - `merge: pr` mode polish — left as-is for now; revisit after v1.
+- End-to-end validation on real projects. Done out-of-band as part of
+  the v1 sign-off; not gated by Phase 14.
