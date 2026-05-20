@@ -1,5 +1,5 @@
 import { execa, type ResultPromise } from 'execa';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { YaaoError } from '../log/errors.js';
 
@@ -12,27 +12,84 @@ export interface SpawnCtxSysOptions {
 
 export interface CtxSysHandle {
   socketPath: string;
+  /** PID of the spawned ctx-sys process; 0 when reusing an already-running one. */
   pid: number;
+  /** True when this handle started the ctx-sys process. False when an
+   * already-running instance was reused. yaao does NOT auto-call `shutdown`
+   * at run-end either way — the contract is "spawn if not running, leave it
+   * running after the run completes" so the indexer stays warm across runs
+   * (F7.1). Tests still call shutdown() to clean up the processes they
+   * started. */
+  ownsProcess: boolean;
+  /** True when this call spawned a new ctx-sys; false when an existing socket
+   * was reused. Lets callers report "started" vs "already running" without
+   * inspecting pid. */
+  spawned: boolean;
+  /** Manual shutdown. Yaao itself does not call this at run-end — the
+   * lifetime is intentionally "leave it running" so subsequent runs reuse
+   * the warm index. No-op when reusing an already-running ctx-sys. */
   shutdown(): Promise<void>;
 }
 
 /**
- * Spawn `ctx-sys serve --socket <path>` and wait for the socket to appear (or a "ready"
- * line on stdout). The handle's `shutdown()` SIGTERMs the process and waits briefly for
- * exit; the runner owns the lifecycle.
+ * Default socket location. Lives under `.ctx-sys/` (ctx-sys's own namespace,
+ * not yaao's) so detection + spawn agree on where to look, and so the
+ * socket survives `yaao clean` / `yaao_prune` (which scrub `.yaao/`).
+ */
+function defaultSocketPath(cwd: string): string {
+  return join(cwd, '.ctx-sys', 'yaao-mcp.sock');
+}
+
+/**
+ * Ensure a ctx-sys instance is serving on the project socket. Reuses an
+ * already-running instance when its socket is present; otherwise spawns
+ * `ctx-sys serve --socket <path>` detached so the child survives yaao
+ * exiting at run-end. The runner does not call `handle.shutdown()` —
+ * persistence across runs is the entire point: re-indexing on every run
+ * defeats the warm cache that makes ctx-sys queries cheap.
+ *
+ * Stale-socket caveat: a crashed ctx-sys can leave its socket file behind.
+ * We don't probe for liveness here (would need a connect attempt + protocol
+ * round-trip); a stale socket surfaces as a connection refused when the
+ * agent first calls a ctx-sys tool. Recovery is `rm .ctx-sys/yaao-mcp.sock`
+ * + re-run. `yaao doctor` (F14.1) is the right place to add a liveness
+ * probe.
  */
 export async function spawnCtxSys(opts: SpawnCtxSysOptions): Promise<CtxSysHandle> {
   const cwd = resolve(opts.cwd);
   const bin = opts.bin ?? 'ctx-sys';
-  const socketPath = opts.socketPath ?? join(cwd, '.yaao', 'ctx-sys.sock');
+  const socketPath = opts.socketPath ?? defaultSocketPath(cwd);
   const timeoutMs = opts.spawnTimeoutMs ?? 10_000;
+
+  if (existsSync(socketPath)) {
+    return {
+      socketPath,
+      pid: 0,
+      ownsProcess: false,
+      spawned: false,
+      async shutdown() {
+        // Not ours to kill — leave the already-running ctx-sys alone.
+      },
+    };
+  }
+
   mkdirSync(dirname(socketPath), { recursive: true });
 
-  const child: ResultPromise<{ cwd: string; stdio: ['ignore', 'pipe', 'pipe']; reject: false }> = execa(
-    bin,
-    ['serve', '--socket', socketPath],
-    { cwd, stdio: ['ignore', 'pipe', 'pipe'], reject: false },
-  );
+  // `detached: true` puts the child in its own process group so a SIGTERM to
+  // yaao (or normal exit) doesn't cascade and kill ctx-sys with it. After
+  // the handshake we unref + close our ends of stdout/stderr so the parent's
+  // event loop is no longer blocked on the child.
+  const child: ResultPromise<{
+    cwd: string;
+    stdio: ['ignore', 'pipe', 'pipe'];
+    reject: false;
+    detached: true;
+  }> = execa(bin, ['serve', '--socket', socketPath], {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    reject: false,
+    detached: true,
+  });
 
   let resolved = false;
   let resolveReady!: () => void;
@@ -41,7 +98,7 @@ export async function spawnCtxSys(opts: SpawnCtxSysOptions): Promise<CtxSysHandl
     resolveReady = res;
     rejectReady = rej;
   });
-  const ackReady = () => {
+  const ackReady = (): void => {
     if (!resolved) {
       resolved = true;
       resolveReady();
@@ -58,7 +115,11 @@ export async function spawnCtxSys(opts: SpawnCtxSysOptions): Promise<CtxSysHandl
 
   const timer = setTimeout(() => {
     if (!resolved) {
-      child.kill('SIGTERM');
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        // ignore
+      }
       rejectReady(
         new YaaoError({
           code: 'YAAO_CTX_SYS_SPAWN_TIMEOUT',
@@ -83,24 +144,40 @@ export async function spawnCtxSys(opts: SpawnCtxSysOptions): Promise<CtxSysHandl
   await ready;
   clearTimeout(timer);
 
+  // Detach the child from yaao's event loop now that it's healthy. unref()
+  // tells node it's OK to exit even though the child is still running;
+  // destroying our stream ends releases the IO handles that would otherwise
+  // pin the loop. Together they're what makes "yaao exits, ctx-sys keeps
+  // serving" work.
+  child.stdout?.removeAllListeners('data');
+  child.stderr?.removeAllListeners('data');
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.unref?.();
+
+  const pid = child.pid ?? 0;
   return {
     socketPath,
-    pid: child.pid ?? 0,
+    pid,
+    ownsProcess: true,
+    spawned: true,
     async shutdown() {
-      if (!child.pid) return;
+      if (!pid) return;
       try {
-        child.kill('SIGTERM');
+        // Negative pid signals the whole process group (detached child is a
+        // group leader). Belt + braces in case ctx-sys spawned helpers.
+        process.kill(-pid, 'SIGTERM');
       } catch {
-        // ignore
+        try {
+          child.kill('SIGTERM');
+        } catch {
+          // ignore
+        }
       }
-      try {
-        await Promise.race([
-          child,
-          new Promise<void>((res) => setTimeout(res, 2000)),
-        ]);
-      } catch {
-        // ignore
-      }
+      await Promise.race([
+        child.catch(() => undefined),
+        new Promise<void>((res) => setTimeout(res, 2000)),
+      ]);
     },
   };
 }
