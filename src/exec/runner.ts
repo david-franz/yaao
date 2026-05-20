@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join, relative, resolve as resolvePath } from 'node:path';
 import type { ResolvedPlan, ResolvedTask } from '../plan/schema/types.js';
 import { resolveBranchPolicy } from '../plan/schema/types.js';
@@ -76,6 +76,19 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
   const journalDir = opts.journalDir ?? join(opts.rootDir, '.yaao', 'runs');
   const runDir = opts.runDir ?? join(journalDir, opts.runId);
   mkdirSync(runDir, { recursive: true });
+
+  // Drop our pid into the run dir so out-of-process callers (the CLI's
+  // `yaao stop`, the MCP `yaao_stop` tool, the web Cancel button) can
+  // locate this runner and send it SIGTERM. The existing signal handler
+  // (5a05f8c) takes care of stamping `run:end status=cancelled` and
+  // exiting cleanly. Best-effort cleanup on graceful exit below.
+  const pidPath = join(runDir, 'runner.pid');
+  try {
+    writeFileSync(pidPath, `${process.pid}\n`);
+  } catch {
+    // Don't fail the run if we can't write the pid file — the run is
+    // still observable + resumable, just not externally cancellable.
+  }
 
   if (opts.onProgress) {
     bus.subscribe(opts.onProgress);
@@ -237,6 +250,11 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
       });
       await journal.close();
       bus.close();
+      try {
+        unlinkSync(pidPath);
+      } catch {
+        // ignore
+      }
       throw err;
     }
   }
@@ -367,6 +385,14 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
   });
   await journal.close();
   bus.close();
+  // Best-effort cleanup of our pid file on graceful exit. The signal-exit
+  // path doesn't unlink — the file lingering after a kill is harmless
+  // (signalRun's kill(pid, 0) alive-check handles stale pid files).
+  try {
+    unlinkSync(pidPath);
+  } catch {
+    // ignore — file may already be gone, or never existed
+  }
   return { status, durationMs, bus };
 }
 
