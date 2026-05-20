@@ -183,28 +183,39 @@ export function PlanEdit({ slug }: { slug: string }): JSX.Element {
 function DagPreview({ tasks }: { tasks: { id: string; title: string; agent: string; depends: string[] }[] }): JSX.Element {
   const layout = layoutDag(tasks);
   return (
-    <svg viewBox={`0 0 ${layout.width} ${layout.height}`} style={{ width: '100%', display: 'block' }}>
-      {layout.edges.map((e) => (
-        <path
-          key={`${e.fromId}->${e.toId}`}
-          d={`M ${e.fromX} ${e.fromY} C ${e.fromX + 30} ${e.fromY}, ${e.toX - 30} ${e.toY}, ${e.toX} ${e.toY}`}
-          stroke="#999"
-          fill="none"
-          strokeWidth={1.5}
-        />
-      ))}
-      {layout.nodes.map((n) => (
-        <g key={n.id} transform={`translate(${n.x}, ${n.y})`}>
-          <rect width={n.width} height={n.height} rx={6} fill="#fff" stroke="#888" />
-          <text x={12} y={22} fontSize={13} fontWeight={600}>
-            {n.id}
-          </text>
-          <text x={12} y={40} fontSize={11} fill="#555">
-            {(n.title || '').slice(0, 22)}
-          </text>
-        </g>
-      ))}
-    </svg>
+    // Render at native pixel size; the surrounding container's overflow:auto
+    // gives a horizontal scrollbar for long plans instead of squashing labels.
+    <div style={{ overflow: 'auto' }}>
+      <svg
+        width={layout.width}
+        height={layout.height}
+        viewBox={`0 0 ${layout.width} ${layout.height}`}
+        preserveAspectRatio="xMinYMin meet"
+        style={{ display: 'block' }}
+      >
+        {layout.edges.map((e) => (
+          <path
+            key={`${e.fromId}->${e.toId}`}
+            d={`M ${e.fromX} ${e.fromY} C ${e.fromX + 30} ${e.fromY}, ${e.toX - 30} ${e.toY}, ${e.toX} ${e.toY}`}
+            stroke="#999"
+            fill="none"
+            strokeWidth={1.5}
+          />
+        ))}
+        {layout.nodes.map((n) => (
+          <g key={n.id} transform={`translate(${n.x}, ${n.y})`}>
+            <title>{`${n.id} — ${n.title} (${n.agent})`}</title>
+            <rect width={n.width} height={n.height} rx={6} fill="#fff" stroke="#888" />
+            <text x={12} y={22} fontSize={13} fontWeight={600}>
+              {n.id}
+            </text>
+            <text x={12} y={40} fontSize={11} fill="#555">
+              {(n.title || '').slice(0, 22)}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
   );
 }
 

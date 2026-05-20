@@ -54,14 +54,24 @@ export function PlanDetail({ slug }: Props): JSX.Element {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '1rem', height: '100%' }}>
       <div style={{ overflow: 'auto', border: '1px solid #ddd', borderRadius: 4 }}>
-        <header style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <header style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>
           <div>
             <strong>{data.plan.plan.name}</strong>{' '}
             <span style={{ color: '#666' }}>· {tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
           </div>
           <Link to={`/plans/${encodeURIComponent(slug)}/edit`}>edit YAML →</Link>
         </header>
-        <svg viewBox={`0 0 ${layout.width} ${layout.height}`} style={{ width: '100%', display: 'block' }}>
+        {/* Render the SVG at its native pixel size so long plans get a
+            horizontal scrollbar from the parent overflow:auto rather than
+            being squashed to fit the container. The previous viewBox +
+            width:100% combo shrunk wide DAGs until labels were unreadable. */}
+        <svg
+          width={layout.width}
+          height={layout.height}
+          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          preserveAspectRatio="xMinYMin meet"
+          style={{ display: 'block' }}
+        >
           {/* edges */}
           {layout.edges.map((e) => (
             <path
@@ -82,6 +92,10 @@ export function PlanDetail({ slug }: Props): JSX.Element {
                 style={{ cursor: 'pointer' }}
                 onClick={() => setSelectedId(n.id)}
               >
+                {/* Full title surfaces on hover so truncation is recoverable
+                    without a click; the side pane carries the canonical
+                    expanded view. */}
+                <title>{`${n.id} — ${n.title} (${n.agent})`}</title>
                 <rect
                   width={n.width}
                   height={n.height}
