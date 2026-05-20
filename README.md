@@ -15,7 +15,9 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 ## Status
 
-**MVP + MCP + Web Viewer shipped.** Phases 1-13 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, the merge engine, optional ctx-sys integration, the skills system, the yaao-planner skill, the yaao-converter skill, the text-mode TUI, **yaao-as-MCP** — `yaao serve` exposes `yaao_plan` / `yaao_convert` / `yaao_validate` / `yaao_run` / `yaao_resume` / `yaao_status` / `yaao_agents` / `yaao_plans` / `yaao_inspect` / `yaao_prune` as MCP tools, plus auto-registers every discoverable skill as `yaao_skill_<name>` with hot reload — and **`yaao web`**, the browser viewer for DAGs, live runs, workspace cleanup, and plan + config editing. This is the integration story that lets Claude Code, Cursor, Copilot, Codex, and other MCP clients drive yaao end-to-end without duplicating prompts across four agent formats.
+**MVP + MCP + Web Viewer shipped.** Phases 1-13 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, the merge engine, optional ctx-sys integration, the skills system, the yaao-planner skill, the yaao-converter skill, the text-mode TUI, **yaao-as-MCP** — `yaao serve` exposes `yaao_plan` / `yaao_convert` / `yaao_validate` / `yaao_run` / `yaao_resume` / `yaao_stop` / `yaao_status` / `yaao_agents` / `yaao_plans` / `yaao_inspect` / `yaao_prune` as MCP tools, plus auto-registers every discoverable skill as `yaao_skill_<name>` with hot reload — and **`yaao web`**, the browser viewer for DAGs, live runs (with full agent-activity stream), workspace cleanup, plan editing with YAML syntax highlighting + dependency-layer navigation, rendered implementation-plan source viewer, secrets-aware config editor, and light/dark theming. This is the integration story that lets Claude Code, Cursor, Copilot, Codex, and other MCP clients drive yaao end-to-end without duplicating prompts across four agent formats.
+
+Recent additions worth knowing about even mid-MVP: a per-plan `plan.featureBranch` so feature-branch routing lives in the plan YAML instead of mutating workspace config per feature; a `yaao stop` CLI + `yaao_stop` MCP tool that cross-process cancels a run via SIGTERM (the runner stamps `cancelled` in the journal before exit); a converter `YAAO_PLAN_NARROW_DAG` warning that nudges away from strict-chain plans; and planner-skill prompt updates that prefer parallel siblings over a serial spine.
 
 > **ctx-sys runtime caveat.** Phase 7's yaao-side code (detect, auto-spawn, MCP injection, directive, optional pre-commit hook) is shipped, but live auto-spawn depends on the `ctx-sys serve --socket <path>` + ready-signal contract being formalized in ctx-sys 2.0 ([F1.3](../ctx-sys/docs/v2/phase-1/F1.3-yaao-native-integration.md)). Until ctx-sys 2.0 lands, setting `ctx-sys.enabled: true` errors at first task spawn. The default config (`ctx-sys.enabled: false`) is unaffected.
 
@@ -179,6 +181,7 @@ yaao run --resume <run-id>
 | `yaao validate <exec-plan>` | Schema + DAG validation, no execution. |
 | `yaao view <exec-plan>` | Static plan inspection — prints the DAG, per-step config, and dependency edges to the terminal. No live monitoring. |
 | `yaao run <exec-plan>` | Execute. Streams progress to stderr. Flags: `--max-parallel`, `--dry-run`, `--trial`, `--resume <run-id>`, `--only <ids>`, `--skip <ids>`, `--no-tui`, `--no-merge`, `--allow-untracked-plan`, `--commit-plan`, `--force`. |
+| `yaao stop [run-id]` | Stop a running yaao run by sending SIGTERM to its runner process. The runner stamps `run:end status=cancelled` in the journal before exit; in-flight task branches survive (resume via `--resume`). Omit the run-id to target the most recent `status=running` run. |
 | `yaao status [run-id]` | Inspect a run (live or completed). |
 | `yaao clean [run-id]` | Tear down worktrees + branches. (For finer-grained control, use the `yaao_prune` MCP tool — same logic, structured input/output, dry-run by default.) |
 | `yaao agents` | Report which agent backends are available and their versions. (Subsumed by `yaao doctor` in Phase 14.) |
@@ -284,6 +287,7 @@ The same surface used by `yaao serve` is what every agent sees:
 | `yaao_validate` | `yaao validate` | Validate an execution plan. |
 | `yaao_run`      | `yaao run`      | Start a run; returns rich per-task summary. |
 | `yaao_resume`   | `yaao run --resume` | Continue a prior run under the same runId. |
+| `yaao_stop`     | `yaao stop`     | Cross-process cancel: send SIGTERM to the runner; the journal stamps `cancelled` and in-flight branches survive. |
 | `yaao_status`   | `yaao status`   | Inspect a run. |
 | `yaao_inspect`  | —               | One-call workspace snapshot: workspace, plans (with git-tracked state), runs (with branchesAlive). |
 | `yaao_prune`    | `yaao clean`    | Structured cleanup with safety rails (dry-run by default, never touches base-branch, refuses worktrees with uncommitted changes without `force`). |
@@ -335,7 +339,7 @@ yaao ships a **text-mode** progress reporter, not a full interactive Ink dashboa
 - **`yaao view <exec-plan>`** — prints the DAG, per-task agent/model/skills, and dependency edges to the terminal. Static, one-shot output.
 - **`yaao run <exec-plan>`** — streams structured events to stderr as the run progresses: per-task state transitions (`▶ active`, `✔ completed`, `✖ failed`, `↪ merged`, etc.), tool-use captions, agent stdout, a ticker so a long-running task doesn't look hung. `--no-tui` switches off the live reporter; structured progress still lands in the journal at `.yaao/runs/<run-id>/journal.jsonl`.
 
-For a browser-based experience, run **`yaao web`** from the project root. It serves an interactive DAG view, a live agent-activity stream (stdout / stderr / thinking / tool-use), a workspace page wrapping `yaao_inspect` / `yaao_prune`, a plan editor with a live DAG preview, and a secrets-aware config editor. Defaults to `http://127.0.0.1:8787`; binds beyond loopback require `--token`. See [Running the web viewer](#running-the-web-viewer) below.
+For a browser-based experience, run **`yaao web`** from the project root. It serves an interactive DAG view, a live agent-activity stream (stdout / stderr / thinking / tool-use, filterable per task by clicking a DAG node), a workspace page wrapping `yaao_inspect` / `yaao_prune`, a YAML plan editor with syntax highlighting + a dependency-layer task navigator, a rendered implementation-plan source viewer (markdown), and a secrets-aware config editor — all with a built-in light/dark toggle. Defaults to `http://127.0.0.1:8787`; binds beyond loopback require `--token`. See [Running the web viewer](#running-the-web-viewer) below.
 
 ---
 
@@ -354,9 +358,9 @@ yaao web --host 0.0.0.0 --token $YAAO_WEB_TOKEN   # non-loopback binds REQUIRE -
 What you get in the browser:
 
 - **Workspace** — wraps `yaao_inspect` + `yaao_prune` with a dry-run preview before each apply.
-- **Plans** — list every plan in `.yaao/exec/`; click into one for an interactive DAG, or open the editor (textarea + live DAG preview; validation is server-side).
-- **Latest run** — full activity stream: state transitions, agent stdout/stderr, thinking blocks (collapsed by default), tool-use one-liners, validation verdict, merge outcome.
-- **Config** — form view for the common knobs (defaults, merge, run gates, API providers) plus a raw JSON view. Secrets only show `${ENV_VAR}` placeholders; the server rejects any save containing a literal API key.
+- **Plans** — lists every plan in the workspace, pairing the implementation-plan markdown (`.yaao/plans/*.md`) with its execution-plan YAML (`.yaao/exec/*.yaml`) by slug. Click a slug to open the interactive DAG, the plan-file path to view the rendered markdown source, or the exec path to open the YAML editor (syntax-highlighted, with a dependency-layer task navigator that scrolls the editor to the selected task; validation is server-side on save).
+- **Latest run** — plan-panel-on-top, activity-stream-below layout. DAG nodes carry live status colour (running / completed / failed / skipped); clicking any node filters the activity stream to that task's stdout / stderr / thinking / tool-use events. Validation verdict and merge outcome surface inline on the selected task's metadata card. A red Stop button on running runs sends SIGTERM via the same primitive as `yaao stop`.
+- **Config** — form view for the common knobs (defaults, merge, run gates, per-agent enable / bin / default-model, ctx-sys, API providers) plus a raw JSON view. Secrets only show `${ENV_VAR}` placeholders; the server rejects any save containing a literal API key.
 
 ### Running from a source checkout
 
