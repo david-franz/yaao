@@ -18,8 +18,14 @@ describe('yaao init on a fresh empty dir', () => {
     expect(existsSync(join(project.path, '.yaao', 'plans'))).toBe(true);
     expect(existsSync(join(project.path, '.yaao', 'exec'))).toBe(true);
     expect(existsSync(join(project.path, '.yaao', 'skills'))).toBe(true);
-    expect(existsSync(join(project.path, '.yaao', 'worktrees', '.gitkeep'))).toBe(true);
-    expect(existsSync(join(project.path, '.yaao', 'runs', '.gitkeep'))).toBe(true);
+    expect(existsSync(join(project.path, '.yaao', 'worktrees'))).toBe(true);
+    expect(existsSync(join(project.path, '.yaao', 'runs'))).toBe(true);
+    // Neither directory carries a .gitkeep — both are gitignored, so a
+    // placeholder file would either be ignored (noise) or force an
+    // exception in .gitignore. Leaving them empty is fine; git just
+    // doesn't track empty dirs.
+    expect(existsSync(join(project.path, '.yaao', 'worktrees', '.gitkeep'))).toBe(false);
+    expect(existsSync(join(project.path, '.yaao', 'runs', '.gitkeep'))).toBe(false);
     expect(existsSync(join(project.path, '.yaaoignore'))).toBe(true);
     const gi = readFileSync(join(project.path, '.gitignore'), 'utf8');
     expect(gi).toContain('# >>> yaao');

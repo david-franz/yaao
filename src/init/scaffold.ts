@@ -107,8 +107,11 @@ const DIRS: DirSpec[] = [
   { rel: '.yaao/plans' },
   { rel: '.yaao/exec' },
   { rel: '.yaao/skills' },
-  { rel: '.yaao/worktrees', gitkeep: true },
-  { rel: '.yaao/runs', gitkeep: true },
+  // worktrees/ and runs/ are transient and gitignored (see .gitignore
+  // additions below). No .gitkeep — committing a placeholder into a
+  // gitignored directory just adds noise and forces an exception.
+  { rel: '.yaao/worktrees' },
+  { rel: '.yaao/runs' },
 ];
 
 function filesFor(opts: ScaffoldOptions): FileSpec[] {
