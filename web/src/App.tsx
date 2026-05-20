@@ -95,9 +95,14 @@ function routeView(route: ReturnType<typeof useRoute>): JSX.Element {
     case 'plan-edit':
       return <PlanEdit slug={route.params['slug'] ?? ''} />;
     case 'run-detail':
-      return <RunDetail runId={route.params['runId'] ?? ''} />;
+      // `key` forces a remount whenever the runId changes — including the
+      // resolution from runs-latest → /runs/<id>. Without it, RunDetail's
+      // useState initializer (which seeds resolvedId from the runId prop)
+      // runs once and never picks up the resolved id, so the page stays
+      // stuck on "resolving latest run…" forever.
+      return <RunDetail key={route.params['runId'] ?? ''} runId={route.params['runId'] ?? ''} />;
     case 'runs-latest':
-      return <RunDetail runId="latest" />;
+      return <RunDetail key="latest" runId="latest" />;
     case 'config':
       return <ConfigPage />;
     case 'not-found':
