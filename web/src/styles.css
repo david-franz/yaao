@@ -613,6 +613,7 @@ hr {
 .dag-svg rect {
   fill: var(--surface);
   stroke: var(--border-strong);
+  transition: fill 80ms ease;
 }
 .dag-svg rect.selected {
   fill: var(--accent-soft);
@@ -630,6 +631,29 @@ hr {
 .dag-svg path.dag-edge {
   stroke: var(--border-strong);
   fill: none;
+}
+
+/* Interactive DAG nodes (RunDetail) — hover/select affordances make
+ * "these are clickable filters" unambiguous. The .dag-node group
+ * carries the cursor + hover wash; the .dag-node--selected modifier
+ * adds the persistent accent border so the user always knows which
+ * task they're filtered to. */
+.dag-svg g.dag-node {
+  cursor: pointer;
+}
+.dag-svg g.dag-node:hover rect {
+  fill: var(--surface-2);
+}
+.dag-svg g.dag-node--selected rect {
+  fill: var(--accent-soft);
+  filter: drop-shadow(0 0 0 var(--accent));
+}
+.dag-svg g.dag-node:focus {
+  outline: none;
+}
+.dag-svg g.dag-node:focus-visible rect {
+  stroke: var(--accent);
+  stroke-width: 3;
 }
 
 /* Tab bar (config form/raw view, etc.) */

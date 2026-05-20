@@ -241,13 +241,17 @@ function RunView({ runId }: { runId: string }): JSX.Element {
   const allTaskIds = useMemo(() => Object.keys(state.tasks).sort(), [state.tasks]);
   const filtered = filterTask ? state.activity.filter((r) => r.taskId === filterTask || (r.kind === 'lifecycle' && r.taskId === filterTask)) : state.activity;
 
-  // Right pane is wasted space until the user clicks a task; collapse to
-  // single column so the activity stream gets the whole width.
-  const showSidePane = Boolean(selectedTask && state.tasks[selectedTask]);
+  const selectedTaskData = selectedTask ? state.tasks[selectedTask] : undefined;
   return (
+    // Side-by-side layout mirroring PlanDetail: the DAG owns the left
+    // column at full height (no vh cap, scrolls inside its card if a long
+    // plan overflows), and the activity stream sits in a fixed-width
+    // right column so it stays a comfortable reading width independent of
+    // viewport. Selecting a task swaps the activity column's header for
+    // an inline metadata card; no separate side pane.
     <div style={{
       display: 'grid',
-      gridTemplateColumns: showSidePane ? '1fr 360px' : '1fr',
+      gridTemplateColumns: 'minmax(0, 1fr) minmax(420px, 560px)',
       gap: 'var(--space-4)',
       height: '100%',
     }}>
@@ -262,7 +266,16 @@ function RunView({ runId }: { runId: string }): JSX.Element {
           <Controls runId={runId} runStatus={state.status} />
         </header>
         <TaskDag tasks={state.tasks} depends={state.depends} selectedId={selectedTask} onSelect={(id) => { setSelectedTask(id); setFilterTask(id); }} />
+      </div>
+      <aside style={{ display: 'flex', flexDirection: 'column', minHeight: 0, gap: 'var(--space-3)' }}>
         {error ? <div className="banner banner--danger">{error}</div> : null}
+        {selectedTaskData ? (
+          <TaskMetaCard
+            id={selectedTask!}
+            task={selectedTaskData}
+            onClose={() => { setSelectedTask(null); setFilterTask(null); }}
+          />
+        ) : null}
         <ActivityHeader
           filterTask={filterTask}
           taskCount={allTaskIds.length}
@@ -271,12 +284,7 @@ function RunView({ runId }: { runId: string }): JSX.Element {
           onClearFilter={() => { setFilterTask(null); setSelectedTask(null); }}
         />
         <ActivityStream rows={filtered} filter={filterTask} onClearFilter={() => setFilterTask(null)} />
-      </div>
-      {showSidePane ? (
-        <aside className="card card--padded card--scroll">
-          <TaskPane id={selectedTask!} task={state.tasks[selectedTask!]!} onClose={() => { setSelectedTask(null); setFilterTask(null); }} />
-        </aside>
-      ) : null}
+      </aside>
     </div>
   );
 }
@@ -384,18 +392,19 @@ function TaskDag({ tasks, depends, selectedId, onSelect }: {
   }));
   const layout = layoutDag(nodes);
   return (
-    // The cap is what keeps a 30-task plan from pushing the activity stream
-    // off-screen. 55vh gives ~6-7 task rows of headroom on a 1080p display
-    // before the DAG starts scrolling within its own card — past that, the
-    // activity stream below stays usable.
-    <div className="card card--scroll" style={{ maxHeight: '55vh' }}>
+    // Lives in its own column at full height, so no maxHeight cap — the
+    // card just scrolls (both axes) if the DAG outgrows the viewport.
+    <div className="card card--scroll" style={{ flex: 1, minHeight: 0 }}>
+      {/* userSelect: none keeps clicking a node from highlighting the SVG
+          text label instead of triggering the click. Without this every
+          drag-style click started a text selection on the label. */}
       <svg
         className="dag-svg"
         width={layout.width}
         height={layout.height}
         viewBox={`0 0 ${layout.width} ${layout.height}`}
         preserveAspectRatio="xMinYMin meet"
-        style={{ display: 'block' }}
+        style={{ display: 'block', userSelect: 'none' }}
       >
         {layout.edges.map((e) => (
           <path
@@ -409,30 +418,37 @@ function TaskDag({ tasks, depends, selectedId, onSelect }: {
           const task = tasks[n.id]!;
           const isSel = n.id === selectedId;
           const stroke = statusStroke(task.status);
+          // Selection is communicated three ways at once so it's
+          // unmissable: thicker border, soft accent fill, and an
+          // explicit "selected" wash via the .dag-node--selected class.
+          // Unselected nodes pick up the .dag-node CSS for hover state.
+          const className = `dag-node${isSel ? ' dag-node--selected' : ''}`;
           return (
             <g
               key={n.id}
               transform={`translate(${n.x}, ${n.y})`}
-              style={{ cursor: 'pointer' }}
+              className={className}
               onClick={() => onSelect(n.id)}
             >
-              <title>{`${n.id} · ${task.status}${task.agent ? ` · ${task.agent}` : ''}${task.mergeStatus ? ` · ${task.mergeStatus}` : ''}`}</title>
+              <title>{`${n.id} · ${task.status}${task.agent ? ` · ${task.agent}` : ''}${task.mergeStatus ? ` · ${task.mergeStatus}` : ''} — click to filter activity`}</title>
               <rect
                 width={n.width}
                 height={n.height}
-                rx={6}
+                rx={8}
                 stroke={stroke}
-                strokeWidth={isSel ? 2.5 : 1.5}
-                className={isSel ? 'selected' : ''}
+                strokeWidth={isSel ? 3 : 1.5}
+                fill={isSel ? 'var(--accent-soft)' : undefined}
               />
-              <text x={12} y={22} fontSize={13} fontWeight={600} className="dag-id">
+              {/* pointer-events: none on text so clicks always land on the
+                  rect underneath, never on the label glyph. */}
+              <text x={14} y={23} fontSize={13} fontWeight={600} className="dag-id" style={{ pointerEvents: 'none' }}>
                 {n.id}
               </text>
-              <text x={12} y={40} fontSize={11} className="dag-title">
+              <text x={14} y={42} fontSize={11} className="dag-title" style={{ pointerEvents: 'none' }}>
                 {task.status}{task.agent ? ` · ${task.agent}` : ''}
               </text>
               {task.validation ? (
-                <text x={n.width - 12} y={22} fontSize={11} textAnchor="end" fill={task.validation.exitCode === 0 ? 'var(--success)' : 'var(--danger)'}>
+                <text x={n.width - 12} y={23} fontSize={12} textAnchor="end" fill={task.validation.exitCode === 0 ? 'var(--success)' : 'var(--danger)'} style={{ pointerEvents: 'none' }}>
                   {task.validation.exitCode === 0 ? '✓' : '✗'}
                 </text>
               ) : null}
@@ -525,14 +541,14 @@ function ActivityRowView({ row }: { row: ActivityRow }): JSX.Element {
   return <div className="activity-row activity-row--stdout">{row.taskId}: {row.data}</div>;
 }
 
-function TaskPane({ id, task, onClose }: { id: string; task: RunSummaryTask; onClose: () => void }): JSX.Element {
+function TaskMetaCard({ id, task, onClose }: { id: string; task: RunSummaryTask; onClose: () => void }): JSX.Element {
   return (
-    <>
+    <div className="card card--padded">
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
         <strong>{id}</strong>
         <button className="btn btn--ghost" onClick={onClose} aria-label="Close detail">×</button>
       </header>
-    <dl className="dl-grid">
+      <dl className="dl-grid">
       <dt>id</dt><dd>{id}</dd>
       <dt>status</dt><dd>{task.status}</dd>
       {task.agent ? (<><dt>agent</dt><dd>{task.agent}</dd></>) : null}
@@ -567,7 +583,7 @@ function TaskPane({ id, task, onClose }: { id: string; task: RunSummaryTask; onC
           <dd className="danger">{task.error.code}: {task.error.message}</dd>
         </>
       ) : null}
-    </dl>
-    </>
+      </dl>
+    </div>
   );
 }
