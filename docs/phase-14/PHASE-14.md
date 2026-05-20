@@ -1,64 +1,62 @@
-# Phase 14: Session → Skill Distillation
+# Phase 14: Release Polish
 
-**Status**: Planned
-**Depends on**: Phase 8 (skills system), Phase 12 (yaao-as-MCP — specifically F12.5 auto-registration *and* [F12.6](../phase-12/F12.6-skill-hot-reload.md) hot reload, which delivers the "callable across all connected agents within the same MCP session" UX this phase relies on)
+## Purpose
 
-## Goal
-
-Capture the useful patterns from a finished chat session — the conventions discovered, the file/dir focus areas, the user's corrections, the ordered approach that actually worked — and crystallize them into a reusable yaao skill. The skill is then immediately available to **every** agent connected to yaao's MCP server (Claude Code, Cursor, Copilot, Codex, raw API), regardless of which agent the original session ran in.
-
-This phase closes a missing half of the skill lifecycle: yaao already makes a written skill *portable*. Phase 14 makes the act of *writing* the skill cheap by lifting it out of a representative session you already had.
-
-## Why this belongs in yaao
-
-Three properties of the existing yaao skill system make the fit unusually clean:
-
-1. **One canonical skill format** (`skill.yaml` + `prompt.md`, F8.1) already exists — the distiller emits into the same shape every other skill uses.
-2. **Auto-MCP-registration plus hot reload** (F12.5 + [F12.6](../phase-12/F12.6-skill-hot-reload.md)) means any skill written to `.yaao/skills/<name>/` becomes a callable tool `yaao_skill_<name>` within one debounce window (~250 ms), across all connected agents. F12.5 covers the static catalog at server build; F12.6 keeps it in sync mid-session via an `fs.watch`-driven reconciler that fires `tools/list_changed`. No reconnect, no further wiring.
-3. **Per-agent emitters** (F8.2–F8.5) already translate one canonical skill into each agent's native artifact via `yaao skills install`. Distillation just produces the canonical form; the existing pipeline takes it the rest of the way.
-
-A skill written from a Claude Code session is therefore usable from Cursor, Copilot, Codex, and the raw API tomorrow — same name, same inputs, same body.
+The work that turns yaao from feature-complete into v1-shippable. None of these
+items add new product surface — they shore up the first-use story, fold in
+duplicated commands, audit error messages, and make sure the README + scope
+labels accurately describe what the engine actually does. Sequenced ahead of
+Phases 15 (distillation) and 16 (distribution) so v1 can ship the moment
+distillation is ready, without polish gaps waiting in the wings.
 
 ## Features
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F14.1** | `yaao-distiller` built-in skill (prompt + metadata) | [F14.1-distiller-skill.md](F14.1-distiller-skill.md) |
-| **F14.2** | In-session capture (structured self-summary contract, redaction) | [F14.2-session-readers.md](F14.2-session-readers.md) |
-| **F14.3** | Skill emission, validation, and post-emit `skills install` | [F14.3-skill-emission.md](F14.3-skill-emission.md) |
-| **F14.4** | `yaao_distill` MCP tool (sole entry point) | [F14.4-distill-mcp-tool.md](F14.4-distill-mcp-tool.md) |
-| **F14.5** | Skill refinement (re-distill with new session, diff review) | [F14.5-skill-refinement.md](F14.5-skill-refinement.md) |
+| **F14.1** | `yaao doctor` — environment audit + folds in `yaao agents` | [F14.1-doctor.md](F14.1-doctor.md) |
+| **F14.2** | `yaao init --mcp` — auto-register yaao's MCP server in `.mcp.json` | [F14.2-init-mcp.md](F14.2-init-mcp.md) |
+| **F14.3** | First-use experience — 60-second quickstart + `examples/` directory | [F14.3-first-use.md](F14.3-first-use.md) |
+| **F14.4** | Error message + hint audit | [F14.4-error-hints.md](F14.4-error-hints.md) |
+| **F14.5** | README + IMPLEMENTATION.md accuracy pass | [F14.5-docs-truthup.md](F14.5-docs-truthup.md) |
+| **F14.6** | End-to-end pre-release validation on real projects | [F14.6-prerelease-validation.md](F14.6-prerelease-validation.md) |
 
-## Key Deliverables
+## Why now
 
-- `yaao-distiller` sits next to `yaao-planner` and `yaao-converter` in `src/skills/builtin/` and is registered as the MCP tool `yaao_distill` (custom, parallel to `yaao_plan` / `yaao_convert`).
-- **MCP is the only entry point.** Distillation is inherently an in-context operation — its primary input is "what just happened in this conversation," which only meaningfully exists inside the conversation. Unlike every other yaao command, there is no shell-CLI equivalent: a shell user can't construct a useful `SessionRecord` from memory, and every supported agent already speaks MCP. The symmetry-break with the rest of yaao is intentional.
-- **In-session capture.** The invoking agent supplies its own structured self-summary of the conversation as the `session` MCP argument; yaao never reads IDE-internal transcript stores. This works on every agent (Claude Code, Cursor, Copilot, Codex, raw API).
-- The new skill is written to `.yaao/skills/<name>/` (project) or `~/.yaao/skills/<name>/` (user), reusing `validateSkill` (F8.1) before persisting. After write, F8.6's `skills install` re-emits per-agent stubs automatically.
-- Re-running the distiller against an existing skill **merges** rather than overwrites — preserving anti-patterns and distillation notes, surfacing a diff + changelog for review, and refusing auto-apply on convention contradictions. **Version history lives in git** (`.yaao/skills/` is repo-tracked); yaao does not touch the `version` field on refinement and keeps no parallel backup directory.
+Phases 1-13 built the engine. The first-use story still has small but
+load-bearing gaps:
 
-## Implementation Order
+- A new user runs `yaao init`, then has to hand-edit `.mcp.json` before Claude
+  Code / Cursor / etc. can see yaao at all (F14.2 closes this).
+- A new user with a missing `claude` binary discovers the problem mid-run when
+  a task fails to spawn (F14.1 surfaces it as a preflight).
+- The README is comprehensive but dense; there's no "copy these five lines and
+  watch it work" path (F14.3).
+- Several scope decisions are documented one way and shipped slightly
+  differently (API backend status, `--scope project` maturity); the docs
+  truth-up pass (F14.5) closes that gap before the README becomes the v1
+  source of truth.
+- Nothing in the suite tests yaao end-to-end on a real codebase the team
+  doesn't already own (F14.6 — the human-in-the-loop validation that fixes
+  things the unit tests miss).
 
-F14.1, F14.2, and F14.3 are tightly coupled and should land as a single PR, not three:
+## Implementation order
 
-- F14.1's prompt has to know what shape of `SessionRecord` to expect (defined in F14.2).
-- F14.1's emitted output has to pass `validateSkill` as F14.3 calls it; if the prompt is wrong the validator rejects.
-- F14.3's idempotency guarantees (atomic write, refuse-overwrite-without-merge) only matter if F14.1 is actually producing files.
+1. **F14.1 + F14.2** — high-leverage, low-risk. Once these land the
+   first-use story works end-to-end without docs telling the user to edit
+   JSON files by hand.
+2. **F14.5** — the README pass. Cheap, makes everything downstream truthful.
+3. **F14.3** — quickstart + examples. Builds on F14.1/F14.2 (they're the
+   "first three commands" the quickstart runs).
+4. **F14.4** — error-message audit. Touches every command's failure paths;
+   wants the rest of the phase stable first so we're not chasing a moving
+   target.
+5. **F14.6** — pre-release validation. Last because it's the gating step
+   before tagging v1; running it earlier just means running it twice.
 
-Sequence:
+## Out of scope
 
-1. **F14.1 + F14.2 + F14.3** together — `SessionRecord` contract, distiller prompt, emission pipeline. End state: a hand-built `SessionRecord` fed into `runPlanner`-style harness produces a written, validated skill on disk.
-2. **F14.4** — the MCP tool wires everything together end-to-end and surfaces it to calling agents. F12.6 hot reload (already shipped) makes the new tool callable in the same session.
-3. **F14.5** last — refinement is the multiplier, but only meaningful once F14.1–F14.4 have produced a few real skills.
-
-## Removing a bad skill
-
-A distilled skill that turns out wrong is recovered by deleting `.yaao/skills/<name>/` and re-running `yaao skills install` to reap per-agent stubs. F12.6's watcher fires `tools/list_changed` on directory deletion, so the stale `yaao_skill_<name>` tool drops from connected clients in the same session. `yaao_prune` does not currently cover skills — adding `target: skill` is a possible follow-up but out of scope for this phase.
-
-## Non-goals
-
-- **Auto-detecting when a session is "skill-worthy."** The user knows whether they'll do this kind of work again better than any heuristic. Distillation is always user-invoked.
-- **A `yaao distill` CLI command.** Distillation is in-context only — see Key Deliverables. Skill *management* commands (list, view, remove) may live under `yaao skills` later, but those are Phase 8 surface, not Phase 14.
-- **Running the distilled skill server-side.** Same model as F12.5 — yaao produces the skill; the calling agent uses it.
-- **Cross-session synthesis** (combining N unrelated sessions into one skill). Out of scope for v1; refinement (F14.5) handles the iterative case.
-- **`yaao_prune` coverage for skills.** Recovery is `rm -rf` + `skills install`; see above.
+- New product features. Anything that adds an MCP tool, a CLI command, or a
+  plan schema field belongs to a different phase.
+- Performance work. Phase 14 is correctness + polish; bench/optimize is v2
+  territory unless something is *visibly* slow during F14.6.
+- `merge: pr` mode polish — left as-is for now; revisit after v1.

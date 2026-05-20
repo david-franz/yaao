@@ -62,7 +62,7 @@ export function mountRoutes(app: Hono, route: RouteContext): void {
 
   // ----- /api/openapi.json --------------------------------------------
   // Minimal OpenAPI 3.1 surface — enough to validate routes are reachable
-  // and to advertise the contract. A richer spec lands when F15.3 wires
+  // and to advertise the contract. A richer spec lands when F16.2 wires
   // up the docs site.
   app.get('/api/openapi.json', (c) => c.json(buildOpenApi()));
 
@@ -341,7 +341,7 @@ export function mountRoutes(app: Hono, route: RouteContext): void {
     }
     // Cancellation across processes: write a marker the runner polls for.
     // F13.1 lays the marker; the polling/abort side ships when the cancel
-    // pipeline catches up (Phase 14 distillation work touches the lifecycle
+    // pipeline catches up (Phase 15 distillation work touches the lifecycle
     // anyway). Until then this is a recorded intent that operators and
     // tooling can act on, and an idempotent 202 from this endpoint.
     try {

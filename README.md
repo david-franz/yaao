@@ -19,8 +19,9 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 Planned phases (in this order):
 
-- **Phase 14 — Session → Skill Distillation**: capture useful patterns from a finished chat session and crystallise them into a reusable yaao skill via a new `yaao_distill` MCP tool.
-- **Phase 15 — Distribution & Polish**: `yaao doctor`, npm publish, docs site.
+- **Phase 14 — Release Polish**: `yaao doctor`, default-on `yaao init --mcp` auto-registration, a 60-second README quickstart + `examples/` directory, an error-message + hint audit, a docs accuracy pass, and gating end-to-end validation on real projects.
+- **Phase 15 — Session → Skill Distillation**: capture useful patterns from a finished chat session and crystallise them into a reusable yaao skill via a new `yaao_distill` MCP tool.
+- **Phase 16 — Distribution**: npm publish, docs site.
 
 The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
 
@@ -127,7 +128,7 @@ ctx-sys is one example of an MCP context provider. yaao's MCP wiring is generic 
 
 ## Installation
 
-Currently no npm publish — clone and build from source (distribution lands in Phase 15):
+Currently no npm publish — clone and build from source (distribution lands in Phase 16):
 
 ```bash
 git clone <repo> yaao
@@ -178,7 +179,7 @@ yaao run --resume <run-id>
 | `yaao run <exec-plan>` | Execute. Streams progress to stderr. Flags: `--max-parallel`, `--dry-run`, `--trial`, `--resume <run-id>`, `--only <ids>`, `--skip <ids>`, `--no-tui`, `--no-merge`, `--allow-untracked-plan`, `--commit-plan`, `--force`. |
 | `yaao status [run-id]` | Inspect a run (live or completed). |
 | `yaao clean [run-id]` | Tear down worktrees + branches. (For finer-grained control, use the `yaao_prune` MCP tool — same logic, structured input/output, dry-run by default.) |
-| `yaao agents` | Report which agent backends are available and their versions. (Subsumed by `yaao doctor` in Phase 15.) |
+| `yaao agents` | Report which agent backends are available and their versions. (Subsumed by `yaao doctor` in Phase 14.) |
 | `yaao skills install` | (Re)install skill/agent files for Claude Code, Cursor, Copilot, Codex. |
 | `yaao serve` | Start the MCP stdio server. Spawned by AI clients (Claude Code, Cursor, etc.) via their MCP config; not run directly by humans. |
 | `yaao web` | Start the local HTTP+SSE web viewer. Defaults to `http://127.0.0.1:8787`. Flags: `--host`, `--port`, `--token`, `--no-open`. Non-loopback binds require `--token`. |
