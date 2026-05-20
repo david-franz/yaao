@@ -181,11 +181,18 @@ export async function* tailJournal(opts: TailJournalOptions): AsyncIterable<Jour
   }
 
   try {
-    while (!closed) {
+    // Drain the queue BEFORE checking closed. If the initial replay sees
+    // run:end it calls finish() synchronously, which sets closed=true.
+    // The previous `while (!closed)` guard then exited without yielding
+    // anything — so finished runs streamed zero events to the client and
+    // the web viewer reported "lost connection" with no data to show.
+    // Now queued events always drain first, then closed is honoured.
+    while (true) {
       if (outQueue.length > 0) {
         yield outQueue.shift()!;
         continue;
       }
+      if (closed) return;
       const next = await new Promise<IteratorResult<JournalLineEvent>>((res) => {
         waiting = res;
       });

@@ -194,6 +194,7 @@ function RunView({ runId }: { runId: string }): JSX.Element {
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
   const [filterTask, setFilterTask] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const gotAnyEventRef = useRef(false);
 
   // Initial summary fetch — the SSE stream replays the journal but the
   // summary view also displays merge state etc. that the reducer rebuilds
@@ -234,7 +235,27 @@ function RunView({ runId }: { runId: string }): JSX.Element {
       };
     }
     handlers['message'] = handlers['run:start']!; // fallback
-    handlers['error'] = () => setError('lost connection to /api/runs/<id>/events');
+    // EventSource fires `error` whenever the connection closes — including
+    // the legitimate close-after-replay case for a finished run. Only
+    // treat it as a real error if we never received any events at all
+    // (e.g. the run id is unknown or the server is down). gotAnyEventRef
+    // is set when any wrapped handler runs, so this check is racing the
+    // event delivery but it's a one-way latch — once true, never resets.
+    handlers['error'] = () => {
+      if (!gotAnyEventRef.current) {
+        setError('lost connection to /api/runs/<id>/events');
+      }
+    };
+    // Wrap each lifecycle handler to flag "we got something" before
+    // dispatching. The error handler then knows whether to surface a
+    // banner.
+    for (const name of eventNames) {
+      const original = handlers[name]!;
+      handlers[name] = (data, lastId) => {
+        gotAnyEventRef.current = true;
+        original(data, lastId);
+      };
+    }
     return subscribe(`/api/runs/${encodeURIComponent(runId)}/events`, handlers);
   }, [runId]);
 
