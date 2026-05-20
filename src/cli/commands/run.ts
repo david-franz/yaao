@@ -6,6 +6,7 @@ import type { CliContext } from '../context.js';
 import { loadPlan } from '../../plan/yaml/loader.js';
 import { runPlan } from '../../exec/runner.js';
 import type { RunOptions } from '../../exec/runner.js';
+import { appendCancelToJournal } from '../../exec/cancel-journal.js';
 import type { RunEvent } from '../../exec/bus.js';
 import type { ResolvedTask } from '../../plan/schema/types.js';
 import type { AgentBackend, AgentName } from '../../agents/backend.js';
@@ -142,26 +143,49 @@ export const runCommand: CommandModule = {
 
         // On Ctrl+C the shell echoes `^C` at the cursor's current position,
         // which lands inline with the in-place ticker (`working... … (Xm Ys)^C`).
-        // Hook SIGINT so we clear the ticker line and emit a clean cancellation
-        // line before letting the default handler kill the process.
+        // Hook SIGINT so we clear the ticker line, record the cancellation in
+        // the journal (so `yaao_inspect` / the web workspace stop showing
+        // "running" forever), and then let the default handler kill us.
+        const runStartMs = Date.now();
         const onSigint = (): void => {
           if (showReporter && isTty) {
             // Push past the ticker line so `^C` doesn't smear with our output.
             process.stderr.write('\n');
           }
           process.stderr.write(`yaao run: cancelled (run-id ${runId})\n`);
+          // Synchronously stamp the journal with run:end status=cancelled.
+          // Without this, the run would stay "running" in every consumer
+          // (yaao status, yaao_inspect, the web workspace) — exactly the
+          // bug a user hits after a Ctrl-C.
+          appendCancelToJournal({
+            cwd,
+            runId,
+            durationMs: Date.now() - runStartMs,
+          });
           // Restore default behaviour and re-raise so the parent shell sees
           // the signal exit code.
           process.off('SIGINT', onSigint);
           process.kill(process.pid, 'SIGINT');
         };
+        const onSigterm = (): void => {
+          process.stderr.write(`yaao run: terminated (run-id ${runId})\n`);
+          appendCancelToJournal({
+            cwd,
+            runId,
+            durationMs: Date.now() - runStartMs,
+          });
+          process.off('SIGTERM', onSigterm);
+          process.kill(process.pid, 'SIGTERM');
+        };
         process.on('SIGINT', onSigint);
+        process.on('SIGTERM', onSigterm);
 
         let result;
         try {
           result = await runPlan(opts);
         } finally {
           process.off('SIGINT', onSigint);
+          process.off('SIGTERM', onSigterm);
         }
         if (ctx.json) {
           process.stdout.write(`${JSON.stringify({ runId, status: result.status, durationMs: result.durationMs })}\n`);
