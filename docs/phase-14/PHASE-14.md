@@ -16,7 +16,7 @@ distillation is ready, without polish gaps waiting in the wings.
 | **F14.1** | `yaao doctor` — environment audit (folds in `yaao agents` + orphan-run detection) | [F14.1-doctor.md](F14.1-doctor.md) |
 | **F14.2** | `yaao init --mcp` — auto-register yaao's MCP server in `.mcp.json` | [F14.2-init-mcp.md](F14.2-init-mcp.md) |
 | **F14.3** | First-use experience — 60-second quickstart + `examples/` directory | [F14.3-first-use.md](F14.3-first-use.md) |
-| **F14.4** | Error message + hint audit | [F14.4-error-hints.md](F14.4-error-hints.md) |
+| **F14.4** | Help text & error message audit | [F14.4-help-and-errors.md](F14.4-help-and-errors.md) |
 | **F14.5** | README + IMPLEMENTATION.md accuracy pass | [F14.5-docs-truthup.md](F14.5-docs-truthup.md) |
 
 ## Why now
@@ -48,9 +48,9 @@ load-bearing gaps:
    `kill -9` stops showing as `running` in the web viewer.
 3. **F14.3** — quickstart + examples. Builds on F14.1/F14.2 (they're the
    "first three commands" the quickstart runs).
-4. **F14.4** — error-message audit. Touches every command's failure paths;
-   wants the rest of the phase stable first so we're not chasing a moving
-   target.
+4. **F14.4** — help text + error message audit. Touches every command's
+   `--help` output and every `YaaoError` hint; wants the rest of the phase
+   stable first so we're not chasing a moving target.
 5. **F14.5** — the README + IMPLEMENTATION.md truth-up. Runs last so it
    catches drift introduced by F14.1–F14.4 in the same pass.
 

@@ -23,7 +23,7 @@ yaao is implemented in 16 phases, progressing from foundational CLI infrastructu
 | 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Shipped (text-mode) |
 | 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Shipped |
 | 13 | Web viewer | HTTP+SSE server, DAG view, live run view, workspace, plan + config editors | Shipped |
-| 14 | Release polish              | `yaao doctor` (incl. orphan-run detection), `yaao init --mcp`, quickstart + examples, error-hint audit, README truth-up | Planned |
+| 14 | Release polish              | `yaao doctor` (incl. orphan-run detection), `yaao init --mcp`, quickstart + examples, help-text + error audit, README truth-up | Planned |
 | 15 | Session → Skill distillation | `yaao-distiller` skill, session readers, `yaao_distill` MCP tool, refinement | Planned |
 | 16 | Distribution                | npm publish, docs site | Planned |
 
@@ -318,7 +318,7 @@ The work that turns yaao from feature-complete into v1-shippable. Closes the fir
 | **F14.1** | `yaao doctor` (subsumes `yaao agents`; orphan-run detection) | [F14.1-doctor.md](phase-14/F14.1-doctor.md) |
 | **F14.2** | `yaao init --mcp` — auto-register yaao's MCP server in `.mcp.json` | [F14.2-init-mcp.md](phase-14/F14.2-init-mcp.md) |
 | **F14.3** | First-use experience — 60-second quickstart + `examples/` directory | [F14.3-first-use.md](phase-14/F14.3-first-use.md) |
-| **F14.4** | Error message + hint audit | [F14.4-error-hints.md](phase-14/F14.4-error-hints.md) |
+| **F14.4** | Help text & error message audit | [F14.4-help-and-errors.md](phase-14/F14.4-help-and-errors.md) |
 | **F14.5** | README + IMPLEMENTATION.md accuracy pass | [F14.5-docs-truthup.md](phase-14/F14.5-docs-truthup.md) |
 
 **Key Deliverables:**
@@ -326,7 +326,7 @@ The work that turns yaao from feature-complete into v1-shippable. Closes the fir
 - `yaao doctor` is the single command a confused user can run: Node version, git version, agent CLI presence + versions, ctx-sys presence + version, config sanity, write permissions, secrets-not-in-config rule, every enabled provider's API key resolves. Subsumes the per-agent availability check previously surfaced as `yaao agents`. **Also detects orphaned runs** — runs whose journal still says `running` but whose `runner.pid` is dead or whose journal mtime is stale — closing the "kill -9 left it stuck on running" gap that the CLI's SIGINT/SIGTERM handler (5a05f8c) doesn't cover. The same helper feeds `yaao_inspect`'s workspace listing so the web viewer's status pill stops lying.
 - `yaao init` default-on writes a `yaao` entry to the project's `.mcp.json` (and the per-agent equivalents: `.cursor/mcp.json`, `~/.codex/config.toml`, an inline reference in `.github/copilot-instructions.md`). Preserves siblings, never silently overwrites an existing `yaao` entry that differs from what we'd write. `--no-mcp` opts out.
 - A copy-pasteable five-line quickstart in the README — `npm i -g yaao && yaao init && yaao plan ... && yaao convert ... && yaao run ...` — works on a fresh machine because F14.1 + F14.2 close the previously-manual setup gap. Three real, runnable plans under `examples/` (TypeScript monorepo, Python service, C kernel) double as live tests of the convention.
-- Every user-facing `YaaoError` carries a `hint:` that points at the fix; stale hints (referencing renamed commands) are caught.
+- Every command's `--help` is at least one sentence beyond the bare verb (the pre-v1 audit listed concrete gaps for `yaao stop`, `yaao serve`, `yaao plan --scope`, `yaao web --no-open`, etc.) AND every user-facing `YaaoError` carries a `hint:` that points at the fix; stale hints (referencing renamed commands) are caught.
 - The README + IMPLEMENTATION.md sweep closes accumulated drifts: API backend status (no longer stubs for Anthropic), `yaao agents` retired into `yaao doctor`, `format: both` and `--scope project` either dropped or marked experimental, all phase-N references retargeted after this renumbering. Runs *last* in the phase so drift introduced by F14.1–F14.4 is caught in the same pass.
 - End-to-end validation on real projects is deliberately **not** a Phase 14 feature — it's done out-of-band as part of v1 sign-off so the phase has a deterministic completion bar (every feature shipped + tested) rather than a human-time-dependent one.
 
