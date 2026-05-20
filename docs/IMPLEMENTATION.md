@@ -16,7 +16,7 @@ yaao is implemented in 16 phases, progressing from foundational CLI infrastructu
 | 4  | Agent backends              | Backend interface + Claude Code, Cursor, Copilot, Codex, API    | Shipped |
 | 5  | Execution engine            | Scheduler, lifecycle, event bus, `run`, resume, dry-run         | Shipped |
 | 6  | Merge engine                | Topological merge, manual/auto/agent conflict modes, PR mode    | Shipped |
-| 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Shipped |
+| 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Shipped (yaao-side; runtime gated on ctx-sys 2.0 F1.3) |
 | 8  | Skills system               | Source-of-truth format, per-agent emitters, `skills install`    | Shipped |
 | 9  | yaao-planner skill          | Plan generation (markdown + Spec Kit), `plan` command           | Shipped |
 | 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Shipped |
@@ -152,9 +152,11 @@ How completed worktrees come back together — and what happens when they collid
 
 ---
 
-## Phase 7: ctx-sys Integration (optional) **(shipped)**
+## Phase 7: ctx-sys Integration (optional) **(shipped, yaao-side)**
 
 Make ctx-sys a first-class context provider for any agent yaao runs, **but completely optional**. yaao never depends on ctx-sys, never installs it, and ships with `ctx-sys.enabled: false` in the default config. When the user opts in, the integration is proactive — not lazy or deferred.
+
+> **Runtime status.** Auto-spawn calls `ctx-sys serve --socket <path>` and waits for a `ready` log line — both part of the contract being formalized in ctx-sys 2.0 ([F1.3](../../ctx-sys/docs/v2/phase-1/F1.3-yaao-native-integration.md)). Until ctx-sys 2.0 ships, the `ctx-sys.enabled: true` path errors at first task spawn (commander rejects the unknown `--socket` flag and the spawn times out waiting for ready). The default config (`enabled: false`) is unaffected.
 
 | Feature | Description | Status | Doc |
 |---------|-------------|--------|-----|

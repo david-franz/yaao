@@ -17,6 +17,8 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 **MVP + MCP + Web Viewer shipped.** Phases 1-13 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, the merge engine, optional ctx-sys integration, the skills system, the yaao-planner skill, the yaao-converter skill, the text-mode TUI, **yaao-as-MCP** — `yaao serve` exposes `yaao_plan` / `yaao_convert` / `yaao_validate` / `yaao_run` / `yaao_resume` / `yaao_status` / `yaao_agents` / `yaao_plans` / `yaao_inspect` / `yaao_prune` as MCP tools, plus auto-registers every discoverable skill as `yaao_skill_<name>` with hot reload — and **`yaao web`**, the browser viewer for DAGs, live runs, workspace cleanup, and plan + config editing. This is the integration story that lets Claude Code, Cursor, Copilot, Codex, and other MCP clients drive yaao end-to-end without duplicating prompts across four agent formats.
 
+> **ctx-sys runtime caveat.** Phase 7's yaao-side code (detect, auto-spawn, MCP injection, directive, optional pre-commit hook) is shipped, but live auto-spawn depends on the `ctx-sys serve --socket <path>` + ready-signal contract being formalized in ctx-sys 2.0 ([F1.3](../ctx-sys/docs/v2/phase-1/F1.3-yaao-native-integration.md)). Until ctx-sys 2.0 lands, setting `ctx-sys.enabled: true` errors at first task spawn. The default config (`ctx-sys.enabled: false`) is unaffected.
+
 Planned phases (in this order):
 
 - **Phase 14 — Release Polish**: `yaao doctor`, default-on `yaao init --mcp` auto-registration, a 60-second README quickstart + `examples/` directory, an error-message + hint audit, a docs accuracy pass, and gating end-to-end validation on real projects.
