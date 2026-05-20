@@ -203,6 +203,7 @@ function FormView({ buffer, onBufferChange }: { buffer: string; onBufferChange: 
   const agentsBlock = (cfg['agents'] ?? {}) as Record<string, unknown>;
   const apiCfg = (agentsBlock['api'] ?? {}) as Record<string, unknown>;
   const providers = (apiCfg['providers'] ?? {}) as Record<string, { 'api-key'?: string }>;
+  const ctxSys = (cfg['ctx-sys'] ?? {}) as Record<string, unknown>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -218,6 +219,13 @@ function FormView({ buffer, onBufferChange }: { buffer: string; onBufferChange: 
         <Row label="max-parallel"><TextField value={String(defaults['max-parallel'] ?? '')} onChange={(v) => update((c) => assignAt(c, ['defaults', 'max-parallel'], Number(v) || v))} /></Row>
         <Row label="base-branch"><TextField value={String(defaults['base-branch'] ?? '')} onChange={(v) => update((c) => assignAt(c, ['defaults', 'base-branch'], v))} /></Row>
         <Row label="worktree-root"><TextField value={String(defaults['worktree-root'] ?? '')} onChange={(v) => update((c) => assignAt(c, ['defaults', 'worktree-root'], v))} /></Row>
+        <Row label="permissions" hint="Default per-task permission mode. Tasks can still override this per-task.">
+          <SelectField
+            value={String(defaults['permissions'] ?? 'allow-all')}
+            options={['ask', 'allow-edits', 'allow-all']}
+            onChange={(v) => update((c) => assignAt(c, ['defaults', 'permissions'], v))}
+          />
+        </Row>
       </Section>
       <Section title="Merge">
         <Row label="strategy">
@@ -235,9 +243,83 @@ function FormView({ buffer, onBufferChange }: { buffer: string; onBufferChange: 
           <SelectField value={String(run['require-tracked-plan'] ?? 'error')} options={['error', 'warn', 'off']} onChange={(v) => update((c) => assignAt(c, ['run', 'require-tracked-plan'], v))} />
         </Row>
       </Section>
+      <Section title="Agents">
+        {(['claude-code', 'cursor', 'copilot', 'codex'] as const).map((name) => {
+          const a = (agentsBlock[name] ?? {}) as Record<string, unknown>;
+          const enabled = a['enabled'] !== false;
+          return (
+            <div key={name} style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
+              <Row label={name}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={(e) => update((c) => assignAt(c, ['agents', name, 'enabled'], e.target.checked))}
+                  />
+                  enabled
+                </label>
+              </Row>
+              <Row label="bin" hint="Path or PATH-resolvable command yaao spawns for this agent.">
+                <TextField
+                  value={String(a['bin'] ?? '')}
+                  onChange={(v) => update((c) => assignAt(c, ['agents', name, 'bin'], v))}
+                  placeholder={defaultBinFor(name)}
+                />
+              </Row>
+              <Row label="default-model" hint="Overrides defaults.model when this agent runs a task. Leave blank to inherit.">
+                <TextField
+                  value={String(a['default-model'] ?? '')}
+                  onChange={(v) => update((c) => {
+                    if (v.length === 0) {
+                      // Empty string round-trips through Zod oddly — strip the key entirely so the
+                      // saved config matches the "inherit defaults.model" intent.
+                      const block = ((c['agents'] ?? {}) as Record<string, unknown>)[name] as Record<string, unknown> | undefined;
+                      if (block) delete block['default-model'];
+                    } else {
+                      assignAt(c, ['agents', name, 'default-model'], v);
+                    }
+                  })}
+                />
+              </Row>
+            </div>
+          );
+        })}
+      </Section>
+      <Section title="ctx-sys">
+        <Row label="enabled" hint="When on, yaao detects + auto-spawns ctx-sys and registers it with every agent's MCP servers.">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <input
+              type="checkbox"
+              checked={Boolean(ctxSys['enabled'])}
+              onChange={(e) => update((c) => assignAt(c, ['ctx-sys', 'enabled'], e.target.checked))}
+            />
+            enabled
+          </label>
+        </Row>
+        <Row label="auto-spawn">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <input
+              type="checkbox"
+              checked={ctxSys['auto-spawn'] !== false}
+              onChange={(e) => update((c) => assignAt(c, ['ctx-sys', 'auto-spawn'], e.target.checked))}
+            />
+            spawn ctx-sys at run-start if not already running
+          </label>
+        </Row>
+        <Row label="require-query" hint="When on, the lifecycle requires the agent to call ctx-sys before writing code (advisory directive).">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <input
+              type="checkbox"
+              checked={Boolean(ctxSys['require-query'])}
+              onChange={(e) => update((c) => assignAt(c, ['ctx-sys', 'require-query'], e.target.checked))}
+            />
+            require query
+          </label>
+        </Row>
+      </Section>
       <Section title="API providers">
         {Object.keys(providers).length === 0 ? (
-          <p className="muted">No providers configured.</p>
+          <p className="muted">No providers configured. Add via the Raw tab — <code>agents.api.providers.&lt;name&gt;</code>.</p>
         ) : (
           Object.entries(providers).map(([name, prov]) => (
             <Row key={name} label={name} hint="Must be a ${ENV_VAR} reference; literal keys are rejected on save.">
@@ -252,6 +334,15 @@ function FormView({ buffer, onBufferChange }: { buffer: string; onBufferChange: 
       </Section>
     </div>
   );
+}
+
+function defaultBinFor(name: 'claude-code' | 'cursor' | 'copilot' | 'codex'): string {
+  switch (name) {
+    case 'claude-code': return 'claude';
+    case 'cursor': return 'cursor-agent';
+    case 'copilot': return 'gh';
+    case 'codex': return 'codex';
+  }
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
