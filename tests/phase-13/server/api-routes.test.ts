@@ -231,4 +231,31 @@ describe('F13.1 web routes', () => {
     expect(body.paths['/api/inspect']).toBeDefined();
     expect(body.paths['/api/runs/{runId}/events']).toBeDefined();
   });
+
+  it('POST /api/runs/:runId/cancel signals via signalRun and returns the structured envelope', async () => {
+    repo = createTestRepo();
+    // Hand-roll a run dir with a stale runner.pid so the route exercises
+    // the signal path without us having to spawn a real run mid-test.
+    const runDir = join(repo.path, '.yaao', 'runs', 'cncl1');
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, 'runner.pid'), '999999999\n');
+    handle = await start(repo.path);
+    const r = await fetch(`http://${handle.host}:${handle.port}/api/runs/cncl1/cancel`, { method: 'POST' });
+    // pid-dead is treated as ok=true (idempotent on already-finished runs),
+    // so the route returns 202.
+    expect(r.status).toBe(202);
+    const body = (await r.json()) as { ok: boolean; runId: string; signaled: boolean; reason: string; pid: number };
+    expect(body.ok).toBe(true);
+    expect(body.runId).toBe('cncl1');
+    expect(body.signaled).toBe(false);
+    expect(body.reason).toBe('pid-dead');
+    expect(body.pid).toBe(999999999);
+  });
+
+  it('POST /api/runs/:runId/cancel returns 404 for an unknown run', async () => {
+    repo = createTestRepo();
+    handle = await start(repo.path);
+    const r = await fetch(`http://${handle.host}:${handle.port}/api/runs/nope/cancel`, { method: 'POST' });
+    expect(r.status).toBe(404);
+  });
 });

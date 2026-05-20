@@ -340,6 +340,15 @@ function ActivityHeader({
 
 function Controls({ runId, runStatus }: { runId: string; runStatus: RunState['status'] }): JSX.Element {
   const [busy, setBusy] = useState(false);
+  const stop = async (): Promise<void> => {
+    if (!confirm('Stop this run? The runner will exit and the journal will be stamped "cancelled".')) return;
+    setBusy(true);
+    try {
+      await api.cancel(runId);
+    } finally {
+      setBusy(false);
+    }
+  };
   const resume = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -350,6 +359,7 @@ function Controls({ runId, runStatus }: { runId: string; runStatus: RunState['st
   };
   return (
     <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+      {runStatus === 'running' ? <button className="btn btn--danger" onClick={stop} disabled={busy}>Stop</button> : null}
       {(runStatus === 'failed' || runStatus === 'cancelled') ? <button className="btn btn--primary" onClick={resume} disabled={busy}>Resume</button> : null}
     </div>
   );

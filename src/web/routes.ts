@@ -26,6 +26,7 @@ import {
   type ToolContext,
 } from '../mcp/tools.js';
 import { listRuns } from '../git/journal.js';
+import { signalRun } from '../exec/signal-run.js';
 import { streamEvents, watchPathEvents } from './sse.js';
 import { tailJournal } from './journal-tail.js';
 import { VERSION } from '../version.js';
@@ -339,20 +340,24 @@ export function mountRoutes(app: Hono, route: RouteContext): void {
         404,
       );
     }
-    // Cancellation across processes: write a marker the runner polls for.
-    // F13.1 lays the marker; the polling/abort side ships when the cancel
-    // pipeline catches up (Phase 15 distillation work touches the lifecycle
-    // anyway). Until then this is a recorded intent that operators and
-    // tooling can act on, and an idempotent 202 from this endpoint.
-    try {
-      writeFileSync(join(runDir, 'cancel'), `${new Date().toISOString()}\n`, 'utf8');
-    } catch (err) {
-      return c.json(
-        { ok: false, errors: [{ code: 'YAAO_WEB_CANCEL', message: (err as Error).message }] },
-        500,
-      );
-    }
-    return c.json({ ok: true, runId }, 202);
+    // Actual cross-process cancel: send SIGTERM to the runner via the
+    // shared signalRun helper. The runner's signal handler (5a05f8c)
+    // stamps `run:end status=cancelled` in the journal before exiting.
+    // Previously this endpoint wrote a marker file that nothing polled
+    // for; the Cancel button on the web RunDetail was effectively a no-op.
+    const result = signalRun({ cwd: route.cwd, runId });
+    const ok = result.signaled || result.reason === 'no-pid-file' || result.reason === 'pid-dead';
+    return c.json(
+      {
+        ok,
+        runId,
+        signaled: result.signaled,
+        reason: result.reason,
+        ...(result.pid !== undefined ? { pid: result.pid } : {}),
+        ...(result.hint !== undefined ? { hint: result.hint } : {}),
+      },
+      ok ? 202 : 500,
+    );
   });
 
   app.post('/api/runs/:runId/resume', async (c) => {

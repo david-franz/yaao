@@ -183,9 +183,9 @@ export const api = {
     });
     return (await r.json()) as RunSummaryShape;
   },
-  cancel: async (runId: string): Promise<{ ok: boolean; runId?: string }> => {
+  cancel: async (runId: string): Promise<{ ok: boolean; runId?: string; signaled?: boolean; reason?: string; pid?: number; hint?: string }> => {
     const r = await fetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' });
-    return (await r.json()) as { ok: boolean; runId?: string };
+    return (await r.json()) as { ok: boolean; runId?: string; signaled?: boolean; reason?: string; pid?: number; hint?: string };
   },
   configRaw: async (): Promise<string> => {
     const r = await fetch('/api/config/raw');
