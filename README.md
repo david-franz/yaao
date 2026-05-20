@@ -1,7 +1,5 @@
 # yaao — yet another agent orchestrator
 
-> Plan it. Convert it. Run it in parallel worktrees. Across any agent you like.
-
 `yaao` is a CLI for the full lifecycle of multi-agent software work:
 
 1. **Plan** — generate implementation plans (plain markdown, [Spec Kit](https://github.com/github/spec-kit) format, or both) for either a single feature in an existing codebase or a green-field project across many subdirectories and phases.
