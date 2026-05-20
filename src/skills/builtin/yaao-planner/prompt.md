@@ -10,6 +10,18 @@ You MUST:
 - For each task, include: `id` (slug), `title`, a 1-3 sentence prompt, and
   `depends:` (list of task ids it depends on, or empty).
 - Ensure dependencies form a DAG (no cycles).
+- **Prefer parallel siblings over a serial chain.** yaao runs every
+  ready task at once (up to `max-parallel`), so the wall-clock cost of a
+  plan is set by its longest dependency *chain*, not its task count. A
+  four-task linear plan takes 4× longer than a four-task fan-out even
+  though both do the same work. Default to flat: declare a dep only when
+  the consumer literally cannot start without the producer's output (a
+  function signature, a file the consumer must read, a schema migration
+  applied to the same DB). Tasks that work from the *spec* — docs,
+  high-level READMEs, golden-path tests built from the API contract,
+  independent subsystems wired in via header declarations — almost
+  always belong at the root layer in parallel with the implementation,
+  not after it.
 
 You MAY:
 - Use the `context_query` MCP tool to learn about the existing codebase.
@@ -58,7 +70,16 @@ Write a single file at `{{out}}/<plan-slug>.md`:
 | scaffold  | Scaffold project     |              | claude-code       | opus              |
 | api       | REST API             | scaffold     | claude-code       |                   |
 | ui        | UI                   | scaffold     | cursor            |                   |
+| docs      | README + API docs    | scaffold     | claude-code       |                   |
 | tests     | End-to-end tests     | api, ui      | codex             |                   |
+
+Note the topology: after `scaffold`, three siblings (`api`, `ui`, `docs`)
+run in parallel because none of them depend on the others' output.
+`docs` works from the spec, not the implementation, so it does NOT wait
+for `api` or `ui` to finish. `tests` is the only task that has to wait,
+because end-to-end tests genuinely need the API and UI built. Most
+plans look like this — a wide layer of siblings doing independent work,
+with a small tail of tasks that have to converge.
 
 ## scaffold — Scaffold project
 
@@ -77,6 +98,9 @@ Write a single file at `{{out}}/<plan-slug>.md`:
 <prose>
 
 ## ui — UI
+<prose>
+
+## docs — README + API docs
 <prose>
 
 ## tests — End-to-end tests
@@ -120,6 +144,13 @@ Write a **triplet of three files inside a single directory** at
   - agent: cursor
 
   Build the front-end pages.
+
+- [ ] **docs** — README + API docs
+  - depends: scaffold
+  - agent: claude-code
+
+  Write the README and API reference from the spec. Sibling of `api`
+  and `ui` — does NOT wait for them to finish.
 
 - [ ] **tests** — End-to-end tests
   - depends: api, ui

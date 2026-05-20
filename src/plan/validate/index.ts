@@ -6,6 +6,7 @@ import type { SourceMap, SourcePosition } from '../yaml/loader.js';
 import type { AgentAvailability, ValidationIssue } from './types.js';
 import { ALL_AVAILABLE } from './types.js';
 import { findCycles } from './cycle.js';
+import { computeLayerWidths } from '../dag.js';
 
 export interface ValidateOptions {
   config: YaaoConfig;
@@ -260,32 +261,6 @@ function isAgentEnabled(cfg: YaaoConfig, name: string): boolean {
   }
   const entry = (cfg.agents as Record<string, { enabled?: boolean } | undefined>)[name];
   return entry?.enabled !== false;
-}
-
-function computeLayerWidths(tasks: ResolvedTask[]): number[] {
-  const idToTask = new Map(tasks.map((t) => [t.id, t]));
-  const layer = new Map<string, number>();
-  const compute = (id: string, seen: Set<string>): number => {
-    if (layer.has(id)) return layer.get(id) as number;
-    if (seen.has(id)) return 0; // cycle; cycles are reported separately
-    seen.add(id);
-    const t = idToTask.get(id);
-    if (!t || t.depends.length === 0) {
-      layer.set(id, 0);
-      return 0;
-    }
-    let max = 0;
-    for (const d of t.depends) {
-      const dl = compute(d, seen);
-      if (dl + 1 > max) max = dl + 1;
-    }
-    layer.set(id, max);
-    return max;
-  };
-  for (const t of tasks) compute(t.id, new Set());
-  const widths = new Map<number, number>();
-  for (const l of layer.values()) widths.set(l, (widths.get(l) ?? 0) + 1);
-  return [...widths.values()];
 }
 
 function finalize(issues: ValidationIssue[], strict: boolean | undefined): ValidationIssue[] {

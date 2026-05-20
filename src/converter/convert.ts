@@ -6,6 +6,7 @@ import { PlanSchema, type Plan, type Task } from '../plan/schema/plan.js';
 import { loadInputPlan, discoverPlans, type PlanInputFormat } from './load-plan.js';
 import { assignAgent, type AgentRule } from './assign-agent.js';
 import { inferDependencies, type InferMode } from './infer-deps.js';
+import { isNarrowDag } from '../plan/dag.js';
 import { PlanValidationError } from '../log/errors.js';
 
 export interface ConvertOptions {
@@ -133,6 +134,17 @@ export async function convertPlan(opts: ConvertOptions): Promise<ConvertResult> 
     if (opts.infer === 'suggest') {
       warnings.push(`inferred dep ${i.from} → ${i.on} (confidence ${i.confidence}) — not applied (suggest mode)`);
     }
+  }
+  if (isNarrowDag(parsedPlan.data.tasks)) {
+    // Strict chain wider than two tasks — the plan leaves yaao's parallelism
+    // on the table. Surface as a warning so the author notices, without
+    // refusing the conversion: a genuinely-serial plan (e.g. a migration
+    // sequence) is a valid choice.
+    warnings.push(
+      `YAAO_PLAN_NARROW_DAG: plan is fully sequential (${parsedPlan.data.tasks.length} tasks in a chain); ` +
+        `consider whether docs, tests, or independent subsystems could be siblings of the implementation task ` +
+        `instead of waiting on it.`,
+    );
   }
   return { plan: parsedPlan.data, outPath, outAction, warnings, inferred };
 }
