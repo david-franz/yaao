@@ -52,7 +52,15 @@ export function PlanDetail({ slug }: Props): JSX.Element {
   const selected = tasks.find((t) => t.id === selectedId) ?? null;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 'var(--space-4)', height: '100%' }}>
+    // Mirror RunDetail's pattern: only allocate the side-pane column
+    // when a task is actually selected. Otherwise the DAG gets the full
+    // width and there's no "Click a node…" placeholder eating space.
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: selected ? 'minmax(0, 1fr) minmax(320px, 400px)' : 'minmax(0, 1fr)',
+      gap: 'var(--space-4)',
+      height: '100%',
+    }}>
       <div className="card card--scroll">
         <header style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }}>
           <div>
@@ -108,9 +116,15 @@ export function PlanDetail({ slug }: Props): JSX.Element {
           })}
         </svg>
       </div>
-      <aside className="card card--padded card--scroll">
-        {selected ? <TaskDetail task={selected} /> : <p className="muted">Click a node to see its details.</p>}
-      </aside>
+      {selected ? (
+        <aside className="card card--padded card--scroll">
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
+            <strong>{selected.id}</strong>
+            <button className="btn btn--ghost" onClick={() => setSelectedId(null)} aria-label="Close detail">×</button>
+          </header>
+          <TaskDetail task={selected} />
+        </aside>
+      ) : null}
     </div>
   );
 }
