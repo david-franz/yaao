@@ -137,13 +137,13 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
   });
   bus.emit({ type: 'run:start', runId: opts.runId, planFile: opts.planFile });
 
-  const scheduler = new Scheduler({
-    plan: opts.plan,
-    ...(opts.filter !== undefined ? { filter: opts.filter } : {}),
-    maxParallel: opts.trial ? 1 : opts.plan.config['max-parallel'],
-    onEvent: (ev) => bus.emit(ev),
-  });
-  // Stream scheduler events into the journal for resume.
+  // Stream scheduler events into the journal for resume. The subscribe
+  // call MUST happen before `new Scheduler(...)` below — the scheduler's
+  // constructor synchronously emits task:queued (and task:ready, via
+  // refreshReady) for every task via bus.emit. Subscribing after
+  // construction silently drops those events on the floor, leaving the
+  // journal without task:queued lines and the web viewer without the
+  // dependency structure it needs to render the live DAG.
   const recordSchedulerEvent = (ev: SchedulerEvent): void => {
     if (ev.type === 'task:queued') {
       void journal.append({
@@ -199,6 +199,17 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
         ev: ev.ev,
       });
     }
+  });
+
+  // Constructed AFTER the journal subscriber above is wired. The scheduler
+  // synchronously emits task:queued (and task:ready, via refreshReady)
+  // for every task during construction; doing the subscribe first means
+  // the journal captures those events instead of dropping them.
+  const scheduler = new Scheduler({
+    plan: opts.plan,
+    ...(opts.filter !== undefined ? { filter: opts.filter } : {}),
+    maxParallel: opts.trial ? 1 : opts.plan.config['max-parallel'],
+    onEvent: (ev) => bus.emit(ev),
   });
 
   const worktreeManager = new WorktreeManager({

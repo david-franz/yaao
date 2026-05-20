@@ -372,18 +372,11 @@ function TaskDag({ tasks, depends, selectedId, onSelect }: {
 }): JSX.Element {
   const ids = Object.keys(tasks);
   if (ids.length === 0) return <p className="muted">Waiting for tasks…</p>;
-  const haveStructure = ids.some((id) => depends[id] !== undefined);
-  if (!haveStructure) {
-    // No task:queued events yet — render a compact list so the user at
-    // least sees task ids while the DAG structure is still arriving.
-    return (
-      <div className="card card--padded" style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
-        {ids.sort().map((id) => (
-          <span key={id} className={`pill pill--${pillVariant(tasks[id]!.status)}`}>{id}</span>
-        ))}
-      </div>
-    );
-  }
+  // Fall back to depends=[] for any task missing from the depends map (old
+  // runs whose journals predate the task:queued ordering fix can land here
+  // for some / all tasks). They render as roots in the DAG — no edges,
+  // but still clickable nodes with proper status colours. Better than the
+  // previous horizontal pill list.
   const nodes = ids.map((id) => ({
     id,
     title: tasks[id]?.agent ?? '',
@@ -467,15 +460,6 @@ function statusStroke(status: string): string {
     case 'running': return 'var(--accent)';
     case 'skipped': return 'var(--border-strong)';
     default: return 'var(--border-strong)';
-  }
-}
-
-function pillVariant(status: string): 'success' | 'danger' | 'running' | 'neutral' {
-  switch (status) {
-    case 'completed': return 'success';
-    case 'failed': return 'danger';
-    case 'running': return 'running';
-    default: return 'neutral';
   }
 }
 

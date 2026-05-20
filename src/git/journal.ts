@@ -321,13 +321,19 @@ function applyEvent(s: RunSummary, ev: JournalEvent): RunSummary {
       next.startedAt = ev.time;
       next.status = 'running';
       return next;
-    case 'task:queued':
-      // Once a task completed, transient state events from later runs don't
-      // unwind that — completion is sticky across replays so a bug or a
-      // skipped follow-up run can't erase real progress.
-      if (next.tasks[ev.taskId]?.status === 'completed') return next;
-      next.tasks[ev.taskId] = { ...(next.tasks[ev.taskId] ?? { status: 'pending' }), status: 'pending' };
+    case 'task:queued': {
+      // Once a task reaches a *verdict* state (completed or failed),
+      // transient state events from later runs don't unwind that —
+      // sticky-completion means a bug or a skipped follow-up run can't
+      // erase real progress, sticky-failed means a resume's fresh
+      // task:queued (which the scheduler synchronously emits at
+      // construction) doesn't blow away the prior-attempt failure
+      // context that runPlan's resume block reads from the summary.
+      const cur = next.tasks[ev.taskId];
+      if (cur?.status === 'completed' || cur?.status === 'failed') return next;
+      next.tasks[ev.taskId] = { ...(cur ?? { status: 'pending' }), status: 'pending' };
       return next;
+    }
     case 'task:ready':
       if (next.tasks[ev.taskId]?.status === 'completed') return next;
       next.tasks[ev.taskId] = { ...(next.tasks[ev.taskId] ?? { status: 'ready' }), status: 'ready' };
