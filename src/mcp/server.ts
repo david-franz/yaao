@@ -14,6 +14,7 @@ import {
   yaaoRunTool,
   yaaoResumeTool,
   yaaoStatusTool,
+  yaaoStopTool,
   yaaoAgentsTool,
   yaaoPlansTool,
   yaaoInspectTool,
@@ -153,6 +154,16 @@ export function buildMcpServer(ctx: ToolContext): McpServer {
       inputSchema: { runId: z.string().optional() },
     },
     async (args) => asSdkResult(await yaaoStatusTool(args, ctx)),
+  );
+
+  server.registerTool(
+    'yaao_stop',
+    {
+      description:
+        "Stop a running yaao run by sending SIGTERM to its runner process. The runner's signal handler stamps `run:end status=cancelled` in the journal before exiting. Idempotent: ok=true even when the run was already not running.",
+      inputSchema: { runId: z.string() },
+    },
+    async (args) => asSdkResult(await yaaoStopTool(args, ctx)),
   );
 
   server.registerTool(

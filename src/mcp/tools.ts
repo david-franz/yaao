@@ -25,6 +25,7 @@ import { runPlanner } from '../planner/run.js';
 import { convertPlan } from '../converter/convert.js';
 import { loadPlan } from '../plan/yaml/loader.js';
 import { runPlan } from '../exec/runner.js';
+import { signalRun } from '../exec/signal-run.js';
 import { listRuns, loadRun, type RunSummary } from '../git/journal.js';
 import { git as defaultGit, type Git } from '../git/git.js';
 import { configPaths } from '../config/loader.js';
@@ -518,6 +519,56 @@ export async function yaaoStatusTool(input: StatusToolInput, ctx: ToolContext): 
         warnings: [],
         errors: [],
         ...summary,
+      },
+    };
+  });
+}
+
+/** ---- yaao_stop ----------------------------------------------------------------- */
+
+export interface StopToolInput {
+  runId: string;
+}
+
+/**
+ * Send SIGTERM to a run's runner process. Lets the agent that started
+ * a run via yaao_run stop it again without leaving the MCP session.
+ * Same primitive the `yaao stop` CLI command uses.
+ *
+ * The runner's existing SIGTERM handler stamps `run:end status=cancelled`
+ * in the journal before exiting, so a successful stop is observable by
+ * every consumer (yaao_inspect, yaao_status, the web workspace).
+ *
+ * Idempotent on already-finished runs: returns ok=true with
+ * reason='no-pid-file' so the caller doesn't have to treat that as a
+ * failure.
+ */
+export async function yaaoStopTool(input: StopToolInput, ctx: ToolContext): Promise<ToolCallResult> {
+  return envelope(async () => {
+    const cwd = resolve(ctx.cwd);
+    const result = signalRun({ cwd, runId: input.runId });
+    const ok = result.signaled || result.reason === 'no-pid-file' || result.reason === 'pid-dead';
+    const text = result.signaled
+      ? `sent SIGTERM to ${input.runId} (pid ${result.pid}); runner will stamp 'cancelled' in the journal and exit`
+      : result.reason === 'no-pid-file'
+        ? `no runner.pid for ${input.runId} — run is not in flight`
+        : result.reason === 'pid-dead'
+          ? `runner for ${input.runId} (pid ${result.pid}) is no longer alive`
+          : `stop failed: ${result.hint ?? result.reason}`;
+    return {
+      text,
+      structuredContent: {
+        ok,
+        files: [],
+        warnings: ok && !result.signaled ? [`${input.runId} was not running`] : [],
+        errors:
+          ok || result.reason !== 'kill-failed'
+            ? []
+            : [{ code: 'YAAO_STOP_FAILED', message: result.hint ?? 'signal failed' }],
+        runId: input.runId,
+        signaled: result.signaled,
+        reason: result.reason,
+        ...(result.pid !== undefined ? { pid: result.pid } : {}),
       },
     };
   });
