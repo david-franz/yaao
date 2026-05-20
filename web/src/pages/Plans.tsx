@@ -7,38 +7,39 @@ export function Plans(): JSX.Element {
   useEffect(() => {
     void api.plans().then((r) => setPlans(r.plans));
   }, []);
-  if (!plans) return <p>loading…</p>;
+  if (!plans) return <p className="muted">loading…</p>;
   if (plans.length === 0) {
     return (
-      <p>
+      <div className="card card--padded empty">
         No execution plans yet. Generate one with <code>yaao plan</code> and{' '}
         <code>yaao convert</code>.
-      </p>
+      </div>
     );
   }
   return (
-    <table style={{ borderCollapse: 'collapse', minWidth: 480 }}>
-      <thead>
-        <tr>
-          <th style={th}>slug</th>
-          <th style={th}>path</th>
-          <th style={th}>modified</th>
-        </tr>
-      </thead>
-      <tbody>
-        {plans.map((p) => (
-          <tr key={p.slug} style={{ borderBottom: '1px solid #eee' }}>
-            <td style={td}>
-              <Link to={`/plans/${encodeURIComponent(p.slug)}`}>{p.slug}</Link>
-            </td>
-            <td style={{ ...td, color: '#666', fontFamily: 'monospace', fontSize: 12 }}>{p.path}</td>
-            <td style={td}>{new Date(p.mtimeMs).toLocaleString()}</td>
+    <div className="card card--scroll">
+      <table className="table">
+        <thead>
+          <tr>
+            <th>slug</th>
+            <th>path</th>
+            <th>modified</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {plans.map((p) => (
+            <tr key={p.slug}>
+              <td>
+                <Link to={`/plans/${encodeURIComponent(p.slug)}`}>{p.slug}</Link>
+              </td>
+              <td>
+                <code>{p.path}</code>
+              </td>
+              <td className="muted">{new Date(p.mtimeMs).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
-
-const th = { padding: '0.25rem 0.5rem', textAlign: 'left' as const, borderBottom: '1px solid #ccc' };
-const td = { padding: '0.25rem 0.5rem' };

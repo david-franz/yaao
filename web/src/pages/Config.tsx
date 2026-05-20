@@ -95,53 +95,50 @@ export function ConfigPage(): JSX.Element {
     }
   };
 
-  if (error) return <p style={{ color: '#a00' }}>{error}</p>;
-  if (diskBody === null) return <p>loading…</p>;
+  if (error) return <div className="banner banner--danger">{error}</div>;
+  if (diskBody === null) return <p className="muted">loading…</p>;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', height: '100%' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <strong>yaao.config.json</strong>{' '}
-          <span style={{ color: dirtyRef.current ? '#c98a00' : '#0a7f2e', fontSize: 12 }}>
-            {dirtyRef.current ? '● unsaved changes' : '✓ saved'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <strong style={{ fontSize: 'var(--fs-lg)' }}>yaao.config.json</strong>
+          <span className={`pill pill--${dirtyRef.current ? 'warning' : 'success'}`}>
+            {dirtyRef.current ? '● unsaved' : '✓ saved'}
           </span>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
           <Link to="/workspace">← workspace</Link>
-          <button onClick={save} disabled={saving || !dirtyRef.current} style={saveBtn}>
+          <button className="btn btn--primary" onClick={save} disabled={saving || !dirtyRef.current}>
             {saving ? 'saving…' : 'Save'}
           </button>
         </div>
       </header>
       {externalChange ? (
-        <div style={banner}>
+        <div className="banner banner--warning">
           The config changed on disk while you were editing.{' '}
-          <button onClick={reloadFromDisk}>Reload from disk (discard my changes)</button>{' '}
-          <button onClick={() => setExternalChange(null)}>Keep editing</button>
+          <button className="btn" onClick={reloadFromDisk}>Reload from disk</button>
+          <button className="btn btn--ghost" onClick={() => setExternalChange(null)}>Keep editing</button>
         </div>
       ) : null}
       {resp && !resp.ok ? (
-        <div style={errorBanner}>
+        <div className="banner banner--danger" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
           <strong>Save rejected.</strong>
-          <ul>
+          <ul style={{ margin: '4px 0 0', paddingLeft: '1.25rem' }}>
             {resp.errors?.map((e, i) => (
-              <li key={i}>
-                <code>{e.code}</code>: {e.message}
-              </li>
+              <li key={i}><code>{e.code}</code>: {e.message}</li>
             ))}
           </ul>
         </div>
       ) : null}
       {resp && resp.ok ? (
-        <div style={okBanner}>
-          Saved. <em>This applies to runs that start from now on; in-flight runs use the
-          previous config.</em>
+        <div className="banner banner--success">
+          Saved. <em>Applies to runs from now on; in-flight runs use the previous config.</em>
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
-        <Tab name="Form" active={tab === 'form'} onClick={() => setTab('form')} />
-        <Tab name="Raw" active={tab === 'raw'} onClick={() => setTab('raw')} />
+      <div className="tabs">
+        <button className="tabs__tab" aria-selected={tab === 'form'} onClick={() => setTab('form')}>Form</button>
+        <button className="tabs__tab" aria-selected={tab === 'raw'} onClick={() => setTab('raw')}>Raw</button>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
         {tab === 'form' ? (
@@ -150,29 +147,11 @@ export function ConfigPage(): JSX.Element {
           <RawView buffer={buffer} onBufferChange={onBufferChange} />
         )}
       </div>
-      <small style={{ color: '#666', fontSize: 11 }}>
+      <small className="subtle">
         Saves run ConfigSchema.safeParse + a literal-secret detector. API keys must reference
         environment variables with the <code>${'${VAR}'}</code> form; literal keys are rejected.
       </small>
     </div>
-  );
-}
-
-function Tab({ name, active, onClick }: { name: string; active: boolean; onClick: () => void }): JSX.Element {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        background: active ? '#fff' : '#f4f4f4',
-        border: '1px solid #ccc',
-        borderBottomColor: active ? '#fff' : '#ccc',
-        padding: '0.25rem 1rem',
-        cursor: 'pointer',
-        fontWeight: active ? 600 : 400,
-      }}
-    >
-      {name}
-    </button>
   );
 }
 
@@ -181,16 +160,8 @@ function RawView({ buffer, onBufferChange }: { buffer: string; onBufferChange: (
     <textarea
       value={buffer}
       onChange={(e) => onBufferChange(e.target.value)}
-      style={{
-        width: '100%',
-        height: '100%',
-        fontFamily: 'ui-monospace, monospace',
-        fontSize: 13,
-        border: '1px solid #ddd',
-        borderRadius: 4,
-        padding: '0.5rem',
-        resize: 'none',
-      }}
+      className="textarea"
+      style={{ height: '100%' }}
       spellCheck={false}
     />
   );
@@ -209,9 +180,9 @@ function FormView({ buffer, onBufferChange }: { buffer: string; onBufferChange: 
   }
   if (parseError !== null) {
     return (
-      <p style={{ color: '#a00', fontSize: 13 }}>
+      <div className="banner banner--danger">
         Config isn't valid JSON ({parseError}). Switch to the Raw tab to fix.
-      </p>
+      </div>
     );
   }
   if (!parsed) return <p>—</p>;
@@ -266,18 +237,15 @@ function FormView({ buffer, onBufferChange }: { buffer: string; onBufferChange: 
       </Section>
       <Section title="API providers">
         {Object.keys(providers).length === 0 ? (
-          <p style={{ color: '#666', fontSize: 13 }}>No providers configured.</p>
+          <p className="muted">No providers configured.</p>
         ) : (
           Object.entries(providers).map(([name, prov]) => (
-            <Row key={name} label={name}>
+            <Row key={name} label={name} hint="Must be a ${ENV_VAR} reference; literal keys are rejected on save.">
               <TextField
                 value={String(prov['api-key'] ?? '')}
                 onChange={(v) => update((c) => assignAt(c, ['agents', 'api', 'providers', name, 'api-key'], v))}
                 placeholder="${PROVIDER_API_KEY}"
               />
-              <p style={{ fontSize: 11, color: '#666', margin: '0.125rem 0 0' }}>
-                Must be a <code>${'${ENV_VAR}'}</code> reference; literal keys are rejected on save.
-              </p>
             </Row>
           ))
         )}
@@ -288,18 +256,21 @@ function FormView({ buffer, onBufferChange }: { buffer: string; onBufferChange: 
 
 function Section({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
   return (
-    <section style={{ border: '1px solid #ddd', borderRadius: 4, padding: '0.75rem 1rem' }}>
-      <h4 style={{ margin: '0 0 0.5rem' }}>{title}</h4>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>{children}</div>
+    <section className="card card--padded">
+      <h4 className="section-heading" style={{ marginTop: 0, marginBottom: 'var(--space-3)' }}>{title}</h4>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>{children}</div>
     </section>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
+function Row({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }): JSX.Element {
   return (
-    <label style={{ display: 'grid', gridTemplateColumns: '160px 1fr', alignItems: 'center', gap: '0.5rem', fontSize: 13 }}>
-      <span>{label}</span>
-      <span>{children}</span>
+    <label className="field-row">
+      <span className="field-row__label">{label}</span>
+      <span>
+        {children}
+        {hint ? <span className="field-row__hint">{hint}</span> : null}
+      </span>
     </label>
   );
 }
@@ -311,18 +282,16 @@ function TextField({ value, onChange, placeholder }: { value: string; onChange: 
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      style={{ width: '100%', padding: '0.25rem 0.5rem', border: '1px solid #ccc', borderRadius: 4 }}
+      className="input"
     />
   );
 }
 
 function SelectField({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }): JSX.Element {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} style={{ padding: '0.25rem 0.5rem' }}>
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="select">
       {options.map((o) => (
-        <option key={o} value={o}>
-          {o}
-        </option>
+        <option key={o} value={o}>{o}</option>
       ))}
     </select>
   );
@@ -337,17 +306,5 @@ function assignAt(obj: Record<string, unknown>, path: string[], value: unknown):
   }
   cur[path[path.length - 1]!] = value;
 }
-
-const saveBtn: React.CSSProperties = {
-  background: '#0066cc',
-  color: '#fff',
-  border: 'none',
-  padding: '0.25rem 0.75rem',
-  borderRadius: 4,
-  cursor: 'pointer',
-};
-const banner: React.CSSProperties = { background: '#fffae5', border: '1px solid #f0d04a', padding: '0.5rem 0.75rem', borderRadius: 4, fontSize: 13 };
-const errorBanner: React.CSSProperties = { background: '#fde2e2', border: '1px solid #f0a4a4', padding: '0.5rem 0.75rem', borderRadius: 4, color: '#a00', fontSize: 13 };
-const okBanner: React.CSSProperties = { background: '#dff2e0', border: '1px solid #90c794', padding: '0.5rem 0.75rem', borderRadius: 4, color: '#0a7f2e', fontSize: 13 };
 
 export const __testing = { assignAt };

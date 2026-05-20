@@ -3,6 +3,7 @@ import { useRoute } from './router.ts';
 import { Link } from './Link.tsx';
 import { Plans } from './pages/Plans.tsx';
 import { PlanDetail } from './pages/PlanDetail.tsx';
+import { useTheme } from './theme.ts';
 
 // Pages that aren't on the critical first-paint path are lazy-loaded so
 // the initial bundle stays small.
@@ -14,32 +15,72 @@ const ConfigPage = lazy(() => import('./pages/Config.tsx').then((m) => ({ defaul
 export function App(): JSX.Element {
   const route = useRoute();
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <Nav />
-      <main style={{ padding: '1rem', flex: 1, overflow: 'auto' }}>
-        <Suspense fallback={<p>loading…</p>}>{routeView(route)}</Suspense>
+    <div className="app">
+      <Nav routeName={route.name} />
+      <main className="app__main">
+        <Suspense fallback={<p className="muted">loading…</p>}>{routeView(route)}</Suspense>
       </main>
     </div>
   );
 }
 
-function Nav(): JSX.Element {
+function Nav({ routeName }: { routeName: ReturnType<typeof useRoute>['name'] }): JSX.Element {
+  const { theme, toggle } = useTheme();
+  // Map each route name to the nav entry that should highlight; lets a
+  // detail route (`plan-detail`) still highlight its parent nav (`plans`).
+  const active: Record<string, string> = {
+    workspace: 'workspace',
+    plans: 'plans',
+    'plan-detail': 'plans',
+    'plan-edit': 'plans',
+    'run-detail': 'runs',
+    'runs-latest': 'runs',
+    config: 'config',
+  };
+  const current = active[routeName] ?? '';
   return (
-    <nav
-      style={{
-        display: 'flex',
-        gap: '1rem',
-        padding: '0.5rem 1rem',
-        borderBottom: '1px solid #ddd',
-        alignItems: 'center',
-      }}
-    >
-      <strong>yaao web</strong>
-      <Link to="/workspace">workspace</Link>
-      <Link to="/plans">plans</Link>
-      <Link to="/runs/latest">latest run</Link>
-      <Link to="/config">config</Link>
-    </nav>
+    <header className="app__header">
+      <div className="app__brand">yaao</div>
+      <nav className="app__nav">
+        <Link to="/workspace" aria-current={current === 'workspace' ? 'page' : undefined}>
+          workspace
+        </Link>
+        <Link to="/plans" aria-current={current === 'plans' ? 'page' : undefined}>
+          plans
+        </Link>
+        <Link to="/runs/latest" aria-current={current === 'runs' ? 'page' : undefined}>
+          latest run
+        </Link>
+        <Link to="/config" aria-current={current === 'config' ? 'page' : undefined}>
+          config
+        </Link>
+      </nav>
+      <button
+        className="btn btn--ghost btn--icon"
+        onClick={toggle}
+        title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+        aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+      >
+        {theme === 'light' ? <MoonIcon /> : <SunIcon />}
+      </button>
+    </header>
+  );
+}
+
+function SunIcon(): JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </svg>
+  );
+}
+
+function MoonIcon(): JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
   );
 }
 

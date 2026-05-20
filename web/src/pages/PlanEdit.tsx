@@ -101,75 +101,65 @@ export function PlanEdit({ slug }: { slug: string }): JSX.Element {
   };
   const discardExternal = (): void => setExternalChange(null);
 
-  if (error) return <p style={{ color: '#a00' }}>{error}</p>;
-  if (diskBody === null) return <p>loading…</p>;
+  if (error) return <div className="banner banner--danger">{error}</div>;
+  if (diskBody === null) return <p className="muted">loading…</p>;
 
   const dirty = bufferDirtyRef.current;
   const preview = parsePreview(buffer);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '0.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 'var(--space-3)' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <strong>{slug}</strong>{' '}
-          <span style={{ color: dirty ? '#c98a00' : '#0a7f2e', fontSize: 12 }}>
-            {dirty ? '● unsaved changes' : '✓ saved'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <strong style={{ fontSize: 'var(--fs-lg)' }}>{slug}</strong>
+          <span className={`pill pill--${dirty ? 'warning' : 'success'}`}>
+            {dirty ? '● unsaved' : '✓ saved'}
           </span>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
           <Link to={`/plans/${encodeURIComponent(slug)}`}>← back to DAG</Link>
-          <button onClick={save} disabled={saving || !dirty} style={saveBtn}>
+          <button className="btn btn--primary" onClick={save} disabled={saving || !dirty}>
             {saving ? 'saving…' : 'Save'}
           </button>
         </div>
       </header>
       {externalChange ? (
-        <div style={banner}>
+        <div className="banner banner--warning">
           The plan file changed on disk while you were editing.{' '}
-          <button onClick={reloadFromDisk}>Reload from disk (discard my changes)</button>{' '}
-          <button onClick={discardExternal}>Keep editing</button>
+          <button className="btn" onClick={reloadFromDisk}>Reload from disk</button>
+          <button className="btn btn--ghost" onClick={discardExternal}>Keep editing</button>
         </div>
       ) : null}
       {lastSaveResp && !lastSaveResp.ok ? (
-        <div style={errorBanner}>
+        <div className="banner banner--danger" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
           <strong>Save rejected.</strong>
-          <ul>
+          <ul style={{ margin: '4px 0 0', paddingLeft: '1.25rem' }}>
             {lastSaveResp.errors?.map((e, i) => (
-              <li key={i}>
-                <code>{e.code}</code>: {e.message}
-              </li>
+              <li key={i}><code>{e.code}</code>: {e.message}</li>
             ))}
           </ul>
         </div>
       ) : null}
       {lastSaveResp && lastSaveResp.ok ? (
-        <div style={okBanner}>Saved to <code>{lastSaveResp.path ?? '(unknown)'}</code>.</div>
+        <div className="banner banner--success">Saved to <code>{lastSaveResp.path ?? '(unknown)'}</code>.</div>
       ) : null}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', flex: 1, minHeight: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', flex: 1, minHeight: 0 }}>
         <textarea
           value={buffer}
           onChange={(e) => onChange(e.target.value)}
-          style={{
-            width: '100%',
-            height: '100%',
-            fontFamily: 'ui-monospace, monospace',
-            fontSize: 13,
-            border: '1px solid #ddd',
-            borderRadius: 4,
-            padding: '0.5rem',
-            resize: 'none',
-          }}
+          className="textarea"
+          style={{ height: '100%' }}
           spellCheck={false}
         />
-        <div style={{ border: '1px solid #ddd', borderRadius: 4, padding: '0.5rem', overflow: 'auto' }}>
+        <div className="card card--padded card--scroll">
           {preview.error ? (
-            <p style={{ color: '#c98a00', fontSize: 12 }}>YAML preview: {preview.error}</p>
+            <p className="muted" style={{ color: 'var(--warning)' }}>YAML preview: {preview.error}</p>
           ) : preview.tasks.length === 0 ? (
-            <p style={{ color: '#666' }}>No tasks parsed.</p>
+            <p className="muted">No tasks parsed.</p>
           ) : (
             <DagPreview tasks={preview.tasks} />
           )}
-          <p style={{ color: '#666', fontSize: 12, marginTop: '0.5rem' }}>
+          <p className="subtle" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--space-3)' }}>
             Preview is a structural sketch of the current buffer. Schema + DAG validity is checked
             server-side when you save.
           </p>
@@ -187,6 +177,7 @@ function DagPreview({ tasks }: { tasks: { id: string; title: string; agent: stri
     // gives a horizontal scrollbar for long plans instead of squashing labels.
     <div style={{ overflow: 'auto' }}>
       <svg
+        className="dag-svg"
         width={layout.width}
         height={layout.height}
         viewBox={`0 0 ${layout.width} ${layout.height}`}
@@ -196,20 +187,19 @@ function DagPreview({ tasks }: { tasks: { id: string; title: string; agent: stri
         {layout.edges.map((e) => (
           <path
             key={`${e.fromId}->${e.toId}`}
+            className="dag-edge"
             d={`M ${e.fromX} ${e.fromY} C ${e.fromX + 30} ${e.fromY}, ${e.toX - 30} ${e.toY}, ${e.toX} ${e.toY}`}
-            stroke="#999"
-            fill="none"
             strokeWidth={1.5}
           />
         ))}
         {layout.nodes.map((n) => (
           <g key={n.id} transform={`translate(${n.x}, ${n.y})`}>
             <title>{`${n.id} — ${n.title} (${n.agent})`}</title>
-            <rect width={n.width} height={n.height} rx={6} fill="#fff" stroke="#888" />
-            <text x={12} y={22} fontSize={13} fontWeight={600}>
+            <rect width={n.width} height={n.height} rx={6} />
+            <text x={12} y={22} fontSize={13} fontWeight={600} className="dag-id">
               {n.id}
             </text>
-            <text x={12} y={40} fontSize={11} fill="#555">
+            <text x={12} y={40} fontSize={11} className="dag-title">
               {(n.title || '').slice(0, 22)}
             </text>
           </g>
@@ -221,30 +211,12 @@ function DagPreview({ tasks }: { tasks: { id: string; title: string; agent: stri
 
 function PlanEditFooter({ onNavigate: _onNavigate }: { onNavigate: () => void }): JSX.Element {
   return (
-    <small style={{ color: '#666', fontSize: 11 }}>
+    <small className="subtle">
       Save runs the full server-side validatePlan pipeline. Schema-valid plans with dependency
       cycles are caught before the file is written.
     </small>
   );
 }
-
-const saveBtn: React.CSSProperties = {
-  background: '#0066cc',
-  color: '#fff',
-  border: 'none',
-  padding: '0.25rem 0.75rem',
-  borderRadius: 4,
-  cursor: 'pointer',
-};
-const banner: React.CSSProperties = {
-  background: '#fffae5',
-  border: '1px solid #f0d04a',
-  padding: '0.5rem 0.75rem',
-  borderRadius: 4,
-  fontSize: 13,
-};
-const errorBanner: React.CSSProperties = { background: '#fde2e2', border: '1px solid #f0a4a4', padding: '0.5rem 0.75rem', borderRadius: 4, color: '#a00', fontSize: 13 };
-const okBanner: React.CSSProperties = { background: '#dff2e0', border: '1px solid #90c794', padding: '0.5rem 0.75rem', borderRadius: 4, color: '#0a7f2e', fontSize: 13 };
 
 /**
  * Lightweight YAML parse: just enough to extract `tasks[*].id`,

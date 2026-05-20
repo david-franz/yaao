@@ -42,8 +42,8 @@ export function PlanDetail({ slug }: Props): JSX.Element {
     return close;
   }, [slug]);
 
-  if (error) return <p style={{ color: '#a00' }}>{error}</p>;
-  if (!data) return <p>loading…</p>;
+  if (error) return <div className="banner banner--danger">{error}</div>;
+  if (!data) return <p className="muted">loading…</p>;
 
   const tasks = data.plan.tasks;
   const layout = layoutDag(
@@ -52,37 +52,31 @@ export function PlanDetail({ slug }: Props): JSX.Element {
   const selected = tasks.find((t) => t.id === selectedId) ?? null;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '1rem', height: '100%' }}>
-      <div style={{ overflow: 'auto', border: '1px solid #ddd', borderRadius: 4 }}>
-        <header style={{ padding: '0.5rem 1rem', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 'var(--space-4)', height: '100%' }}>
+      <div className="card card--scroll">
+        <header style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }}>
           <div>
             <strong>{data.plan.plan.name}</strong>{' '}
-            <span style={{ color: '#666' }}>· {tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
+            <span className="muted">· {tasks.length} task{tasks.length === 1 ? '' : 's'}</span>
           </div>
           <Link to={`/plans/${encodeURIComponent(slug)}/edit`}>edit YAML →</Link>
         </header>
-        {/* Render the SVG at its native pixel size so long plans get a
-            horizontal scrollbar from the parent overflow:auto rather than
-            being squashed to fit the container. The previous viewBox +
-            width:100% combo shrunk wide DAGs until labels were unreadable. */}
         <svg
+          className="dag-svg"
           width={layout.width}
           height={layout.height}
           viewBox={`0 0 ${layout.width} ${layout.height}`}
           preserveAspectRatio="xMinYMin meet"
           style={{ display: 'block' }}
         >
-          {/* edges */}
           {layout.edges.map((e) => (
             <path
               key={`${e.fromId}->${e.toId}`}
+              className="dag-edge"
               d={`M ${e.fromX} ${e.fromY} C ${e.fromX + 30} ${e.fromY}, ${e.toX - 30} ${e.toY}, ${e.toX} ${e.toY}`}
-              stroke="#999"
-              fill="none"
               strokeWidth={1.5}
             />
           ))}
-          {/* nodes */}
           {layout.nodes.map((n) => {
             const isSel = n.id === selectedId;
             return (
@@ -92,25 +86,21 @@ export function PlanDetail({ slug }: Props): JSX.Element {
                 style={{ cursor: 'pointer' }}
                 onClick={() => setSelectedId(n.id)}
               >
-                {/* Full title surfaces on hover so truncation is recoverable
-                    without a click; the side pane carries the canonical
-                    expanded view. */}
                 <title>{`${n.id} — ${n.title} (${n.agent})`}</title>
                 <rect
                   width={n.width}
                   height={n.height}
                   rx={6}
-                  fill={isSel ? '#cde7ff' : '#fff'}
-                  stroke={isSel ? '#0066cc' : '#888'}
+                  className={isSel ? 'selected' : ''}
                   strokeWidth={isSel ? 2 : 1}
                 />
-                <text x={12} y={22} fontSize={13} fontWeight={600}>
+                <text x={12} y={22} fontSize={13} fontWeight={600} className="dag-id">
                   {n.id}
                 </text>
-                <text x={12} y={40} fontSize={11} fill="#555">
+                <text x={12} y={40} fontSize={11} className="dag-title">
                   {truncate(n.title, 22)}
                 </text>
-                <text x={n.width - 12} y={22} fontSize={10} fill="#777" textAnchor="end">
+                <text x={n.width - 12} y={22} fontSize={10} textAnchor="end" className="dag-agent">
                   {n.agent}
                 </text>
               </g>
@@ -118,8 +108,8 @@ export function PlanDetail({ slug }: Props): JSX.Element {
           })}
         </svg>
       </div>
-      <aside style={{ border: '1px solid #ddd', borderRadius: 4, padding: '0.75rem 1rem', overflow: 'auto' }}>
-        {selected ? <TaskDetail task={selected} /> : <p style={{ color: '#666' }}>Click a node to see its details.</p>}
+      <aside className="card card--padded card--scroll">
+        {selected ? <TaskDetail task={selected} /> : <p className="muted">Click a node to see its details.</p>}
       </aside>
     </div>
   );
@@ -127,7 +117,7 @@ export function PlanDetail({ slug }: Props): JSX.Element {
 
 function TaskDetail({ task }: { task: ResolvedTask }): JSX.Element {
   return (
-    <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.25rem 0.75rem', margin: 0 }}>
+    <dl className="dl-grid">
       <dt>id</dt>
       <dd>{task.id}</dd>
       <dt>title</dt>
@@ -135,35 +125,20 @@ function TaskDetail({ task }: { task: ResolvedTask }): JSX.Element {
       <dt>agent</dt>
       <dd>{task.agent}{task.model ? ` · ${task.model}` : ''}</dd>
       <dt>depends</dt>
-      <dd>{task.depends.length === 0 ? <em>none</em> : task.depends.join(', ')}</dd>
+      <dd>{task.depends.length === 0 ? <em className="muted">none</em> : task.depends.join(', ')}</dd>
       <dt>skills</dt>
-      <dd>{task.skills.length === 0 ? <em>none</em> : task.skills.join(', ')}</dd>
+      <dd>{task.skills.length === 0 ? <em className="muted">none</em> : task.skills.join(', ')}</dd>
       {task.validation?.command ? (
         <>
           <dt>validation</dt>
           <dd>
-            <code style={{ fontSize: 11, background: '#f4f4f4', padding: '0.125rem 0.25rem' }}>
-              {task.validation.command}
-            </code>
+            <code>{task.validation.command}</code>
           </dd>
         </>
       ) : null}
       <dt>prompt</dt>
       <dd>
-        <pre
-          style={{
-            margin: 0,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            fontSize: 12,
-            background: '#fafafa',
-            padding: '0.5rem',
-            border: '1px solid #eee',
-            borderRadius: 4,
-          }}
-        >
-          {task.prompt}
-        </pre>
+        <pre className="pre">{task.prompt}</pre>
       </dd>
     </dl>
   );

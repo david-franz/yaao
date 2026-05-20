@@ -225,31 +225,31 @@ function RunView({ runId }: { runId: string }): JSX.Element {
   const filtered = filterTask ? state.activity.filter((r) => r.taskId === filterTask || (r.kind === 'lifecycle' && r.taskId === filterTask)) : state.activity;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '1rem', height: '100%' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-          <div>
-            <strong>{runId}</strong>{' '}
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 'var(--space-4)', height: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, gap: 'var(--space-2)' }}>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <strong style={{ fontSize: 'var(--fs-lg)' }}>{runId}</strong>
             <StatusBadge status={state.status} />
-            {state.planFile ? <span style={{ marginLeft: 12, color: '#666' }}>{state.planFile.split('/').slice(-2).join('/')}</span> : null}
+            {state.planFile ? <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{state.planFile.split('/').slice(-2).join('/')}</span> : null}
           </div>
           <Controls runId={runId} runStatus={state.status} />
         </header>
         <TaskGrid tasks={state.tasks} onSelect={setSelectedTask} onFilter={setFilterTask} filter={filterTask} />
-        {error ? <p style={{ color: '#a00' }}>{error}</p> : null}
+        {error ? <div className="banner banner--danger">{error}</div> : null}
         <ActivityStream rows={filtered} filter={filterTask} onClearFilter={() => setFilterTask(null)} />
         {filterTask ? (
-          <p style={{ fontSize: 12, color: '#555', marginTop: 4 }}>
-            Filtered to <code>{filterTask}</code>. <button onClick={() => setFilterTask(null)}>clear</button>
+          <p className="muted" style={{ fontSize: 'var(--fs-xs)', margin: 0 }}>
+            Filtered to <code>{filterTask}</code>. <button className="btn btn--ghost" onClick={() => setFilterTask(null)}>clear</button>
           </p>
         ) : null}
-        <small style={{ color: '#666', marginTop: 4 }}>{allTaskIds.length} task{allTaskIds.length === 1 ? '' : 's'} · {state.activity.length} events</small>
+        <small className="subtle">{allTaskIds.length} task{allTaskIds.length === 1 ? '' : 's'} · {state.activity.length} events</small>
       </div>
-      <aside style={{ border: '1px solid #ddd', borderRadius: 4, padding: '0.75rem 1rem', overflow: 'auto' }}>
+      <aside className="card card--padded card--scroll">
         {selectedTask && state.tasks[selectedTask] ? (
           <TaskPane id={selectedTask} task={state.tasks[selectedTask]} />
         ) : (
-          <p style={{ color: '#666' }}>Click a task to see its detail.</p>
+          <p className="muted">Click a task to see its detail.</p>
         )}
       </aside>
     </div>
@@ -257,18 +257,14 @@ function RunView({ runId }: { runId: string }): JSX.Element {
 }
 
 function StatusBadge({ status }: { status: RunState['status'] }): JSX.Element {
-  const color: Record<RunState['status'], string> = {
-    unknown: '#999',
-    running: '#0066cc',
-    success: '#0a7f2e',
-    failed: '#a00',
-    cancelled: '#666',
+  const variant: Record<RunState['status'], string> = {
+    unknown: 'neutral',
+    running: 'running',
+    success: 'success',
+    failed: 'danger',
+    cancelled: 'neutral',
   };
-  return (
-    <span style={{ padding: '0.125rem 0.5rem', borderRadius: 8, color: '#fff', background: color[status], fontSize: 12 }}>
-      {status}
-    </span>
-  );
+  return <span className={`pill pill--${variant[status]}`}>{status}</span>;
 }
 
 function Controls({ runId, runStatus }: { runId: string; runStatus: RunState['status'] }): JSX.Element {
@@ -290,9 +286,9 @@ function Controls({ runId, runStatus }: { runId: string; runStatus: RunState['st
     }
   };
   return (
-    <div style={{ display: 'flex', gap: '0.5rem' }}>
-      {runStatus === 'running' ? <button onClick={cancel} disabled={busy}>Cancel</button> : null}
-      {(runStatus === 'failed' || runStatus === 'cancelled') ? <button onClick={resume} disabled={busy}>Resume</button> : null}
+    <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+      {runStatus === 'running' ? <button className="btn btn--danger" onClick={cancel} disabled={busy}>Cancel</button> : null}
+      {(runStatus === 'failed' || runStatus === 'cancelled') ? <button className="btn btn--primary" onClick={resume} disabled={busy}>Resume</button> : null}
       <Link to="/workspace">← workspace</Link>
     </div>
   );
@@ -300,9 +296,9 @@ function Controls({ runId, runStatus }: { runId: string; runStatus: RunState['st
 
 function TaskGrid({ tasks, onSelect, onFilter, filter }: { tasks: Record<string, RunSummaryTask>; onSelect: (id: string) => void; onFilter: (id: string) => void; filter: string | null }): JSX.Element {
   const ids = Object.keys(tasks).sort();
-  if (ids.length === 0) return <p style={{ color: '#666' }}>Waiting for tasks…</p>;
+  if (ids.length === 0) return <p className="muted">Waiting for tasks…</p>;
   return (
-    <div style={{ display: 'grid', gap: '0.25rem', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', marginBottom: '0.5rem' }}>
+    <div style={{ display: 'grid', gap: 'var(--space-2)', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
       {ids.map((id) => {
         const t = tasks[id]!;
         const isFiltered = filter === id;
@@ -313,20 +309,10 @@ function TaskGrid({ tasks, onSelect, onFilter, filter }: { tasks: Record<string,
               onSelect(id);
               onFilter(id);
             }}
-            style={{
-              textAlign: 'left',
-              padding: '0.4rem 0.6rem',
-              border: `1.5px solid ${statusBorder(t.status)}`,
-              background: isFiltered ? '#fffae5' : '#fff',
-              borderRadius: 6,
-              cursor: 'pointer',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}
+            className={`task-card task-card--${t.status}${isFiltered ? ' task-card--filtered' : ''}`}
           >
-            <strong style={{ fontSize: 13 }}>{id}</strong>
-            <span style={{ fontSize: 11, color: '#444' }}>
+            <strong className="task-card__id">{id}</strong>
+            <span className="task-card__meta">
               {t.status}
               {t.agent ? ` · ${t.agent}` : ''}
               {t.mergeStatus === 'merged' ? ' · merged' : ''}
@@ -338,21 +324,6 @@ function TaskGrid({ tasks, onSelect, onFilter, filter }: { tasks: Record<string,
       })}
     </div>
   );
-}
-
-function statusBorder(status: string): string {
-  switch (status) {
-    case 'completed':
-      return '#0a7f2e';
-    case 'failed':
-      return '#a00';
-    case 'running':
-      return '#0066cc';
-    case 'skipped':
-      return '#bbb';
-    default:
-      return '#888';
-  }
 }
 
 function ActivityStream({ rows, filter: _filter, onClearFilter: _onClearFilter }: { rows: ActivityRow[]; filter: string | null; onClearFilter: () => void }): JSX.Element {
@@ -374,11 +345,7 @@ function ActivityStream({ rows, filter: _filter, onClearFilter: _onClearFilter }
     stickToBottom.current = distanceFromBottom < 24;
   };
   return (
-    <div
-      ref={ref}
-      onScroll={onScroll}
-      style={{ flex: 1, overflow: 'auto', border: '1px solid #ddd', borderRadius: 4, padding: '0.25rem 0.5rem', background: '#fafafa', fontFamily: 'ui-monospace, monospace', fontSize: 12, lineHeight: 1.5 }}
-    >
+    <div ref={ref} onScroll={onScroll} className="activity">
       {rows.map((r) => (
         <ActivityRowView key={r.eventId} row={r} />
       ))}
@@ -390,43 +357,40 @@ function ActivityRowView({ row }: { row: ActivityRow }): JSX.Element {
   // Thinking and tool-use default open: the whole point of the activity
   // stream is to see what the agent is doing in real time. A collapsed
   // chevron next to "thinking (1842 chars)" makes everyone reach for the
-  // mouse, which is friction for the common case. Click the row to collapse.
+  // mouse, which is friction for the common case. Click to collapse.
   const [open, setOpen] = useState(true);
   if (row.kind === 'lifecycle') {
-    return <div style={{ color: '#444', padding: '1px 0' }}>{row.line}</div>;
+    return <div className="activity-row activity-row--lifecycle">{row.line}</div>;
   }
   if (row.kind === 'thinking') {
     return (
-      <div style={{ color: '#5a5a5a', padding: '2px 0', borderLeft: '2px solid #d0d0d0', paddingLeft: 8, marginLeft: 2, marginTop: 2, marginBottom: 2 }}>
-        <button onClick={() => setOpen(!open)} style={btnStyle}>
-          {open ? '▾' : '▸'} {row.taskId} · thinking <span style={{ color: '#999' }}>({row.chars} chars)</span>
+      <div className="activity-row activity-row--thinking">
+        <button onClick={() => setOpen(!open)} className="activity-row__toggle">
+          {open ? '▾' : '▸'} {row.taskId} · thinking <span className="subtle">({row.chars} chars)</span>
         </button>
-        {open ? <pre style={preStyle}>{row.raw}</pre> : null}
+        {open ? <pre className="pre" style={{ margin: '4px 0 4px 14px' }}>{row.raw}</pre> : null}
       </div>
     );
   }
   if (row.kind === 'tool-use') {
     return (
-      <div style={{ color: '#0066cc', padding: '2px 0' }}>
-        <button onClick={() => setOpen(!open)} style={btnStyle}>
+      <div className="activity-row activity-row--tool-use">
+        <button onClick={() => setOpen(!open)} className="activity-row__toggle">
           {open ? '▾' : '▸'} {row.taskId} · 🔧 {row.name}
         </button>
-        {open ? <pre style={preStyle}>{row.raw}</pre> : null}
+        {open ? <pre className="pre" style={{ margin: '4px 0 4px 14px' }}>{row.raw}</pre> : null}
       </div>
     );
   }
   if (row.kind === 'stderr') {
-    return <div style={{ color: '#a00', padding: '1px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{row.taskId}: {row.data}</div>;
+    return <div className="activity-row activity-row--stderr">{row.taskId}: {row.data}</div>;
   }
-  return <div style={{ padding: '1px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{row.taskId}: {row.data}</div>;
+  return <div className="activity-row activity-row--stdout">{row.taskId}: {row.data}</div>;
 }
-
-const btnStyle: React.CSSProperties = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, fontFamily: 'inherit', fontSize: 'inherit' };
-const preStyle: React.CSSProperties = { margin: '0.25rem 0 0.25rem 1rem', padding: '0.5rem', background: '#fff', border: '1px solid #eee', whiteSpace: 'pre-wrap', wordBreak: 'break-word' };
 
 function TaskPane({ id, task }: { id: string; task: RunSummaryTask }): JSX.Element {
   return (
-    <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.25rem 0.75rem', margin: 0 }}>
+    <dl className="dl-grid">
       <dt>id</dt><dd>{id}</dd>
       <dt>status</dt><dd>{task.status}</dd>
       {task.agent ? (<><dt>agent</dt><dd>{task.agent}</dd></>) : null}
@@ -446,11 +410,11 @@ function TaskPane({ id, task }: { id: string; task: RunSummaryTask }): JSX.Eleme
         <>
           <dt>validation</dt>
           <dd>
-            <span style={{ background: task.validation.exitCode === 0 ? '#dff2e0' : '#fde2e2', padding: '0.125rem 0.5rem', borderRadius: 4 }}>
+            <span className={`pill pill--${task.validation.exitCode === 0 ? 'success' : 'danger'}`}>
               {task.validation.exitCode === 0 ? '✓ passed' : `✗ failed (exit ${task.validation.exitCode ?? '?'})`}
             </span>
             {task.validation.command ? (
-              <pre style={{ margin: '0.25rem 0 0', fontSize: 11, background: '#f4f4f4', padding: '0.25rem 0.5rem' }}>{task.validation.command}</pre>
+              <pre className="pre" style={{ marginTop: 6 }}>{task.validation.command}</pre>
             ) : null}
           </dd>
         </>
@@ -458,7 +422,7 @@ function TaskPane({ id, task }: { id: string; task: RunSummaryTask }): JSX.Eleme
       {task.error ? (
         <>
           <dt>error</dt>
-          <dd style={{ color: '#a00' }}>{task.error.code}: {task.error.message}</dd>
+          <dd className="danger">{task.error.code}: {task.error.message}</dd>
         </>
       ) : null}
     </dl>
