@@ -1,4 +1,4 @@
-import { useRef, type ChangeEvent, type UIEvent } from 'react';
+import { useRef, type ChangeEvent, type UIEvent, type MutableRefObject } from 'react';
 import { highlightYaml } from './yaml-highlight.ts';
 
 interface Props {
@@ -8,6 +8,9 @@ interface Props {
   className?: string;
   /** Pin a fixed height. Default: 100% of parent. */
   style?: React.CSSProperties;
+  /** Lets the parent grab the underlying textarea — used to scroll /
+   * select programmatically (e.g. PlanEdit's task navigator). */
+  textareaRef?: MutableRefObject<HTMLTextAreaElement | null>;
 }
 
 /**
@@ -22,7 +25,7 @@ interface Props {
  * for now `language: 'json'` falls back to no highlighting so the Raw
  * Config view still gets the editor scaffold.
  */
-export function CodeEditor({ value, onChange, language, className, style }: Props): JSX.Element {
+export function CodeEditor({ value, onChange, language, className, style, textareaRef }: Props): JSX.Element {
   const preRef = useRef<HTMLPreElement | null>(null);
   const onScroll = (e: UIEvent<HTMLTextAreaElement>): void => {
     const t = e.currentTarget;
@@ -51,6 +54,7 @@ export function CodeEditor({ value, onChange, language, className, style }: Prop
         dangerouslySetInnerHTML={{ __html: `${html}\n` }}
       />
       <textarea
+        ref={textareaRef ?? undefined}
         className="code-editor__input"
         value={value}
         onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value)}

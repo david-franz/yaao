@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { api, subscribe, type PutPlanResp } from '../api.ts';
 import { Link } from '../Link.tsx';
 import { navigate } from '../router.ts';
-import { layoutDag } from '../dag-layout.ts';
 import { CodeEditor } from '../CodeEditor.tsx';
 
 /**
@@ -32,6 +31,9 @@ export function PlanEdit({ slug }: { slug: string }): JSX.Element {
   const [externalChange, setExternalChange] = useState<{ newDiskBody: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bufferDirtyRef = useRef(false);
+  // Forwarded into CodeEditor so the task navigator can scroll + select
+  // the line where a clicked task is declared.
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Initial load.
   useEffect(() => {
@@ -144,64 +146,138 @@ export function PlanEdit({ slug }: { slug: string }): JSX.Element {
       {lastSaveResp && lastSaveResp.ok ? (
         <div className="banner banner--success">Saved to <code>{lastSaveResp.path ?? '(unknown)'}</code>.</div>
       ) : null}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', flex: 1, minHeight: 0 }}>
-        <CodeEditor value={buffer} onChange={onChange} language="yaml" />
-        <div className="card card--padded card--scroll">
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(240px, 320px)', gap: 'var(--space-4)', flex: 1, minHeight: 0 }}>
+        <CodeEditor value={buffer} onChange={onChange} language="yaml" textareaRef={textareaRef} />
+        <aside className="card card--padded card--scroll">
           {preview.error ? (
             <p className="muted" style={{ color: 'var(--warning)' }}>YAML preview: {preview.error}</p>
           ) : preview.tasks.length === 0 ? (
             <p className="muted">No tasks parsed.</p>
           ) : (
-            <DagPreview tasks={preview.tasks} />
+            <TaskNavigator
+              tasks={preview.tasks}
+              onSelect={(taskId) => scrollToTask(textareaRef.current, buffer, taskId)}
+            />
           )}
           <p className="subtle" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--space-3)' }}>
-            Preview is a structural sketch of the current buffer. Schema + DAG validity is checked
-            server-side when you save.
+            Click a task to jump to its line. Schema + DAG validity is checked server-side when you save.
           </p>
-        </div>
+        </aside>
       </div>
       <PlanEditFooter onNavigate={() => { if (dirty && !confirm('Discard unsaved changes?')) return; navigate(`/plans/${encodeURIComponent(slug)}`); }} />
     </div>
   );
 }
 
-function DagPreview({ tasks }: { tasks: { id: string; title: string; agent: string; depends: string[] }[] }): JSX.Element {
-  const layout = layoutDag(tasks);
+/**
+ * Replaces the previous DagPreview. Groups tasks by dependency depth
+ * (layer 0 = no deps, layer N = max(dep layer) + 1) so the user sees
+ * which tasks run in parallel and what the critical path looks like,
+ * without rendering an SVG that competed badly with the YAML editor
+ * for visual weight. Clicking a task jumps the editor's textarea to
+ * the line where the task is declared.
+ */
+function TaskNavigator({
+  tasks,
+  onSelect,
+}: {
+  tasks: { id: string; title: string; agent: string; depends: string[] }[];
+  onSelect: (taskId: string) => void;
+}): JSX.Element {
+  // Compute each task's layer. Same shape as src/plan/dag.ts but
+  // duplicated here because the web bundle can't reach into the engine.
+  const layer = new Map<string, number>();
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const compute = (id: string, seen: Set<string>): number => {
+    if (layer.has(id)) return layer.get(id)!;
+    if (seen.has(id)) return 0; // cycle — server-side validate will catch
+    seen.add(id);
+    const t = byId.get(id);
+    if (!t || t.depends.length === 0) {
+      layer.set(id, 0);
+      return 0;
+    }
+    let max = 0;
+    for (const d of t.depends) {
+      const dl = compute(d, seen) + 1;
+      if (dl > max) max = dl;
+    }
+    layer.set(id, max);
+    return max;
+  };
+  for (const t of tasks) compute(t.id, new Set());
+  const byLayer = new Map<number, typeof tasks>();
+  for (const t of tasks) {
+    const l = layer.get(t.id) ?? 0;
+    const arr = byLayer.get(l) ?? [];
+    arr.push(t);
+    byLayer.set(l, arr);
+  }
+  const layers = [...byLayer.keys()].sort((a, b) => a - b);
   return (
-    // Render at native pixel size; the surrounding container's overflow:auto
-    // gives a horizontal scrollbar for long plans instead of squashing labels.
-    <div style={{ overflow: 'auto' }}>
-      <svg
-        className="dag-svg"
-        width={layout.width}
-        height={layout.height}
-        viewBox={`0 0 ${layout.width} ${layout.height}`}
-        preserveAspectRatio="xMinYMin meet"
-        style={{ display: 'block' }}
-      >
-        {layout.edges.map((e) => (
-          <path
-            key={`${e.fromId}->${e.toId}`}
-            className="dag-edge"
-            d={`M ${e.fromX} ${e.fromY} C ${e.fromX + 30} ${e.fromY}, ${e.toX - 30} ${e.toY}, ${e.toX} ${e.toY}`}
-            strokeWidth={1.5}
-          />
-        ))}
-        {layout.nodes.map((n) => (
-          <g key={n.id} transform={`translate(${n.x}, ${n.y})`}>
-            <title>{`${n.id} — ${n.title} (${n.agent})`}</title>
-            <rect width={n.width} height={n.height} rx={6} />
-            <text x={12} y={22} fontSize={13} fontWeight={600} className="dag-id">
-              {n.id}
-            </text>
-            <text x={12} y={40} fontSize={11} className="dag-title">
-              {(n.title || '').slice(0, 22)}
-            </text>
-          </g>
-        ))}
-      </svg>
-    </div>
+    <nav>
+      {layers.map((l) => (
+        <div key={l} style={{ marginBottom: 'var(--space-3)' }}>
+          <h4 className="section-heading" style={{ marginTop: 0 }}>
+            Layer {l}
+            <span className="subtle" style={{ marginLeft: 6, fontSize: 'var(--fs-xs)', fontWeight: 400 }}>
+              · {byLayer.get(l)!.length} task{byLayer.get(l)!.length === 1 ? '' : 's'}
+            </span>
+          </h4>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
+            {byLayer.get(l)!.map((t) => (
+              <li key={t.id}>
+                <button
+                  onClick={() => onSelect(t.id)}
+                  className="task-nav-item"
+                  title={`Jump to ${t.id}${t.title ? ` — ${t.title}` : ''}`}
+                >
+                  <strong style={{ fontSize: 'var(--fs-sm)' }}>{t.id}</strong>
+                  {t.agent ? <span className="tag" style={{ marginLeft: 'auto' }}>{t.agent}</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </nav>
   );
+}
+
+/**
+ * Find the line in `buffer` where the task with `taskId` is declared
+ * (matches `id: <taskId>` or `- id: <taskId>`), then focus + select +
+ * scroll the textarea so the user lands right at the task header.
+ */
+function scrollToTask(
+  textarea: HTMLTextAreaElement | null,
+  buffer: string,
+  taskId: string,
+): void {
+  if (!textarea) return;
+  const lines = buffer.split('\n');
+  const idRe = new RegExp(`^\\s*(- )?id:\\s*['"]?${escapeRegExp(taskId)}['"]?\\s*$`);
+  let lineIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (idRe.test(lines[i] ?? '')) {
+      lineIdx = i;
+      break;
+    }
+  }
+  if (lineIdx < 0) return;
+  let charOffset = 0;
+  for (let i = 0; i < lineIdx; i++) charOffset += (lines[i] ?? '').length + 1;
+  const lineEnd = charOffset + (lines[lineIdx] ?? '').length;
+  textarea.focus();
+  textarea.setSelectionRange(charOffset, lineEnd);
+  // Pull the line into view. CSS sets 13px / line-height 1.5 = 19.5px
+  // per line; nudge a couple of lines above to give context.
+  const lineHeightPx = 13 * 1.5;
+  textarea.scrollTop = Math.max(0, (lineIdx - 2) * lineHeightPx);
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function PlanEditFooter({ onNavigate: _onNavigate }: { onNavigate: () => void }): JSX.Element {
