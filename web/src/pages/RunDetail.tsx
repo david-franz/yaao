@@ -263,17 +263,18 @@ function RunView({ runId }: { runId: string }): JSX.Element {
         </header>
         <TaskDag tasks={state.tasks} depends={state.depends} selectedId={selectedTask} onSelect={(id) => { setSelectedTask(id); setFilterTask(id); }} />
         {error ? <div className="banner banner--danger">{error}</div> : null}
+        <ActivityHeader
+          filterTask={filterTask}
+          taskCount={allTaskIds.length}
+          eventCount={state.activity.length}
+          filteredCount={filtered.length}
+          onClearFilter={() => { setFilterTask(null); setSelectedTask(null); }}
+        />
         <ActivityStream rows={filtered} filter={filterTask} onClearFilter={() => setFilterTask(null)} />
-        {filterTask ? (
-          <p className="muted" style={{ fontSize: 'var(--fs-xs)', margin: 0 }}>
-            Filtered to <code>{filterTask}</code>. <button className="btn btn--ghost" onClick={() => setFilterTask(null)}>clear</button>
-          </p>
-        ) : null}
-        <small className="subtle">{allTaskIds.length} task{allTaskIds.length === 1 ? '' : 's'} · {state.activity.length} events</small>
       </div>
       {showSidePane ? (
         <aside className="card card--padded card--scroll">
-          <TaskPane id={selectedTask!} task={state.tasks[selectedTask!]!} onClose={() => setSelectedTask(null)} />
+          <TaskPane id={selectedTask!} task={state.tasks[selectedTask!]!} onClose={() => { setSelectedTask(null); setFilterTask(null); }} />
         </aside>
       ) : null}
     </div>
@@ -289,6 +290,44 @@ function StatusBadge({ status }: { status: RunState['status'] }): JSX.Element {
     cancelled: 'neutral',
   };
   return <span className={`pill pill--${variant[status]}`}>{status}</span>;
+}
+
+/**
+ * Header bar above the activity stream. Doubles as the filter affordance:
+ * when no task is selected, surfaces a "Click a task to filter" hint so
+ * users notice the interaction; when a task is selected, it's a prominent
+ * banner with the filtered-to id + a clear button. Was previously a small
+ * note below the stream that was easy to miss.
+ */
+function ActivityHeader({
+  filterTask,
+  taskCount,
+  eventCount,
+  filteredCount,
+  onClearFilter,
+}: {
+  filterTask: string | null;
+  taskCount: number;
+  eventCount: number;
+  filteredCount: number;
+  onClearFilter: () => void;
+}): JSX.Element {
+  if (filterTask) {
+    return (
+      <div className="banner banner--info" style={{ padding: 'var(--space-2) var(--space-3)' }}>
+        <span>Filtered to <code>{filterTask}</code> · {filteredCount} event{filteredCount === 1 ? '' : 's'}</span>
+        <button className="btn btn--ghost" onClick={onClearFilter} style={{ marginLeft: 'auto' }}>
+          show all
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
+      <span>All tasks · {eventCount} event{eventCount === 1 ? '' : 's'}</span>
+      {taskCount > 0 ? <span className="subtle">Click a task above to filter</span> : null}
+    </div>
+  );
 }
 
 function Controls({ runId, runStatus }: { runId: string; runStatus: RunState['status'] }): JSX.Element {
@@ -345,7 +384,11 @@ function TaskDag({ tasks, depends, selectedId, onSelect }: {
   }));
   const layout = layoutDag(nodes);
   return (
-    <div className="card card--scroll" style={{ maxHeight: '40vh' }}>
+    // The cap is what keeps a 30-task plan from pushing the activity stream
+    // off-screen. 55vh gives ~6-7 task rows of headroom on a 1080p display
+    // before the DAG starts scrolling within its own card — past that, the
+    // activity stream below stays usable.
+    <div className="card card--scroll" style={{ maxHeight: '55vh' }}>
       <svg
         className="dag-svg"
         width={layout.width}
