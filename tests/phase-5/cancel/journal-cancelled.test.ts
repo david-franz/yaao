@@ -43,8 +43,9 @@ describe('appendCancelToJournal — Ctrl-C must flip the run status off "running
   });
 
   it('is a no-op when the journal file does not exist (e.g. signal hit before runPlan opened it)', () => {
-    project = createTmpProject();
+    const p = createTmpProject();
+    project = p;
     // Calling without ever creating the journal directory must not throw.
-    expect(() => appendCancelToJournal({ cwd: project.path, runId: 'never-started' })).not.toThrow();
+    expect(() => appendCancelToJournal({ cwd: p.path, runId: 'never-started' })).not.toThrow();
   });
 });

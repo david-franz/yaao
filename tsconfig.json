@@ -17,5 +17,13 @@
     "types": ["node"]
   },
   "include": ["src/**/*", "tests/**/*", "tsup.config.ts", "vitest.config.ts"],
-  "exclude": ["dist", "node_modules"]
+  "exclude": [
+    "dist",
+    "node_modules",
+    // The phase-13 web-side tests import .tsx + .ts directly from the
+    // browser-targeted `web/` sources. They're typechecked by the web
+    // workspace's tsconfig (jsx: react-jsx, allowImportingTsExtensions)
+    // and run at runtime by vitest's own transform pipeline.
+    "tests/phase-13/web"
+  ]
 }

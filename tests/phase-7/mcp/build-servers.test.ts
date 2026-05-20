@@ -8,6 +8,8 @@ describe('buildMcpServers', () => {
     const ctxSys: CtxSysHandle = {
       socketPath: '/tmp/ctx.sock',
       pid: 1,
+      ownsProcess: true,
+      spawned: true,
       shutdown: async () => undefined,
     };
     const out = buildMcpServers({
