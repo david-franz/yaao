@@ -451,6 +451,71 @@ hr {
   resize: none;
 }
 
+/* Code editor: transparent textarea over a highlighted <pre>. Both
+ * absolutely positioned in the same container with identical
+ * typography, padding, and overflow so the highlighted glyphs sit
+ * exactly under the caret. */
+.code-editor {
+  position: relative;
+  height: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  tab-size: 2;
+}
+.code-editor__highlight,
+.code-editor__input {
+  position: absolute;
+  inset: 0;
+  padding: var(--space-3);
+  margin: 0;
+  font: inherit;
+  line-height: inherit;
+  tab-size: inherit;
+  white-space: pre;
+  word-wrap: normal;
+  overflow: auto;
+  border: 0;
+  box-sizing: border-box;
+}
+.code-editor__highlight {
+  pointer-events: none;
+  color: var(--text);
+  background: transparent;
+}
+.code-editor__input {
+  background: transparent;
+  /* Text is invisible — the highlight pre underneath draws the glyphs.
+   * caret-color keeps the cursor visible against the highlighted bg. */
+  color: transparent;
+  caret-color: var(--text);
+  /* Selection should still be visible against the highlighted glyphs. */
+  -webkit-text-fill-color: transparent;
+  resize: none;
+  outline: none;
+}
+.code-editor__input::selection {
+  background: var(--accent-soft);
+}
+.code-editor:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* YAML token colours. Picked to pair with both light + dark themes
+ * via the existing token vars. */
+.t-com { color: var(--text-subtle); font-style: italic; }
+.t-key { color: var(--accent); }
+.t-str { color: var(--success); }
+.t-num { color: var(--warning); }
+.t-kw  { color: var(--accent); font-weight: 600; }
+.t-ref { color: var(--text-muted); }
+.t-tok { color: var(--text-muted); }
+
 /* Banners */
 .banner {
   padding: var(--space-3) var(--space-4);

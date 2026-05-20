@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, subscribe, type PutConfigResp } from '../api.ts';
 import { Link } from '../Link.tsx';
+import { CodeEditor } from '../CodeEditor.tsx';
 
 /**
  * F13.6 config editor. Two tabs over the same on-disk JSON:
@@ -156,15 +157,11 @@ export function ConfigPage(): JSX.Element {
 }
 
 function RawView({ buffer, onBufferChange }: { buffer: string; onBufferChange: (v: string) => void }): JSX.Element {
-  return (
-    <textarea
-      value={buffer}
-      onChange={(e) => onBufferChange(e.target.value)}
-      className="textarea"
-      style={{ height: '100%' }}
-      spellCheck={false}
-    />
-  );
+  // Config files are JSON; the CodeEditor falls back to plain (no
+  // tokenisation yet) but still provides the editor scaffold — focus
+  // ring, monospace, scroll behaviour. Hook a JSON highlighter in later
+  // if it earns its keep.
+  return <CodeEditor value={buffer} onChange={onBufferChange} language="json" />;
 }
 
 function FormView({ buffer, onBufferChange }: { buffer: string; onBufferChange: (v: string) => void }): JSX.Element {

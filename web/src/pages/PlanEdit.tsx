@@ -3,6 +3,7 @@ import { api, subscribe, type PutPlanResp } from '../api.ts';
 import { Link } from '../Link.tsx';
 import { navigate } from '../router.ts';
 import { layoutDag } from '../dag-layout.ts';
+import { CodeEditor } from '../CodeEditor.tsx';
 
 /**
  * F13.5 plan editor. Pragmatic v1: a textarea, not Monaco. Saving
@@ -144,13 +145,7 @@ export function PlanEdit({ slug }: { slug: string }): JSX.Element {
         <div className="banner banner--success">Saved to <code>{lastSaveResp.path ?? '(unknown)'}</code>.</div>
       ) : null}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', flex: 1, minHeight: 0 }}>
-        <textarea
-          value={buffer}
-          onChange={(e) => onChange(e.target.value)}
-          className="textarea"
-          style={{ height: '100%' }}
-          spellCheck={false}
-        />
+        <CodeEditor value={buffer} onChange={onChange} language="yaml" />
         <div className="card card--padded card--scroll">
           {preview.error ? (
             <p className="muted" style={{ color: 'var(--warning)' }}>YAML preview: {preview.error}</p>
