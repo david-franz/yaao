@@ -22,8 +22,9 @@ Recent additions worth knowing about even mid-MVP: a per-plan `plan.featureBranc
 Planned phases (in this order):
 
 - **Phase 14 — Release Polish**: `yaao doctor`, default-on `yaao init --mcp` auto-registration, a 60-second README quickstart + `examples/` directory, an error-message + hint audit, a docs accuracy pass, and gating end-to-end validation on real projects.
-- **Phase 15 — Session → Skill Distillation**: capture useful patterns from a finished chat session and crystallise them into a reusable yaao skill via a new `yaao_distill` MCP tool.
-- **Phase 16 — Distribution**: npm publish, docs site.
+- **Phase 15 — Concurrent Runs & Context Handoff**: runId entropy + branch namespacing so two `yaao run`s against different feature branches don't collide, integration tests + docs alignment for the concurrent-runs workflow, and a `context.md` enrichment pass (parent prompt, validation outcome, commit chain, diff stat) so dependent agents get the meta-context they need on handover.
+- **Phase 16 — Session → Skill Distillation**: capture useful patterns from a finished chat session and crystallise them into a reusable yaao skill via a new `yaao_distill` MCP tool.
+- **Phase 17 — Distribution**: npm publish, docs site.
 
 The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
 
@@ -130,7 +131,7 @@ ctx-sys is one example of an MCP context provider. yaao's MCP wiring is generic 
 
 ## Installation
 
-Currently no npm publish — clone and build from source (distribution lands in Phase 16):
+Currently no npm publish — clone and build from source (distribution lands in Phase 17):
 
 ```bash
 git clone <repo> yaao

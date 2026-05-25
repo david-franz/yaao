@@ -4,7 +4,7 @@ This document is the working spec for `yaao`, organized by phase. Each feature h
 
 ## Overview
 
-yaao is implemented in 16 phases, progressing from foundational CLI infrastructure through the execution engine, agent integrations, the planner/converter skills, the TUI, the MCP server, the web viewer, release polish, session-to-skill distillation, and finally npm distribution + the docs site.
+yaao is implemented in 17 phases, progressing from foundational CLI infrastructure through the execution engine, agent integrations, the planner/converter skills, the TUI, the MCP server, the web viewer, release polish, concurrent-run hardening + context-handoff enrichment, session-to-skill distillation, and finally npm distribution + the docs site.
 
 > **Architectural keystone — MCP-first agent compatibility.** The integration story across Claude Code, Cursor, Copilot, Codex, and raw API models is built around yaao itself being an MCP server. Per-agent files are *thin* — each agent only needs to register yaao's MCP server. Skills, tool definitions, and prompts live behind the MCP boundary, not duplicated four ways. This means **Phase 12 (yaao-as-MCP) is foundational, not auxiliary**, and is intended to be implemented in parallel with Phase 8 (skills system). Phase 8's emitters write MCP-config bootstraps, not large skill artifacts. See the Implementation Priority section.
 
@@ -24,8 +24,9 @@ yaao is implemented in 16 phases, progressing from foundational CLI infrastructu
 | 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Shipped |
 | 13 | Web viewer | HTTP+SSE server, DAG view, live run view, workspace, plan + config editors | Shipped |
 | 14 | Release polish              | `yaao doctor` (incl. orphan-run detection), `yaao init --mcp`, quickstart + examples, help-text + error audit, README truth-up | Planned |
-| 15 | Session → Skill distillation | `yaao-distiller` skill, session readers, `yaao_distill` MCP tool, refinement | Planned |
-| 16 | Distribution                | npm publish, docs site | Planned |
+| 15 | Concurrent runs & context handoff | runId entropy, branch namespacing, concurrency-model docs + tests, `context.md` enrichment (prompt, validation, commits, diff) | Planned |
+| 16 | Session → Skill distillation | `yaao-distiller` skill, session readers, `yaao_distill` MCP tool, refinement | Planned |
+| 17 | Distribution                | npm publish, docs site | Planned |
 
 ---
 
@@ -280,7 +281,7 @@ Expose yaao itself as an MCP server. **This is the canonical way every agent —
 - `yaao_plan` mirrors `yaao plan`; returns the plan body plus the path written.
 - `yaao_convert` mirrors `yaao convert`; returns YAML and validates.
 - `yaao_run` starts a run asynchronously; `yaao_status` reports live state. Long-running progress flows via MCP progress notifications.
-- Every user-defined skill in `.yaao/skills/` is auto-registered as `yaao_skill_<name>` with input schema derived from `skill.yaml` (F12.5). A debounced FS watcher keeps the catalog in sync mid-session: adding or removing a skill directory triggers register/remove + `tools/list_changed` within ~250 ms, no reconnect needed (F12.6). This is what makes the Phase 15 distiller's "callable in the next turn" UX work.
+- Every user-defined skill in `.yaao/skills/` is auto-registered as `yaao_skill_<name>` with input schema derived from `skill.yaml` (F12.5). A debounced FS watcher keeps the catalog in sync mid-session: adding or removing a skill directory triggers register/remove + `tools/list_changed` within ~250 ms, no reconnect needed (F12.6). This is what makes the Phase 16 distiller's "callable in the next turn" UX work.
 
 ---
 
@@ -311,7 +312,7 @@ The browser surface for everything that isn't actually starting a run. Run launc
 
 ## Phase 14: Release Polish
 
-The work that turns yaao from feature-complete into v1-shippable. Closes the first-use gaps (auto-MCP registration on `yaao init`, an environment-audit `yaao doctor`, a 60-second quickstart), audits error messages + their hints, and trues up the README to what the engine actually does. Sequenced ahead of distillation (Phase 15) and distribution (Phase 16) so polish lands before either of those branches off. See [phase-14/PHASE-14.md](phase-14/PHASE-14.md) for the phase overview.
+The work that turns yaao from feature-complete into v1-shippable. Closes the first-use gaps (auto-MCP registration on `yaao init`, an environment-audit `yaao doctor`, a 60-second quickstart), audits error messages + their hints, and trues up the README to what the engine actually does. Sequenced ahead of concurrent-run hardening (Phase 15), distillation (Phase 16) and distribution (Phase 17) so polish lands before any of those branches off. See [phase-14/PHASE-14.md](phase-14/PHASE-14.md) for the phase overview.
 
 | Feature | Description | Doc |
 | --- | --- | --- |
@@ -332,37 +333,57 @@ The work that turns yaao from feature-complete into v1-shippable. Closes the fir
 
 ---
 
-## Phase 15: Session → Skill Distillation
+## Phase 15: Concurrent Runs & Context Handoff
 
-Close the missing half of the skill lifecycle: capture the patterns from a finished chat session — conventions, focus files, user corrections, the approach that actually worked — and crystallize them into a reusable yaao skill that immediately becomes available across every connected agent via the existing F8.1 format, F12.5 auto-MCP-registration, and F12.6 hot reload. See [phase-15/PHASE-15.md](phase-15/PHASE-15.md) for the phase overview.
+Two findings from the v1 pre-flight review motivate this phase. First, concurrent runs against distinct feature branches are *almost* supported by the engine (worktree paths isolate by runId; merges use git plumbing + atomic ref CAS) but two naming choices block the workflow: runIds use millisecond resolution and the default task branch is `${plan.name}/${task.id}` with no featureBranch namespace. Second, the parent→child context handoff is correct but lossy — dependents receive an 80-line stdout tail and a file list, but not the parent's task prompt, not the validation outcome, and only `--numstat` totals instead of a per-file diff shape. This phase ships both. See [phase-15/PHASE-15.md](phase-15/PHASE-15.md) for the phase overview.
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F15.1** | `yaao-distiller` built-in skill | [F15.1-distiller-skill.md](phase-15/F15.1-distiller-skill.md) |
-| **F15.2** | In-session capture (`SessionRecord` contract, redaction) | [F15.2-session-readers.md](phase-15/F15.2-session-readers.md) |
-| **F15.3** | Skill emission, validation, post-emit install | [F15.3-skill-emission.md](phase-15/F15.3-skill-emission.md) |
-| **F15.4** | `yaao_distill` MCP tool (sole entry point) | [F15.4-distill-mcp-tool.md](phase-15/F15.4-distill-mcp-tool.md) |
-| **F15.5** | Skill refinement (re-distill, diff review) | [F15.5-skill-refinement.md](phase-15/F15.5-skill-refinement.md) |
+| **F15.1** | Concurrent-run isolation hardening (runId entropy + branch namespacing) | [F15.1-concurrent-run-isolation.md](phase-15/F15.1-concurrent-run-isolation.md) |
+| **F15.2** | Concurrency model — docs alignment + integration tests | [F15.2-concurrency-model.md](phase-15/F15.2-concurrency-model.md) |
+| **F15.3** | Context handoff enrichment (parent prompt, validation, commits, diff) | [F15.3-context-handoff.md](phase-15/F15.3-context-handoff.md) |
+
+**Key Deliverables:**
+
+- **runId entropy.** `run-${Date.now().toString(36)}-${nanoid(6)}` replaces the millisecond-only id everywhere (`src/cli/commands/run.ts`, `src/mcp/tools.ts`). Two MCP-driven `yaao_run` calls in the same tick get distinct ids. Forward-only — `--resume <oldRunId>` keeps working.
+- **Default branch namespacing.** Task default branch becomes `${featureBranch}/${task.id}` when `plan.featureBranch` is set; falls back to the historical `${plan.name}/${task.id}` otherwise. Two concurrent runs of the same plan against distinct feature branches now have disjoint task-branch namespaces by construction.
+- **Concurrency model documented + tested.** Removes the `.yaao/.lock` claim from Phase 12 docs (no such lock exists in `src/`, and we deliberately don't add it — concurrent runs are what we want). README gets a "Concurrent runs" section. Integration tests under `tests/phase-15/concurrent-runs/` prove two runs against distinct feature branches finish independently and don't trample the root checkout.
+- **Context handoff enrichment.** `context.md` gains four bounded sections (toggleable via `config.context.include: […]`): the parent's resolved task prompt (first 30 lines), the validation outcome when present (command, exitCode, durationMs, decisionReason, mustPass), the full commit chain (`git log baseCommit..HEAD --format=- %h %s`), and a per-file `git diff --stat` (~30-line cap). All sit inside the existing per-dep token budget so the budgeting logic is unchanged.
+- **F15.1 ships first.** Pure naming change, unblocks F15.2's integration tests. F15.2 follows. F15.3 is orthogonal and can land in parallel.
+
+---
+
+## Phase 16: Session → Skill Distillation
+
+Close the missing half of the skill lifecycle: capture the patterns from a finished chat session — conventions, focus files, user corrections, the approach that actually worked — and crystallize them into a reusable yaao skill that immediately becomes available across every connected agent via the existing F8.1 format, F12.5 auto-MCP-registration, and F12.6 hot reload. See [phase-16/PHASE-16.md](phase-16/PHASE-16.md) for the phase overview.
+
+| Feature | Description | Doc |
+| --- | --- | --- |
+| **F16.1** | `yaao-distiller` built-in skill | [F16.1-distiller-skill.md](phase-16/F16.1-distiller-skill.md) |
+| **F16.2** | In-session capture (`SessionRecord` contract, redaction) | [F16.2-session-readers.md](phase-16/F16.2-session-readers.md) |
+| **F16.3** | Skill emission, validation, post-emit install | [F16.3-skill-emission.md](phase-16/F16.3-skill-emission.md) |
+| **F16.4** | `yaao_distill` MCP tool (sole entry point) | [F16.4-distill-mcp-tool.md](phase-16/F16.4-distill-mcp-tool.md) |
+| **F16.5** | Skill refinement (re-distill, diff review) | [F16.5-skill-refinement.md](phase-16/F16.5-skill-refinement.md) |
 
 **Key Deliverables:**
 
 - `yaao-distiller` joins `yaao-planner` and `yaao-converter` as a third built-in skill under `src/skills/builtin/`. Its prompt is the whole product: a three-stage pipeline (identify the generalizable task → split signal from instance → emit a draft `skill.yaml` + `prompt.md`) with explicit anti-leakage rules.
-- **MCP is the only entry point.** Unlike every other yaao command, Phase 15 has no shell-CLI surface — distillation is inherently in-context, and the agent producing the `SessionRecord` is by definition the agent calling the tool. The calling agent supplies its own structured self-summary as the `session` argument; yaao never reads IDE-internal transcript stores. Works across every supported agent (Claude Code, Cursor, Copilot, Codex, raw API).
+- **MCP is the only entry point.** Unlike every other yaao command, Phase 16 has no shell-CLI surface — distillation is inherently in-context, and the agent producing the `SessionRecord` is by definition the agent calling the tool. The calling agent supplies its own structured self-summary as the `session` argument; yaao never reads IDE-internal transcript stores. Works across every supported agent (Claude Code, Cursor, Copilot, Codex, raw API).
 - `yaao_distill` writes to `.yaao/skills/<name>/` (project) or `~/.yaao/skills/<name>/` (user) and reuses `validateSkill` from F8.1. After write, `yaao skills install` re-emits per-agent stubs automatically. F12.6's hot reload picks up the new directory and the SDK fires `tools/list_changed` — so a skill distilled from a Claude Code session is callable from Cursor, Copilot, Codex, and the raw API in the next turn, with no reconnect.
-- **F15.1, F15.2, and F15.3 land together** as one PR — the distiller prompt, the `SessionRecord` contract it consumes, and the emission pipeline it produces output for are deeply coupled and can't be sensibly built in isolation. F15.4 (MCP driver) and F15.5 (refinement) layer on top once those three are working end-to-end.
-- Refinement (F15.5): re-run the distiller against an existing skill with a fresh session. The distiller merges (preserving anti-patterns and distillation notes); yaao returns a diff + changelog in the MCP response so the calling agent can show the user before committing (or call with `apply: false` for explicit preview). Contradictions between old and new conventions block auto-apply, detected via a **structural rule** over backtick-quoted identifiers shared between bullets (LLM-driven semantic conflict detection is a v2 candidate). **Versioning is git's job** — yaao does not touch the `version` field on refinement and keeps no parallel backup directory. `.yaao/skills/` is repo-tracked, so `git log -p` is the audit trail. A pre-refine `YAAO_SKILL_DIRTY` check surfaces uncommitted changes to the calling agent, which is expected to confirm with the user before re-calling with `force: true`.
+- **F16.1, F16.2, and F16.3 land together** as one PR — the distiller prompt, the `SessionRecord` contract it consumes, and the emission pipeline it produces output for are deeply coupled and can't be sensibly built in isolation. F16.4 (MCP driver) and F16.5 (refinement) layer on top once those three are working end-to-end.
+- Refinement (F16.5): re-run the distiller against an existing skill with a fresh session. The distiller merges (preserving anti-patterns and distillation notes); yaao returns a diff + changelog in the MCP response so the calling agent can show the user before committing (or call with `apply: false` for explicit preview). Contradictions between old and new conventions block auto-apply, detected via a **structural rule** over backtick-quoted identifiers shared between bullets (LLM-driven semantic conflict detection is a v2 candidate). **Versioning is git's job** — yaao does not touch the `version` field on refinement and keeps no parallel backup directory. `.yaao/skills/` is repo-tracked, so `git log -p` is the audit trail. A pre-refine `YAAO_SKILL_DIRTY` check surfaces uncommitted changes to the calling agent, which is expected to confirm with the user before re-calling with `force: true`.
 - Recovery from a bad distillation: `rm -rf .yaao/skills/<name>` + `yaao skills install`. F12.6's watcher drops the stale `yaao_skill_<name>` tool in the same session. `yaao_prune` does not currently cover skills; a `target: skill` extension is a possible follow-up.
 
 ---
 
-## Phase 16: Distribution
+## Phase 17: Distribution
 
 Publish yaao on npm and stand up a docs site. Sequenced last so the docs site can be built against a frozen v1 surface rather than chasing in-flight phases.
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F16.1** | npm distribution | [F16.1-npm-publish.md](phase-16/F16.1-npm-publish.md) |
-| **F16.2** | Docs site | [F16.2-docs-site.md](phase-16/F16.2-docs-site.md) |
+| **F17.1** | npm distribution | [F17.1-npm-publish.md](phase-17/F17.1-npm-publish.md) |
+| **F17.2** | Docs site | [F17.2-docs-site.md](phase-17/F17.2-docs-site.md) |
 
 **Key Deliverables:**
 
@@ -428,13 +449,13 @@ yaao/
 │   ├── mcp/                      # F12 — yaao-as-MCP server
 │   ├── web/                      # F13 — HTTP+SSE server, plan/config editors
 │   ├── doctor/                   # F14.1
-│   └── distill/                  # F15 — session → skill distillation
+│   └── distill/                  # F16 — session → skill distillation
 ├── tests/
 │   ├── helpers/
-│   ├── phase-1/ ... phase-16/
+│   ├── phase-1/ ... phase-17/
 ├── docs/
 │   ├── IMPLEMENTATION.md
-│   ├── phase-1/ ... phase-16/
+│   ├── phase-1/ ... phase-17/
 ├── package.json
 ├── tsconfig.json
 ├── tsup.config.ts
@@ -482,7 +503,7 @@ yaao/
 4. Phase 7 (ctx-sys) is fully optional and independent; can land any time after Phase 5. Default-off in shipped config.
 5. Phases 9-10 (planner/converter skills) build on the MCP-tool path established in 8 + 12.
 6. Phase 11 (TUI) can be developed alongside 5/6 since it just consumes the event bus.
-7. Phase 13 (web viewer) ships independently of the engine. Phase 14 (release polish) is the gating step before tagging v1; Phase 15 (distillation) and Phase 16 (npm + docs site) follow.
+7. Phase 13 (web viewer) ships independently of the engine. Phase 14 (release polish) is the gating step before tagging v1. Phase 15 (concurrent runs + context handoff) lands next — it unlocks the two-feature-branches-side-by-side workflow the worktree model was shaped for. Phase 16 (distillation) and Phase 17 (npm + docs site) follow.
 
 ---
 
