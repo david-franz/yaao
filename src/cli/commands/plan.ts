@@ -30,7 +30,9 @@ export const planCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('plan')
-      .description('Generate an implementation plan')
+      .description(
+        "Generate an implementation plan via the yaao-planner skill. Output lands in `plan.out-dir` (default .yaao/plans). --scope feature emits a single plan; --scope project emits a multi-phase plan across directories. The planner respects agents.X.enabled — disabled backends are never suggested.",
+      )
       .argument('<description>', 'what to plan')
       .option('--scope <scope>', 'feature | project (auto-detected by default)')
       .option('--format <format>', 'markdown | speckit | both')

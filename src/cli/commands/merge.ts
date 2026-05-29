@@ -21,7 +21,9 @@ export const mergeCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('merge')
-      .description('Merge completed task branches')
+      .description(
+        "Land a finished run's completed task branches onto a target (default: the plan's base-branch). Topologically ordered to minimise conflicts; auto / agent / manual conflict modes per the plan's merge config.",
+      )
       .argument('[run-id]', 'run id (defaults to most recent finished run)')
       .option('--target <branch>', 'override base branch')
       .option('--mode <mode>', 'on-conflict mode: auto | manual | agent')

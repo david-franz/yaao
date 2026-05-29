@@ -20,7 +20,7 @@ export const convertCommand: CommandModule = {
     program
       .command('convert')
       .description(
-        'Convert an implementation plan (or a directory of plans, recursively) into execution YAML',
+        "Convert an implementation plan (or a directory of plans, recursively) into execution YAML. --from auto picks markdown vs speckit per-plan from the file shape (single .md → markdown; spec.md+plan.md+tasks.md → speckit). Output lands in `plan.exec-dir` (default .yaao/exec) unless --out is passed.",
       )
       .argument(
         '[plan]',

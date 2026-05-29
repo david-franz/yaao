@@ -22,7 +22,9 @@ export const cleanCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('clean')
-      .description('Tear down worktrees and branches')
+      .description(
+        "Tear down worktrees and (optionally) task branches for a finished run. Refuses to clean unmerged work without --force; safer programmatic alternative is the `yaao_prune` MCP tool with dry-run preview.",
+      )
       .argument('[run-id]', 'run id; omit with --all to clean every finished run')
       .option('--all', 'clean every finished run')
       .option('--worktrees-only', 'only remove worktrees (leave branches)')

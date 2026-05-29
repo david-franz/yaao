@@ -34,7 +34,9 @@ export const validateCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('validate')
-      .description('Validate an execution plan')
+      .description(
+        "Validate an execution plan against the schema + DAG checks. Surfaces every error and warning with file/line locations; --strict promotes warnings to errors (suitable for CI). Walks a directory recursively, validating every .yaml/.yml plan it finds.",
+      )
       .argument('<exec-plan>', 'plan file (or directory of *.yaml plans)')
       .option('--strict', 'promote warnings to errors')
       .option('--no-resolve', 'skip default-resolution against yaao.config.json')

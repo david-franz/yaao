@@ -21,7 +21,9 @@ export const stopCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('stop')
-      .description('Stop a running yaao run by sending SIGTERM to its runner process')
+      .description(
+        "Stop a running yaao run by sending SIGTERM to its runner. The runner stamps `run:end status=cancelled` in the journal before exit, and in-flight task branches are preserved (resume with `yaao run --resume <run-id>`). With no argument, the most recent run with status=running is targeted.",
+      )
       .argument('[run-id]', 'run id to stop (defaults to the most recent running run)')
       .action(async (runIdArg: string | undefined) => {
         const cwd = resolve(ctx.cwd);

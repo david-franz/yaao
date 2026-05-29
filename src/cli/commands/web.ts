@@ -17,7 +17,9 @@ export const webCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('web')
-      .description('Start the yaao web viewer on a local port')
+      .description(
+        "Start the local HTTP+SSE web viewer (default 127.0.0.1:8787) — DAG, live run activity stream, workspace cleanup, plan/config editors. Loopback binds need no auth; non-loopback binds require `--token <hex>`.",
+      )
       .option('--host <host>', 'bind host (non-loopback requires --token)', '127.0.0.1')
       .option('--port <n>', 'bind port (0 = kernel-assigned)', '0')
       .option('--token <t>', 'bearer token required for /api/* requests on non-loopback binds')

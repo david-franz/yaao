@@ -47,7 +47,9 @@ export const runCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('run')
-      .description('Execute a plan across worktrees')
+      .description(
+        "Execute an execution plan across per-task git worktrees. Pre-flight validates the plan (refuses on YAAO_PLAN_AGENT_DISABLED unless --allow-disabled-agents). Streams progress + agent activity to stderr. Use --resume <run-id> to pick up after a failure; find prior runIds via `yaao status`.",
+      )
       .argument('<exec-plan>', 'plan file (YAML)')
       .option('--max-parallel <n>', 'override plan.config.max-parallel')
       .option('--base-branch <name>', 'override plan.config.base-branch')

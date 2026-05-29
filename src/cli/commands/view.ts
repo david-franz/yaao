@@ -18,7 +18,9 @@ export const viewCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('view')
-      .description('Render an execution plan as a text DAG')
+      .description(
+        "Static one-shot render of an execution plan's DAG + per-task config. For live monitoring of an in-flight run use `yaao status --watch` or open `yaao web`.",
+      )
       .argument('<exec-plan>', 'execution plan (YAML)')
       .option('--ascii', 'use ASCII status icons instead of Unicode')
       .option('--width <n>', 'max display width', '100')

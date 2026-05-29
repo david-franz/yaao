@@ -19,7 +19,9 @@ export const statusCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('status')
-      .description('Inspect a finished or in-flight run')
+      .description(
+        "Inspect a finished or in-flight run. Prints the task table + per-task agent/branch/duration/status; --watch tails the journal until the run finishes, surfacing live state transitions. With no run-id, the most recent run is targeted.",
+      )
       .argument('[run-id]', 'run id (defaults to the most recent)')
       .option('--watch', 'tail the journal until the run finishes')
       .option('--task <id>', "focus on a single task's output log")

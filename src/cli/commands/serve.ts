@@ -14,7 +14,9 @@ export const serveCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('serve')
-      .description('Start the yaao MCP server (default transport: stdio)')
+      .description(
+        "Start the yaao MCP server (stdio transport). Spawned by MCP-aware editors (Claude Code, Cursor, Codex) via their MCP config registered by `yaao init` — not normally invoked by humans. Use `yaao web` for browser-based inspection.",
+      )
       .option('--stdio', 'use stdio transport (default)', true)
       .action(async (_flags: ServeFlags) => {
         // We deliberately don't write a log line to stdout — that's the MCP protocol

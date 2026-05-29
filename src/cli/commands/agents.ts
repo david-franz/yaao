@@ -18,7 +18,9 @@ export const agentsCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('agents')
-      .description('List detected agent backends and their availability')
+      .description(
+        "List detected agent backends and their availability. Subsumed by `yaao doctor` (Phase 15) for the env audit; this command stays as a thin alias scripts can rely on. Use `--models` to see the known-models catalog per backend.",
+      )
       .option('--strict', 'exit non-zero if any enabled agent is unavailable')
       .option(
         '--models',

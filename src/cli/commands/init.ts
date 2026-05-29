@@ -27,7 +27,9 @@ export const initCommand: CommandModule = {
   register(program: Command, ctx: CliContext) {
     program
       .command('init')
-      .description('Initialize a yaao project')
+      .description(
+        "Initialize a yaao project — scaffolds .yaao/ (config, secrets template, plans/, exec/), updates .gitignore, detects the repo's default branch into defaults.base-branch, and (default-on) registers yaao's MCP server in .mcp.json so Claude Code / Cursor / etc. see yaao tools immediately",
+      )
       .option('--force', 'overwrite existing files in .yaao/')
       .option('--minimal', 'skip .yaaoignore and .gitignore changes')
       .option('--no-probe', 'skip the agent-CLI availability probe; write everything as enabled')

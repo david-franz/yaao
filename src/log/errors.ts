@@ -42,6 +42,12 @@ export const DEFAULT_HINTS: Record<string, string> = {
     'Enable at least one agent in yaao.config.json (set agents.<name>.enabled = true) or configure agents.api.providers with a resolvable API key.',
   YAAO_BASE_BRANCH_MISSING:
     "The plan's base-branch doesn't exist in this repo. Run `git branch` to see available branches, set defaults.base-branch in yaao.config.json, or pass --base-branch <name>.",
+  YAAO_AGENT_UNAVAILABLE:
+    "Run `yaao doctor` to see why the agent's CLI / API key isn't resolving, or set agents.<name>.bin in yaao.config.json to point at the binary.",
+  YAAO_PLAN_API_NO_KEY:
+    "Set the provider's API key in `.yaao/secrets.local.json` under agents.api.providers.<provider>.api-key as ${ENV_VAR}, or export the env var in your shell.",
+  YAAO_FEATURE_BRANCH_CREATE:
+    "Make sure the base-branch exists locally (yaao doctor surfaces this) and the feature-branch name is valid, or create the feature-branch yourself before re-running.",
 };
 
 export class NotInitializedError extends YaaoError {
