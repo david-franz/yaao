@@ -23,6 +23,7 @@ import { isAgentEnabled } from '../../config/enabled-agents.js';
 import type { ResolvedPlan } from '../../plan/schema/types.js';
 import { validatePlan, type ValidationIssue } from '../../plan/validate/index.js';
 import { AgentDisabledError } from '../../log/errors.js';
+import { resolveCtxSysInjection } from '../../ctx-sys/inject.js';
 
 interface RunFlags {
   maxParallel?: string;
@@ -39,6 +40,8 @@ interface RunFlags {
   commitPlan?: boolean;
   noMerge?: boolean;
   allowDisabledAgents?: boolean;
+  /** commander sets this to `false` when `--no-ctx-sys` is passed. */
+  ctxSys?: boolean;
 }
 
 export const runCommand: CommandModule = {
@@ -82,6 +85,10 @@ export const runCommand: CommandModule = {
       .option(
         '--allow-disabled-agents',
         "downgrade YAAO_PLAN_AGENT_DISABLED to a warning so a plan referencing a disabled agent still runs (the backend-dispatch guard still refuses to spawn — this flag affects the pre-flight validation gate only)",
+      )
+      .option(
+        '--no-ctx-sys',
+        'skip ctx-sys context injection for this run, even when ctx-sys.enabled in config',
       )
       .action(async (planPath: string, flags: RunFlags) => {
         if (flags.only && flags.skip) {
@@ -190,6 +197,21 @@ export const runCommand: CommandModule = {
         // (commander negates the boolean) — read both shapes defensively.
         const flagsAny = flags as RunFlags & { merge?: boolean };
         if (flags.noMerge === true || flagsAny.merge === false) opts.noMerge = true;
+
+        // ctx-sys context injection (Phase 7). When enabled in config (and not
+        // disabled for this run via --no-ctx-sys), give every agent its own
+        // `ctx-sys serve --project <root>` MCP server + the context_query
+        // directive. Warn-and-degrade: a missing binary or unindexed project
+        // logs a warning and the run proceeds without codebase context.
+        // User-declared mcp-servers flow regardless of ctx-sys.
+        const ctxInject = await resolveCtxSysInjection({
+          cwd,
+          config: ctx.config,
+          disabledForRun: flags.ctxSys === false,
+        });
+        if (ctxInject.warning) ctx.logger.warn(ctxInject.warning);
+        if (ctxInject.mcpServers.length > 0) opts.mcpServers = ctxInject.mcpServers;
+        if (ctxInject.directive !== undefined) opts.ctxSysDirective = ctxInject.directive;
         // No-TUI mode and JSON mode both suppress the live reporter: JSON wants a
         // single structured line on stdout, --no-tui leaves journal tailing to the
         // user. Otherwise stream progress to stderr.
