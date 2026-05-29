@@ -1,6 +1,7 @@
 import { SubprocessBackend, type LineParser } from './subprocess.js';
-import type { AgentEvent, SpawnOptions } from './backend.js';
+import type { AgentEvent, AgentProcess, SpawnOptions } from './backend.js';
 import { nowIso } from './backend.js';
+import { writeCodexOverlay, type OverlayHandle } from './mcp-overlay.js';
 
 export interface CodexBackendOptions {
   bin?: string;
@@ -65,4 +66,25 @@ export class CodexBackend extends SubprocessBackend {
       promptOnStdin: true,
     });
   }
+
+  override async spawn(spawnOpts: SpawnOptions): Promise<AgentProcess> {
+    // F14.2: write a per-spawn TOML overlay at .yaao/codex-mcp-overlay.toml
+    // inside the worktree so Codex can see per-run MCP servers. Codex's CLI
+    // does not currently accept a config-file flag (F14.7's reality check
+    // will pin down the actual mechanism), but the overlay is a stable,
+    // visible deliverable in the worktree even if the CLI doesn't read it
+    // yet — see F14.2 doc for the rationale.
+    const overlay = writeCodexOverlay({
+      cwd: spawnOpts.cwd,
+      mcpServers: spawnOpts.mcpServers ?? [],
+    });
+    return withOverlayCleanup(await super.spawn(spawnOpts), overlay);
+  }
+}
+
+function withOverlayCleanup(proc: AgentProcess, overlay: OverlayHandle | undefined): AgentProcess {
+  if (!overlay) return proc;
+  const cleanup = (): void => overlay.restore();
+  proc.completed.then(cleanup, cleanup);
+  return proc;
 }

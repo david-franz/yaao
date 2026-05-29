@@ -1,6 +1,7 @@
 import { execa } from 'execa';
 import { SubprocessBackend } from './subprocess.js';
-import type { AvailabilityReport, SpawnOptions } from './backend.js';
+import type { AgentProcess, AvailabilityReport, SpawnOptions } from './backend.js';
+import { writeCopilotOverlay, type OverlayHandle } from './mcp-overlay.js';
 
 export interface CopilotBackendOptions {
   bin?: string;
@@ -24,6 +25,16 @@ export class CopilotBackend extends SubprocessBackend {
       buildArgs: (o) => buildCopilotArgs(o),
       promptOnStdin: true,
     });
+  }
+
+  override async spawn(spawnOpts: SpawnOptions): Promise<AgentProcess> {
+    // F14.2: write a per-spawn .vscode/mcp.json so per-run MCP servers reach
+    // Copilot. Same backup-restore shape as Cursor.
+    const overlay = writeCopilotOverlay({
+      cwd: spawnOpts.cwd,
+      mcpServers: spawnOpts.mcpServers ?? [],
+    });
+    return withOverlayCleanup(await super.spawn(spawnOpts), overlay);
   }
 
   override async isAvailable(): Promise<AvailabilityReport> {
@@ -50,4 +61,11 @@ export class CopilotBackend extends SubprocessBackend {
       return { available: false, reason: (err as Error).message };
     }
   }
+}
+
+function withOverlayCleanup(proc: AgentProcess, overlay: OverlayHandle | undefined): AgentProcess {
+  if (!overlay) return proc;
+  const cleanup = (): void => overlay.restore();
+  proc.completed.then(cleanup, cleanup);
+  return proc;
 }
