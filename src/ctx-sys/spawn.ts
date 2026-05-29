@@ -105,13 +105,17 @@ export async function spawnCtxSys(opts: SpawnCtxSysOptions): Promise<CtxSysHandl
     }
   };
 
-  child.stdout?.on('data', (chunk: Buffer | string) => {
+  // ctx-sys emits its readiness marker (`ctx-sys: ready`, see ctx-sys
+  // serve.ts READY_MARKER) on STDERR once the socket listener is bound — stdout
+  // is reserved for the MCP/JSON-RPC stream. We watch both streams so the
+  // handshake doesn't depend on which one the marker lands on across ctx-sys
+  // versions; either matching the regex resolves the ready promise.
+  const onChunk = (chunk: Buffer | string): void => {
     const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
     if (/ready|listening/i.test(text)) ackReady();
-  });
-  child.stderr?.on('data', () => {
-    /* drained */
-  });
+  };
+  child.stderr?.on('data', onChunk);
+  child.stdout?.on('data', onChunk);
 
   const timer = setTimeout(() => {
     if (!resolved) {

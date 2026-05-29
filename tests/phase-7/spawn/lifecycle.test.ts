@@ -8,14 +8,16 @@ describe('spawnCtxSys: handshake lifecycle', () => {
   let project: ReturnType<typeof createTmpProject> | undefined;
   afterEach(() => project?.cleanup());
 
-  it('resolves when the fake child prints "ready" and writes to the canonical socket path', async () => {
+  it('resolves on the ready marker emitted on stderr (ctx-sys contract) and writes to the canonical socket path', async () => {
     project = createTmpProject();
     mkdirSync(join(project.path, 'bin'), { recursive: true });
     const fakeBin = join(project.path, 'bin', 'ctx-sys');
+    // Mirror the real ctx-sys contract: the readiness marker lands on stderr,
+    // not stdout (stdout carries the MCP/JSON-RPC stream).
     writeFileSync(
       fakeBin,
       `#!/usr/bin/env node
-process.stdout.write('listening on socket\\n');
+process.stderr.write('ctx-sys: ready\\n');
 setInterval(() => {}, 1000);
 `,
     );
