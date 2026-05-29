@@ -146,28 +146,31 @@ Requires Node ≥ 20, `bash` (used for `validation` / `setup` commands with `set
 
 ---
 
-## Quick start
+## Quickstart
+
+Five lines on a fresh checkout:
 
 ```bash
-# 1. Initialize
-yaao init
-# creates .yaao/yaao.config.json and .yaaoignore
-
-# 2. Generate an implementation plan for a new feature
-yaao plan "Add OAuth2 login with Google and GitHub" --format markdown
-
-# 3. Convert it to an execution plan
-yaao convert .yaao/plans/oauth.md
-
-# 4. Inspect the DAG before running
-yaao view .yaao/exec/oauth.yaml
-
-# 5. Run it
-yaao run .yaao/exec/oauth.yaml
-
-# 6. Resume if anything failed (same runId)
-yaao run --resume <run-id>
+npm i -g yaao
+cd my-project
+yaao init                                  # writes .yaao/ + registers yaao's MCP server in .mcp.json
+yaao doctor                                # confirm Node + git + agent CLIs + API keys all resolve
+yaao plan "add a /healthz endpoint"        # uses your default agent
+yaao convert .yaao/plans/healthz.md        # → .yaao/exec/healthz.yaml
+yaao run .yaao/exec/healthz.yaml           # parallel worktrees, auto-merge
 ```
+
+That's the whole flow. `yaao web` in another terminal opens a browser view of the live run. `yaao run --resume <run-id>` picks up after a failed task.
+
+### Examples
+
+Three runnable execution plans live under [`examples/`](examples/):
+
+- [`examples/typescript-monorepo/healthz-endpoint.yaml`](examples/typescript-monorepo/healthz-endpoint.yaml) — 3-task fan-out under a `scaffold` parent, demonstrating per-task `validation.cwd` for monorepo workspaces.
+- [`examples/python-flask/add-jwt-auth.yaml`](examples/python-flask/add-jwt-auth.yaml) — 4-task chain ending in a `merge: pr` step, mixing `claude-code` and `api` backends.
+- [`examples/c-kernel/serial-driver.yaml`](examples/c-kernel/serial-driver.yaml) — hardware-adjacent multi-stage build with `setup:` commands and `merge: manual` so kernel work routes through a review queue rather than auto-merging.
+
+Each example passes `yaao validate` cleanly; adapt the file paths and validation commands to your repo and run with `yaao run examples/<dir>/<file>.yaml`.
 
 ---
 

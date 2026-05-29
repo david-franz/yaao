@@ -1,0 +1,80 @@
+# F15.3 example — Python Flask service: add JWT auth.
+#
+# Demonstrates:
+#   - 4-task plan with a clear dependency chain
+#   - merge: pr — opens a PR for the headline task rather than auto-
+#     merging into base-branch
+#   - validation.cwd defaulting to the worktree root (single-package
+#     project; no monorepo prefix)
+#   - mixed CLI + api backends
+
+plan:
+  name: add-jwt-auth
+  version: 1
+  description: Add JWT-based auth to a Flask service.
+  featureBranch: feat/jwt-auth
+
+config:
+  max-parallel: 2
+  merge:
+    history: rebase
+
+tasks:
+  - id: deps
+    title: Add PyJWT to requirements
+    agent: claude-code
+    prompt: |
+      Append PyJWT~=2.8 to requirements.txt and re-pin requirements.lock
+      via `pip-compile`. Don't modify any application code in this task.
+    files:
+      - requirements.txt
+      - requirements.lock
+    validation:
+      command: pip install -r requirements.txt && python -c "import jwt; print(jwt.__version__)"
+      must-pass: true
+
+  - id: middleware
+    title: Implement JWT middleware
+    depends: [deps]
+    agent: claude-code
+    model: opus
+    prompt: |
+      Add app/auth/middleware.py with two helpers:
+        - encode_token(user_id: str, expires_in: int) -> str
+        - verify_token(token: str) -> dict (raises 401 on bad/missing token)
+      Read JWT_SECRET from env; default to a clearly-marked dev fallback in
+      DEBUG mode only.
+    files:
+      - app/auth/middleware.py
+    validation:
+      command: pytest tests/auth/ -q
+      must-pass: true
+
+  - id: routes
+    title: Protect /api/me with the middleware
+    depends: [middleware]
+    agent: claude-code
+    prompt: |
+      Wire verify_token into the /api/me route. Return 401 with a clear
+      WWW-Authenticate header when the token is missing or invalid.
+    validation:
+      command: pytest tests/api/ -q
+      must-pass: true
+
+  - id: integration
+    title: Add end-to-end auth tests + open PR
+    depends: [routes]
+    agent: api
+    api:
+      provider: anthropic
+      model: claude-haiku-4-5-20251001
+    prompt: |
+      Add tests/integration/auth_flow.py covering the happy path (login →
+      receive token → call /api/me) and three failure modes (missing token,
+      expired token, tampered signature). Use the existing httpx-based
+      fixture in tests/conftest.py.
+    merge:
+      strategy: pr
+    validation:
+      command: pytest tests/integration/auth_flow.py -q
+      must-pass: true

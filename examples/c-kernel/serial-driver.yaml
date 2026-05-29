@@ -1,0 +1,74 @@
+# F15.3 example — C kernel: add a serial-port driver.
+#
+# Demonstrates:
+#   - Hardware-adjacent multi-stage build with `setup:` for cross-tools
+#   - validation under `bash -e -o pipefail` so `make && nm out | grep symbol`
+#     surfaces a make failure rather than masking it as a grep miss
+#   - merge: manual — kernel changes route to a review queue, not auto-
+#     merged into base-branch
+#
+# Assumes the repo is set up like a typical UNIX-y kernel project with
+# a Makefile that builds an ELF and a serial test fixture under
+# tests/serial/.
+
+plan:
+  name: serial-driver
+  version: 1
+  description: Add a 16550 UART driver and wire it up to the kernel's tty layer.
+  featureBranch: feat/serial-16550
+
+config:
+  merge:
+    strategy: manual
+
+tasks:
+  - id: registers
+    title: Define the 16550 register layout
+    agent: claude-code
+    model: opus
+    prompt: |
+      Add include/dev/serial/16550_regs.h declaring the register offsets
+      and bit constants for a standard 16550 UART. No driver logic in this
+      header — just the layout.
+    files:
+      - include/dev/serial/16550_regs.h
+
+  - id: driver
+    title: Implement the driver core (init / putc / getc / ISR)
+    depends: [registers]
+    agent: claude-code
+    prompt: |
+      Implement drivers/serial/16550.c with serial_init, serial_putc,
+      serial_getc, and the ISR. Use the register layout from registers/
+      16550_regs.h verbatim. Drop the ring buffer at 1 KB.
+    setup:
+      - make -C tools/cross-gcc/ install
+    validation:
+      command: |
+        make drivers/serial/16550.o && nm drivers/serial/16550.o | grep ' T serial_init'
+      must-pass: true
+
+  - id: tty
+    title: Wire the driver into the kernel's tty layer
+    depends: [driver]
+    agent: claude-code
+    prompt: |
+      Register the 16550 driver as ttyS0 via the kernel's existing tty
+      registration ABI. Don't change the ABI itself — only the driver
+      registration call site.
+    validation:
+      command: make kernel.elf && nm kernel.elf | grep ' T ttyS0_register'
+      must-pass: true
+
+  - id: tests
+    title: Add serial loopback tests
+    depends: [tty]
+    agent: codex
+    prompt: |
+      Add tests/serial/loopback.c that runs under the existing test
+      runner: write 0xAA to the TX port, read it back from RX in the
+      paired emulator loopback wire, assert equality. Use the test
+      harness in tests/runner.h.
+    validation:
+      command: make tests/serial/loopback && ./tests/serial/loopback
+      must-pass: true

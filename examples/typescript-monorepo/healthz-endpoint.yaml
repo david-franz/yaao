@@ -1,0 +1,74 @@
+# F15.3 example — TypeScript monorepo: add a /healthz endpoint.
+#
+# Demonstrates:
+#   - 3-task fan-out (api / tests / docs) sharing a common scaffold parent
+#   - validation with `cwd:` so each task's tsc/test runs inside the
+#     correct workspace package (the F15.3 doc's "monorepo cwd" demo)
+#   - per-task agent + model selection
+#
+# Replace `packages/api`, `packages/tests`, `packages/docs` with your
+# repo's actual workspace paths. The scaffold task assumes a pnpm/npm
+# workspace; adapt validation.command for yarn/bun if needed.
+
+plan:
+  name: healthz-endpoint
+  version: 1
+  description: Add a /healthz endpoint to the API package with tests + docs.
+
+config:
+  max-parallel: 4
+
+tasks:
+  - id: scaffold
+    title: Scaffold the /healthz route module
+    agent: claude-code
+    model: opus
+    prompt: |
+      Create a new route module at packages/api/src/routes/healthz.ts that
+      exports a Fastify/Express plugin for GET /healthz returning
+      { status: "ok", version: process.env.VERSION }. Don't wire it into
+      the app yet — the api task does that.
+    files:
+      - packages/api/src/routes/healthz.ts
+    validation:
+      command: pnpm -F api tsc --noEmit
+      cwd: packages/api
+      must-pass: true
+
+  - id: api
+    title: Wire the route into the API app
+    depends: [scaffold]
+    agent: claude-code
+    prompt: |
+      Register the healthz plugin from packages/api/src/routes/healthz.ts in
+      the API's main app module. Don't modify the route module itself —
+      that's scaffold's job. Run `pnpm test` after.
+    validation:
+      command: pnpm -F api test
+      cwd: packages/api
+      must-pass: true
+
+  - id: tests
+    title: Add integration tests for /healthz
+    depends: [scaffold]
+    agent: codex
+    prompt: |
+      Add an integration test under packages/tests/integration/healthz.test.ts
+      that boots the API in-memory and asserts GET /healthz returns 200 with
+      a body matching { status: "ok" }. Use the existing test harness in
+      packages/tests/helpers/.
+    validation:
+      command: pnpm -F tests test integration/healthz.test.ts
+      cwd: packages/tests
+      must-pass: true
+
+  - id: docs
+    title: Document the endpoint in packages/docs
+    depends: [scaffold]
+    agent: claude-code
+    prompt: |
+      Add a one-page Markdown doc at packages/docs/src/api/healthz.md
+      describing the endpoint, its response shape, and the rationale.
+      Reference the route module by relative path.
+    files:
+      - packages/docs/src/api/healthz.md
