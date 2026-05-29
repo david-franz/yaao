@@ -13,11 +13,11 @@ distillation is ready, without polish gaps waiting in the wings.
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F15.1** | `yaao doctor` — environment audit (folds in `yaao agents` + orphan-run detection) | [F15.1-doctor.md](F15.1-doctor.md) |
-| **F15.2** | `yaao init --mcp` — auto-register yaao's MCP server in `.mcp.json` | [F15.2-init-mcp.md](F15.2-init-mcp.md) |
-| **F15.3** | First-use experience — 60-second quickstart + `examples/` directory | [F15.3-first-use.md](F15.3-first-use.md) |
-| **F15.4** | Help text & error message audit | [F15.4-help-and-errors.md](F15.4-help-and-errors.md) |
-| **F15.5** | README + IMPLEMENTATION.md accuracy pass | [F15.5-docs-truthup.md](F15.5-docs-truthup.md) |
+| **F15.1** | `yaao doctor` — environment audit + orphan-run detection — **shipped** | [F15.1-doctor.md](F15.1-doctor.md) |
+| **F15.2** | `yaao init` default-on registers yaao's MCP server in `.mcp.json` — **shipped** | [F15.2-init-mcp.md](F15.2-init-mcp.md) |
+| **F15.3** | Quickstart in README + three runnable plans under `examples/` (typescript-monorepo, python-flask, c-kernel) — **shipped** | [F15.3-first-use.md](F15.3-first-use.md) |
+| **F15.4** | Every command's `--help` description tightened + every documented YaaoError has a `DEFAULT_HINTS` entry — **shipped** | [F15.4-help-and-errors.md](F15.4-help-and-errors.md) |
+| **F15.5** | `tests/phase-15/docs/links.test.ts` walks every markdown link in repo .md files + the three broken-link drifts fixed in the same commit — **shipped** | [F15.5-docs-truthup.md](F15.5-docs-truthup.md) |
 
 ## Why now
 
