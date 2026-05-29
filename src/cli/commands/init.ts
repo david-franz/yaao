@@ -10,12 +10,14 @@ import { CopilotBackend } from '../../agents/copilot.js';
 import { CodexBackend } from '../../agents/codex.js';
 import type { AgentBackend } from '../../agents/backend.js';
 import { git as defaultGit } from '../../git/git.js';
+import { registerYaaoMcp } from '../../init/mcp-register.js';
 
 interface InitFlags {
   force?: boolean;
   minimal?: boolean;
   noProbe?: boolean;
   baseBranch?: string;
+  mcp?: boolean;
 }
 
 export const initCommand: CommandModule = {
@@ -32,6 +34,10 @@ export const initCommand: CommandModule = {
       .option(
         '--base-branch <name>',
         "pin defaults.base-branch in the scaffolded config (skips git detection)",
+      )
+      .option(
+        '--no-mcp',
+        "skip auto-registering yaao's MCP server in .mcp.json (default-on so Claude Code sees yaao tools after init)",
       )
       .action(async (flags: InitFlags) => {
         const cwd = resolve(ctx.cwd);
@@ -91,6 +97,29 @@ export const initCommand: CommandModule = {
         } else if (result.gitignoreSkippedReason === 'no-git') {
           ctx.logger.warn('not a git repo; skipped .gitignore update');
         }
+        // F15.2 — Auto-register yaao's MCP server unless --no-mcp.
+        // Commander turns --no-mcp into flags.mcp === false; the default
+        // when unset is true (opt-out).
+        const mcpFlag = flags.mcp as boolean | undefined;
+        const wantsMcp = mcpFlag !== false;
+        if (wantsMcp) {
+          const r = registerYaaoMcp({ cwd, force: Boolean(flags.force) });
+          switch (r.action) {
+            case 'created':
+              ctx.logger.info(`  created: ${r.path} (registered yaao's MCP server)`);
+              break;
+            case 'merged':
+              ctx.logger.info(`  merged: ${r.path} (added yaao to existing mcpServers)`);
+              break;
+            case 'unchanged':
+              ctx.logger.info(`  unchanged: ${r.path} (yaao entry already matches)`);
+              break;
+            case 'conflict':
+              if (r.warning) ctx.logger.warn(`  ${r.warning}`);
+              break;
+          }
+        }
+
         ctx.logger.info('');
         ctx.logger.info('Next steps:');
         ctx.logger.info('  1. yaao doctor   # check available agents and config');
