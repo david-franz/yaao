@@ -29,16 +29,16 @@ config-honoring, all-providers-functional engine first.
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F14.1** | Enable-disable enforcement end-to-end (planner, converter, validate, run, MCP) | [F14.1-enable-disable-enforcement.md](F14.1-enable-disable-enforcement.md) |
-| **F14.2** | Per-spawn MCP overlays for Cursor / Codex / Copilot | [F14.2-per-spawn-mcp-overlays.md](F14.2-per-spawn-mcp-overlays.md) |
-| **F14.3** | API provider truth-up (Anthropic prompt caching, OpenAI/OpenRouter stub gating) | [F14.3-api-provider-truthup.md](F14.3-api-provider-truthup.md) |
-| **F14.4** | Live backend smoke tests (Cursor / Codex / Copilot / Anthropic / OpenAI / OpenRouter) | [F14.4-live-backend-smoke-tests.md](F14.4-live-backend-smoke-tests.md) |
-| **F14.5** | Spec Kit parser hardening + content propagation | [F14.5-speckit-hardening.md](F14.5-speckit-hardening.md) |
-| **F14.6** | OpenAI + OpenRouter provider implementations (replace the stubs with working impls) | [F14.6-openai-openrouter-providers.md](F14.6-openai-openrouter-providers.md) |
-| **F14.7** | Copilot backend reality check + working implementation | [F14.7-copilot-backend-reality-check.md](F14.7-copilot-backend-reality-check.md) |
-| **F14.8** | Config UX & model discovery (`plan.agent`/`plan.model`, dead-field cleanup, `merge.history: rebase` default, `yaao agents --models`, `$schema` URL fix, "exited -1" fix) | [F14.8-config-ux-and-model-discovery.md](F14.8-config-ux-and-model-discovery.md) |
-| **F14.9** | Base-branch auto-detection at init + validation at run, and `--feature-branch` CLI flag plumbed across plan/convert/run with documented override semantics | [F14.9-base-branch-detection-and-feature-branch-flag.md](F14.9-base-branch-detection-and-feature-branch-flag.md) |
-| **F14.10** | `yaao skills import` — convert claude / cursor / copilot / codex / generic skill formats into yaao skills so any single-provider library becomes cross-provider via MCP | [F14.10-skills-import.md](F14.10-skills-import.md) |
+| **F14.1** | Enable-disable enforcement end-to-end (planner, converter, validate, run, MCP) — **shipped** | [F14.1-enable-disable-enforcement.md](F14.1-enable-disable-enforcement.md) |
+| **F14.2** | Per-spawn MCP overlays for Cursor / Codex / Copilot — **shipped** | [F14.2-per-spawn-mcp-overlays.md](F14.2-per-spawn-mcp-overlays.md) |
+| **F14.3** | API provider truth-up (Anthropic prompt caching, OpenAI/OpenRouter stub gating) — **shipped** (stub gate removed in F14.6) | [F14.3-api-provider-truthup.md](F14.3-api-provider-truthup.md) |
+| **F14.4** | Live backend smoke tests (Cursor / Codex / Copilot / Anthropic / OpenAI / OpenRouter) — **shipped** | [F14.4-live-backend-smoke-tests.md](F14.4-live-backend-smoke-tests.md) |
+| **F14.5** | Spec Kit parser hardening + content propagation — **shipped** | [F14.5-speckit-hardening.md](F14.5-speckit-hardening.md) |
+| **F14.6** | OpenAI + OpenRouter provider implementations (replace the stubs with working impls) — **shipped** | [F14.6-openai-openrouter-providers.md](F14.6-openai-openrouter-providers.md) |
+| **F14.7** | Copilot backend reality check + working implementation — **shipped** (Stage 1 four-phase probe + accurate version reporting; Stage 2 deferred pending real-CLI evidence) | [F14.7-copilot-backend-reality-check.md](F14.7-copilot-backend-reality-check.md) |
+| **F14.8** | Config UX & model discovery (`plan.agent`/`plan.model`, dead-field cleanup, `merge.history: rebase` default, `yaao agents --models`, `$schema` URL fix, "exited -1" fix) — **shipped** | [F14.8-config-ux-and-model-discovery.md](F14.8-config-ux-and-model-discovery.md) |
+| **F14.9** | Base-branch auto-detection at init + validation at run, and `--feature-branch` CLI flag plumbed across plan/convert/run with documented override semantics — **shipped** | [F14.9-base-branch-detection-and-feature-branch-flag.md](F14.9-base-branch-detection-and-feature-branch-flag.md) |
+| **F14.10** | `yaao skills import` — convert claude / cursor / copilot / codex / generic skill formats into yaao skills so any single-provider library becomes cross-provider via MCP — **shipped** | [F14.10-skills-import.md](F14.10-skills-import.md) |
 
 ## Why now
 
