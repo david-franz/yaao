@@ -21,6 +21,7 @@ interface PlanFlags {
   noCtxSys?: boolean;
   dryRun?: boolean;
   nonInteractive?: boolean;
+  featureBranch?: string;
 }
 
 export const planCommand: CommandModule = {
@@ -39,6 +40,10 @@ export const planCommand: CommandModule = {
       .option('--no-ctx-sys', 'disable ctx-sys auto-spawn for this run')
       .option('--dry-run', 'print the resolved prompt and exit (no agent spawn)')
       .option('--non-interactive', 'never prompt for confirmation')
+      .option(
+        '--feature-branch <name>',
+        "instruct the planner to target the named feature branch; surfaced as a 'feature-branch:' metadata line the converter reads",
+      )
       .action(async (description: string, flags: PlanFlags) => {
         const cwd = resolve(ctx.cwd);
         // Resolve which backend drives the planner. `--agent` wins; otherwise
@@ -83,6 +88,7 @@ export const planCommand: CommandModule = {
           outDir,
           ...(flags.dryRun !== undefined ? { dryRun: flags.dryRun } : {}),
           backend,
+          ...(flags.featureBranch !== undefined ? { featureBranch: flags.featureBranch } : {}),
           ...(reporter !== undefined ? { onProgress: reporter } : {}),
         });
         if (ctx.json) {

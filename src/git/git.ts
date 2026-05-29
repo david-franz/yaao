@@ -141,6 +141,22 @@ export interface Git {
   add(paths: string[], cwd?: string): Promise<void>;
   addAll(cwd?: string): Promise<void>;
   commit(message: string, opts?: { allowEmpty?: boolean }, cwd?: string): Promise<string>;
+  /**
+   * F14.9 — Best-effort detection of the repo's "default" branch, used by
+   * `yaao init` to write a sensible defaults.base-branch and by run-time
+   * validation to suggest alternatives when a configured base-branch is
+   * missing. Walks three sources in priority order:
+   *   1. `git symbolic-ref --short refs/remotes/origin/HEAD` — the remote's
+   *      default ref (e.g. `origin/main` → `main`). Most authoritative
+   *      when the repo has an origin.
+   *   2. `git config --get init.defaultBranch` — the user's preferred
+   *      default for new repos.
+   *   3. `'main'` — final fallback so callers never have to handle
+   *      "unknown".
+   * Always returns a string; never throws on a non-git directory or
+   * missing git.
+   */
+  detectDefaultBranch(cwd?: string): Promise<string>;
 }
 
 const GIT_ENV: NodeJS.ProcessEnv = { GIT_TERMINAL_PROMPT: '0' };
@@ -472,6 +488,33 @@ export const git: Git = {
     if (opts?.allowEmpty) args.push('--allow-empty');
     await runOk(args, cwd);
     return (await runOk(['rev-parse', 'HEAD'], cwd)).trim();
+  },
+  async detectDefaultBranch(cwd) {
+    // 1) Remote's default — most authoritative for repos with origin.
+    //    `git symbolic-ref --short refs/remotes/origin/HEAD` prints e.g.
+    //    "origin/main"; we take whatever's after the first slash.
+    try {
+      const sym = await run(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], cwd);
+      if (sym.exitCode === 0) {
+        const ref = sym.stdout.trim();
+        const slash = ref.indexOf('/');
+        if (slash > 0) return ref.slice(slash + 1);
+      }
+    } catch {
+      // ignore — git missing or non-repo dir; fall through to step 2
+    }
+    // 2) User's preferred default for new repos.
+    try {
+      const cfg = await run(['config', '--get', 'init.defaultBranch'], cwd);
+      if (cfg.exitCode === 0 && cfg.stdout.trim().length > 0) {
+        return cfg.stdout.trim();
+      }
+    } catch {
+      // ignore
+    }
+    // 3) Final fallback — match the historical schema default so callers
+    //    that consume the result never have to handle "unknown".
+    return 'main';
   },
 };
 

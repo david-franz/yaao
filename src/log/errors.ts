@@ -40,6 +40,8 @@ export const DEFAULT_HINTS: Record<string, string> = {
     "Set agents.<name>.enabled = true in yaao.config.json, choose an enabled agent for the task, or rerun with --allow-disabled-agents to downgrade to a warning.",
   YAAO_NO_ENABLED_AGENTS:
     'Enable at least one agent in yaao.config.json (set agents.<name>.enabled = true) or configure agents.api.providers with a resolvable API key.',
+  YAAO_BASE_BRANCH_MISSING:
+    "The plan's base-branch doesn't exist in this repo. Run `git branch` to see available branches, set defaults.base-branch in yaao.config.json, or pass --base-branch <name>.",
 };
 
 export class NotInitializedError extends YaaoError {

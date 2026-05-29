@@ -24,5 +24,8 @@ inputs:
   - name: enabled-agents
     description: Comma-separated list of agents the user has enabled in yaao.config.json
     required: true
+  - name: feature-branch
+    description: Optional feature branch the plan targets (empty string when not pinned)
+    default: ''
 trigger:
   manual: true

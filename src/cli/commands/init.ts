@@ -9,11 +9,13 @@ import { CursorBackend } from '../../agents/cursor.js';
 import { CopilotBackend } from '../../agents/copilot.js';
 import { CodexBackend } from '../../agents/codex.js';
 import type { AgentBackend } from '../../agents/backend.js';
+import { git as defaultGit } from '../../git/git.js';
 
 interface InitFlags {
   force?: boolean;
   minimal?: boolean;
   noProbe?: boolean;
+  baseBranch?: string;
 }
 
 export const initCommand: CommandModule = {
@@ -27,8 +29,18 @@ export const initCommand: CommandModule = {
       .option('--force', 'overwrite existing files in .yaao/')
       .option('--minimal', 'skip .yaaoignore and .gitignore changes')
       .option('--no-probe', 'skip the agent-CLI availability probe; write everything as enabled')
+      .option(
+        '--base-branch <name>',
+        "pin defaults.base-branch in the scaffolded config (skips git detection)",
+      )
       .action(async (flags: InitFlags) => {
         const cwd = resolve(ctx.cwd);
+        // F14.9 — Auto-detect the repo's default branch (main vs master vs
+        // user's init.defaultBranch) when --base-branch isn't passed
+        // explicitly. detectDefaultBranch is best-effort and always returns
+        // *something*, so we don't have to handle "unknown".
+        const detectedBase =
+          flags.baseBranch ?? (await defaultGit.detectDefaultBranch(cwd));
         // Probe CLIs on PATH so the scaffolded config disables agents the user
         // doesn't actually have. Only probe when we're about to write the config
         // (skip if it already exists and --force wasn't passed).
@@ -55,7 +67,15 @@ export const initCommand: CommandModule = {
           force: Boolean(flags.force),
           minimal: Boolean(flags.minimal),
           ...(detected !== undefined ? { detectedAgents: detected } : {}),
+          baseBranch: detectedBase,
         });
+        if (willWriteConfig) {
+          ctx.logger.info(
+            flags.baseBranch
+              ? `using base-branch '${detectedBase}' (from --base-branch)`
+              : `detected base-branch: ${detectedBase}`,
+          );
+        }
 
         if (result.alreadyInitialized && result.created.length === 0 && result.overwritten.length === 0 && !result.gitignoreUpdated) {
           ctx.logger.info('already initialized', { cwd });

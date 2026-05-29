@@ -9,8 +9,10 @@ export const CLI_AGENT_NAMES: CliAgentName[] = ['claude-code', 'cursor', 'copilo
 
 export function buildDefaultConfigJson(
   enabledByAgent?: Partial<Record<CliAgentName, boolean>>,
+  detectedBaseBranch?: string,
 ): string {
   const flag = (a: CliAgentName): boolean => enabledByAgent?.[a] ?? true;
+  const baseBranch = detectedBaseBranch ?? 'main';
   return `${JSON.stringify(
     {
       // F14.8 — Points at the JSON Schema artifact emitted by
@@ -27,7 +29,10 @@ export function buildDefaultConfigJson(
         agent: 'claude-code',
         model: 'opus',
         'max-parallel': 4,
-        'base-branch': 'main',
+        // F14.9 — populated by yaao init via git.detectDefaultBranch:
+        //   origin/HEAD → init.defaultBranch → 'main'. Override at
+        //   init time with `yaao init --base-branch <name>`.
+        'base-branch': baseBranch,
         'worktree-root': '.yaao/worktrees',
       },
       // F14.8 — history flipped from 'merge' to 'rebase' so the default
@@ -94,6 +99,13 @@ export interface ScaffoldOptions {
    * `yaao.config.json` writes `enabled: false` for agents whose CLI we couldn't
    * find on PATH. Omitting this flag falls back to "everything enabled". */
   detectedAgents?: Partial<Record<CliAgentName, boolean>>;
+  /**
+   * F14.9 — Override for the scaffolded `defaults.base-branch`. When omitted,
+   * init detects it via `git.detectDefaultBranch` (or 'main' as final
+   * fallback). Pinned explicitly when the user passes
+   * `yaao init --base-branch <name>`.
+   */
+  baseBranch?: string;
 }
 
 export interface ScaffoldResult {
@@ -128,7 +140,10 @@ const DIRS: DirSpec[] = [
 
 function filesFor(opts: ScaffoldOptions): FileSpec[] {
   return [
-    { rel: '.yaao/yaao.config.json', contents: buildDefaultConfigJson(opts.detectedAgents) },
+    {
+      rel: '.yaao/yaao.config.json',
+      contents: buildDefaultConfigJson(opts.detectedAgents, opts.baseBranch),
+    },
     { rel: '.yaao/secrets.local.json', contents: DEFAULT_SECRETS_JSON },
   ];
 }

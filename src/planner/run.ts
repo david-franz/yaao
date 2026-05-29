@@ -38,6 +38,14 @@ export interface RunPlannerOptions {
   /** Backend factory; in production this would build a real backend from config. */
   backend: AgentBackend;
   /**
+   * F14.9 — Optional feature branch to target. When set, the planner skill
+   * receives it as the `feature-branch` placeholder and is instructed to
+   * include a `feature-branch:` metadata line in the emitted plan so the
+   * converter can write it through to `plan.featureBranch` in the
+   * execution YAML.
+   */
+  featureBranch?: string;
+  /**
    * Called for each agent event (stdout text chunk, tool-use, etc) plus periodic
    * `tick` events while waiting. The CLI uses this to print progress to stderr;
    * tests/MCP can ignore it.
@@ -143,6 +151,7 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
       format,
       out: outDir,
       'enabled-agents': enabled.join(', '),
+      'feature-branch': opts.featureBranch ?? '',
     },
     skill.metadata.inputs,
   );

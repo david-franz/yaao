@@ -15,6 +15,12 @@ You MUST:
   `YAAO_PLAN_AGENT_DISABLED`. If only one agent is enabled, assign every
   task to it. The example tables below use `claude-code`/`cursor`/`codex`
   for illustration only — substitute names from the enabled set above.
+- **Feature branch (F14.9).** If `{{feature-branch}}` is non-empty,
+  include a `feature-branch: {{feature-branch}}` line in the plan's
+  Metadata block (after `name:` / `scope:` / `created:`). The converter
+  reads this and writes it through to `plan.featureBranch` in the
+  generated execution YAML. When the placeholder is empty, omit the
+  metadata line entirely.
 - **Prefer parallel siblings over a serial chain.** yaao runs every
   ready task at once (up to `max-parallel`), so the wall-clock cost of a
   plan is set by its longest dependency *chain*, not its task count. A

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ConfigSchema } from '../../../src/config/schema.js';
-import { buildDefaultConfigJson } from '../../../src/init/scaffold.ts';
+import { buildDefaultConfigJson } from '../../../src/init/scaffold.js';
 
 describe('F14.8 — plan.speckit legacy handling', () => {
   it('configs with the legacy plan.speckit: false still parse', () => {

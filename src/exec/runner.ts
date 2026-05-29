@@ -116,6 +116,23 @@ export async function runPlan(opts: RunOptions): Promise<RunResult> {
   // featureBranch, recording it in the journal, and (via lifecycle) routing
   // auto-merges to it.
   const policy = resolveBranchPolicy(opts.plan);
+
+  // F14.9 — Validate base-branch exists before any worktree creation runs.
+  // Without this, a repo whose default branch is 'master' (and a plan
+  // pinned to 'main' from yaao init's pre-F14.9 days) fails at
+  // worktree-manager.create's `git rev-parse --verify` with a cryptic
+  // GitError. Catching it here gives the user a clear hint pointing at
+  // both the config field and the runtime override flag.
+  if (await git.isRepo(opts.rootDir)) {
+    const baseExists = await git.branchExists(policy.baseBranch, opts.rootDir);
+    if (!baseExists) {
+      throw new YaaoError({
+        code: 'YAAO_BASE_BRANCH_MISSING',
+        message: `base-branch '${policy.baseBranch}' not found in this repo`,
+      });
+    }
+  }
+
   if (policy.featureBranch && (await git.isRepo(opts.rootDir))) {
     const exists = await git.branchExists(policy.featureBranch, opts.rootDir);
     if (!exists) {

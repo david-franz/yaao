@@ -10,6 +10,7 @@ interface ConvertFlags {
   out?: string;
   from?: PlanInputFormat;
   inferDeps?: InferMode;
+  featureBranch?: string;
 }
 
 export const convertCommand: CommandModule = {
@@ -28,6 +29,10 @@ export const convertCommand: CommandModule = {
       .option('--out <path>', 'output path or directory (default plan.exec-dir from config)')
       .option('--from <format>', 'markdown | speckit | auto (auto-detects per plan)', 'auto')
       .option('--infer-deps <mode>', 'off | suggest | auto', 'off')
+      .option(
+        '--feature-branch <name>',
+        "set plan.featureBranch in the emitted YAML (matches the MCP yaao_convert featureBranch arg)",
+      )
       .action(async (input: string | undefined, flags: ConvertFlags) => {
         const cwd = resolve(ctx.cwd);
         // If no input given, fall back to the configured plan output dir (the
@@ -41,6 +46,7 @@ export const convertCommand: CommandModule = {
           outDir: out,
           ...(flags.from !== undefined ? { format: flags.from } : {}),
           ...(flags.inferDeps !== undefined ? { infer: flags.inferDeps } : {}),
+          ...(flags.featureBranch !== undefined ? { featureBranch: flags.featureBranch } : {}),
           agentRules: ctx.config.convert['agent-rules'],
           disableBuiltinAgentRules: ctx.config.convert['disable-builtin-rules'],
         });

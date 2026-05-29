@@ -27,6 +27,7 @@ import { AgentDisabledError } from '../../log/errors.js';
 interface RunFlags {
   maxParallel?: string;
   baseBranch?: string;
+  featureBranch?: string;
   dryRun?: boolean;
   trial?: boolean;
   noTui?: boolean;
@@ -50,6 +51,10 @@ export const runCommand: CommandModule = {
       .argument('<exec-plan>', 'plan file (YAML)')
       .option('--max-parallel <n>', 'override plan.config.max-parallel')
       .option('--base-branch <name>', 'override plan.config.base-branch')
+      .option(
+        '--feature-branch <name>',
+        "runtime override for plan.featureBranch; pass an empty string to clear it (run trunk-based)",
+      )
       .option('--dry-run', 'walk the DAG without spawning agents')
       .option('--trial', 'max-parallel 1, no merging — for plan debugging')
       .option('--no-tui', 'plain line-oriented logs (no live dashboard)')
@@ -103,6 +108,17 @@ export const runCommand: CommandModule = {
         }
         if (flags.baseBranch) {
           loaded.plan.config['base-branch'] = flags.baseBranch;
+        }
+        // F14.9 — --feature-branch runtime override matches the existing
+        // MCP yaao_run semantics: an empty string clears the field (run
+        // trunk-based even when the plan declares a feature branch); any
+        // non-empty value overrides it.
+        if (flags.featureBranch !== undefined) {
+          if (flags.featureBranch === '') {
+            delete loaded.plan.plan.featureBranch;
+          } else {
+            loaded.plan.plan.featureBranch = flags.featureBranch;
+          }
         }
 
         // Pre-flight validation gate. We refuse to start a run that names a

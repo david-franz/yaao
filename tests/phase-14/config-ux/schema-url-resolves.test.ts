@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDefaultConfigJson } from '../../../src/init/scaffold.ts';
+import { buildDefaultConfigJson } from '../../../src/init/scaffold.js';
 
 describe('F14.8 — scaffold $schema URL', () => {
   it('no longer points at yaao.dev', () => {
