@@ -36,6 +36,7 @@ config-honoring, all-providers-functional engine first.
 | **F14.5** | Spec Kit parser hardening + content propagation | [F14.5-speckit-hardening.md](F14.5-speckit-hardening.md) |
 | **F14.6** | OpenAI + OpenRouter provider implementations (replace the stubs with working impls) | [F14.6-openai-openrouter-providers.md](F14.6-openai-openrouter-providers.md) |
 | **F14.7** | Copilot backend reality check + working implementation | [F14.7-copilot-backend-reality-check.md](F14.7-copilot-backend-reality-check.md) |
+| **F14.8** | Config UX & model discovery (`plan.agent`/`plan.model`, dead-field cleanup, `merge.history: rebase` default, `yaao agents --models`, `$schema` URL fix, "exited -1" fix) | [F14.8-config-ux-and-model-discovery.md](F14.8-config-ux-and-model-discovery.md) |
 
 ## Why now
 
@@ -84,6 +85,24 @@ overstates its real integration support. Specifically:
   open question that F14.7 closes — either by aligning to the real
   command, by pivoting to a REST integration, or by documenting
   Copilot as a v2 deferral.
+- **The config block is full of small papercuts.** Dead fields
+  (`plan.speckit` is in the schema but no code reads it), undocumented
+  flags (`ctx-sys.auto-spawn` has zero inline comment),
+  wrong-by-default settings (`merge.history: 'merge'` when the
+  intended trio is `auto / agent / rebase`), no way to specify a
+  separate planner agent + model without overriding global defaults,
+  and a `$schema` URL pointing at a domain that doesn't exist
+  (`yaao.dev`) so editor autocomplete silently fails. F14.8 sweeps all
+  of these.
+- **Model naming has no discovery surface.** `model: 'opus'` works
+  only on `claude-code` (via an alias map in that backend's source);
+  there's no way to ask yaao "what models can I use on `cursor` /
+  `codex` / `copilot` / `api/openrouter`?" without reading vendor
+  docs. The current `yaao agents` output's "✘ codex — codex --version
+  exited -1" rendering is also misleading — the binary isn't on PATH,
+  there's no exit code to report — and F14.8 closes all three threads
+  with `yaao agents --models`, a per-backend static catalog, and the
+  spawn-failure rendering fix.
 
 ## Implementation order
 
@@ -107,12 +126,15 @@ overstates its real integration support. Specifically:
    outcome is "deferred," F14.7 still ships honest validation and
    docs, and Phase 14's promise becomes "four of five integrations
    work confidently; Copilot is documented v2 work."
-6. **F14.4** sixth. Backstops the whole phase. Live smoke tests prove
-   F14.1, F14.2, F14.6, and F14.7 actually work against real
+6. **F14.4** sixth. Backstops the rest of the phase. Live smoke tests
+   prove F14.1, F14.2, F14.6, and F14.7 actually work against real
    CLIs/APIs, not just our parsers' assumptions about them.
-7. **F14.5** last. Lowest-impact of the seven; surfaces today's silent
-   parser failures and propagates Spec Kit content that's currently
-   dropped on the floor.
+7. **F14.8** seventh. Depends on F14.1 (planner config-awareness) and
+   F14.6 (api backend usable for planning). Bundles the config-block
+   cleanup, the model-discovery surface, and the `$schema` URL fix.
+8. **F14.5** last. Lowest-impact of the eight; surfaces today's silent
+   Spec Kit parser failures and propagates `spec.md`/`plan.md`
+   content that's currently dropped on the floor.
 
 ## Out of scope
 
