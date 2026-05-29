@@ -13,21 +13,28 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 ## Status
 
-**MVP + MCP + Web Viewer + Integration Correctness + Release Polish + Concurrent Runs shipped.** Phases 1-16 are complete: foundation, plan schema & validation, the worktree & git engine, agent backends, the execution engine, the merge engine, optional ctx-sys integration, the skills system, the yaao-planner skill, the yaao-converter skill, the text-mode TUI, **yaao-as-MCP** — `yaao serve` exposes `yaao_plan` / `yaao_convert` / `yaao_validate` / `yaao_run` / `yaao_resume` / `yaao_stop` / `yaao_status` / `yaao_agents` / `yaao_plans` / `yaao_inspect` / `yaao_prune` as MCP tools, plus auto-registers every discoverable skill as `yaao_skill_<name>` with hot reload — **`yaao web`**, the browser viewer for DAGs, live runs (with full agent-activity stream), workspace cleanup, plan editing with YAML syntax highlighting + dependency-layer navigation, rendered implementation-plan source viewer, secrets-aware config editor, and light/dark theming — and **concurrent runs against distinct feature branches**: runId entropy + featureBranch-derived task-branch namespaces give two `yaao run`s of the same plan disjoint identity by construction, and `context.md` carries the parent's prompt, validation outcome, full commit chain, and per-file diff stat so a dependent agent sees the parent's meta-context, not just the stdout tail. This is the integration story that lets Claude Code, Cursor, Copilot, Codex, and other MCP clients drive yaao end-to-end without duplicating prompts across four agent formats, and the workflow the worktree model was always shaped for: two agents on two feature branches, running side by side without cross-talk.
+yaao is feature-complete and runnable end-to-end on a local checkout. The engine, the agent matrix, the MCP surface, the web viewer, and the concurrent-runs workflow are all in place. Distribution (npm publish, docs site) is the only remaining step before tagging a public release — clone-and-build is the install path today.
 
-Recent additions worth knowing about even mid-MVP: a per-plan `plan.featureBranch` so feature-branch routing lives in the plan YAML instead of mutating workspace config per feature; a `yaao stop` CLI + `yaao_stop` MCP tool that cross-process cancels a run via SIGTERM (the runner stamps `cancelled` in the journal before exit); a converter `YAAO_PLAN_NARROW_DAG` warning that nudges away from strict-chain plans; and planner-skill prompt updates that prefer parallel siblings over a serial spine.
+What's here:
 
-> **ctx-sys runtime note.** Phase 7's ctx-sys integration (detect, per-agent MCP injection, directive) is live: with `ctx-sys.enabled: true` each agent gets its own `ctx-sys serve --project <root>` stdio MCP server. It requires `ctx-sys` on `PATH` and an indexed project (`ctx-sys index`); if either is missing yaao warns and runs without codebase context. The default config (`ctx-sys.enabled: false`) is unaffected.
+- **Plan → convert → run → resume → inspect**, all addressable from the CLI and from MCP. Implementation plans in plain markdown or [Spec Kit](https://github.com/github/spec-kit) format; execution plans in YAML; runs journaled to disk for resume + post-hoc inspection.
+- **Five agent backends**: `claude-code`, `cursor`, `copilot`, `codex` (each via its CLI), and `api` (raw HTTP to `anthropic` / `openai` / `openrouter` with a full tool-use loop). Every step in an execution plan independently picks its backend, model, and skills.
+- **yaao-as-MCP**: `yaao serve` exposes `yaao_plan` / `yaao_convert` / `yaao_validate` / `yaao_run` / `yaao_resume` / `yaao_stop` / `yaao_status` / `yaao_inspect` / `yaao_prune` / `yaao_agents` / `yaao_plans` as MCP tools, and auto-registers every `.yaao/skills/<name>/` as `yaao_skill_<name>` with hot reload (~250 ms).
+- **Worktree-per-task orchestration**: dependent tasks branch off their parent's branch, completed branches merge back in topological order, and validation gates merges so a `must-pass: true` failure never lands. Conflict resolution falls back to the executing agent by default.
+- **Concurrent runs against distinct feature branches**: two `yaao run`s of the same plan can execute side by side without cross-talk. RunIds carry nanoid entropy, default task branches are namespaced under `plan.featureBranch`, and every merge uses atomic `update-ref` CAS.
+- **`yaao web`**: a local browser viewer for the DAG, live agent-activity stream (stdout / stderr / thinking / tool-use, filterable per task), workspace cleanup with dry-run preview, YAML plan editor with syntax highlighting + dependency-layer navigation, rendered implementation-plan source viewer, and a secrets-aware config editor.
+- **`yaao doctor`** audits Node + git versions, per-agent CLI availability, API provider keys, and orphan runs in one pass. **`yaao init`** scaffolds `.yaao/`, registers yaao's MCP server in `.mcp.json` by default, and auto-detects the repo's default branch.
 
-Planned phases (in this order):
+What's optional:
 
-- **Phase 14 — Integration Correctness** *(shipped)*: enable/disable enforcement end-to-end (disabling `claude-code` in config now actually prevents claude-code agents from spawning), per-spawn MCP overlays for Cursor/Codex/Copilot (all four CLI agents receive ctx-sys + per-plan MCP servers at run time), Anthropic prompt caching with cache-token telemetry, working OpenAI and OpenRouter provider implementations (the v0.0.1 stubs that threw at spawn time are gone), a Copilot four-phase isAvailable probe with accurate gh-copilot extension version reporting, skip-if-missing live backend smoke tests under `tests/phase-14/live/` with a nightly CI job, Spec Kit parser relaxed for common authoring variants + `YAAO_SPECKIT_PARSE_EMPTY` warning + `spec.md`/`plan.md` content propagation through `plan.context`, a config UX & model-discovery sweep (`plan.agent`/`plan.model` block, dead `plan.speckit` cleanup, `merge.history: rebase` default, `yaao agents --models` with per-backend KNOWN_MODELS catalog, working `$schema` URL, "binary not found on PATH" rendering replacing "exited -1"), `git.detectDefaultBranch` so `yaao init` writes the repo's actual default branch + runtime `YAAO_BASE_BRANCH_MISSING` validation + `--feature-branch` CLI flag plumbed across plan/convert/run, and `yaao skills import` from claude/cursor/copilot/codex/generic formats so any single-provider library becomes cross-provider via MCP. **End-of-phase guarantee**: any plan step can confidently be assigned to `claude-code`, `cursor`, `codex`, `copilot`, or `api` (with `anthropic` / `openai` / `openrouter`); the config block tells the user honestly what's wired up, what models each backend accepts, what branch the work lands on, and where to look when something breaks; and the user's existing single-provider skill library carries across the matrix without rewrites.
-- **Phase 15 — Release Polish** *(shipped)*: `yaao doctor` audits Node + git versions, per-agent CLI availability, API provider keys, and orphan runs (status=running + journal stale + dead/missing pid). `yaao init` default-on registers yaao's MCP server in `.mcp.json` and auto-detects the repo's default branch via `git symbolic-ref refs/remotes/origin/HEAD`. README gains a six-line copy-paste Quickstart plus three runnable example plans under `examples/` (typescript-monorepo / python-flask / c-kernel). Every command's `--help` now reads as more than the bare verb, every documented `YaaoError` has a `DEFAULT_HINTS` entry, and a new `tests/phase-15/docs/links.test.ts` walks every markdown link in repo .md files so doc rot doesn't ship to users.
-- **Phase 16 — Concurrent Runs & Context Handoff** *(shipped)*: `run-${ms36}-${nanoid6}` runIds + featureBranch-derived task-branch namespaces (slash-sanitized so the featureBranch ref and its sibling task branches don't collide in git's ref store) make two `yaao run`s against distinct feature branches disjoint by construction. The concurrency model is now documented + integration-tested under `tests/phase-16/concurrent-runs/`, and the Phase 12 docs no longer claim a `.yaao/.lock` that never existed. `context.md` carries four new bounded sections — original task prompt, validation outcome, full commit chain, and per-file diff stat — so a dependent agent sees the parent's meta-context, not just the stdout tail (toggleable via `config.context.include`; `[]` reproduces the pre-F16.3 shape).
-- **Phase 17 — Session → Skill Distillation**: capture useful patterns from a finished chat session and crystallise them into a reusable yaao skill via a new `yaao_distill` MCP tool.
-- **Phase 18 — Distribution**: npm publish, docs site.
+- **ctx-sys integration** is opt-in (`ctx-sys.enabled: true`). When on, each spawned agent gets its own `ctx-sys serve --project <root>` stdio MCP server so `context_query` is available; if `ctx-sys` is missing from `PATH` or the project isn't indexed, yaao warns and runs without codebase context. The default config has it disabled.
 
-The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
+What's still on the roadmap:
+
+- **Session → skill distillation**: crystallise useful patterns from a finished chat session into a reusable yaao skill via a new `yaao_distill` MCP tool.
+- **Distribution**: npm publish, hosted docs site.
+
+The [implementation plan](docs/IMPLEMENTATION.md) is the per-feature working spec.
 
 ---
 
@@ -54,7 +61,7 @@ Both formats can coexist in one project; the converter accepts either.
 
 ### Execution plan
 
-A machine-runnable plan. **YAML** is the canonical format for v1 (JSON output is a post-MVP option). One execution plan can `include` others (sub-phases). Schema sketch:
+A machine-runnable plan. **YAML** is the canonical format. One execution plan can `include` others (sub-phases). Schema sketch:
 
 ```yaml
 plan:
@@ -132,7 +139,7 @@ ctx-sys is one example of an MCP context provider. yaao's MCP wiring is generic 
 
 ## Installation
 
-Currently no npm publish — clone and build from source (distribution lands in Phase 18):
+No npm publish yet — clone and build from source:
 
 ```bash
 git clone <repo> yaao
@@ -148,10 +155,9 @@ Requires Node ≥ 20, `bash` (used for `validation` / `setup` commands with `set
 
 ## Quickstart
 
-Five lines on a fresh checkout:
+From a project checkout, after `npm link` (see Installation):
 
 ```bash
-npm i -g yaao
 cd my-project
 yaao init                                  # writes .yaao/ + registers yaao's MCP server in .mcp.json
 yaao doctor                                # confirm Node + git + agent CLIs + API keys all resolve
@@ -187,7 +193,7 @@ Each example passes `yaao validate` cleanly; adapt the file paths and validation
 | `yaao stop [run-id]` | Stop a running yaao run by sending SIGTERM to its runner process. The runner stamps `run:end status=cancelled` in the journal before exit; in-flight task branches survive (resume via `--resume`). Omit the run-id to target the most recent `status=running` run. |
 | `yaao status [run-id]` | Inspect a run (live or completed). |
 | `yaao clean [run-id]` | Tear down worktrees + branches. (For finer-grained control, use the `yaao_prune` MCP tool — same logic, structured input/output, dry-run by default.) |
-| `yaao agents` | Report which agent backends are available and their versions. (Subsumed by `yaao doctor` in Phase 15.) |
+| `yaao agents` | Report which agent backends are available and their versions. (Largely subsumed by `yaao doctor`.) |
 | `yaao skills install` | (Re)install skill/agent files for Claude Code, Cursor, Copilot, Codex. |
 | `yaao serve` | Start the MCP stdio server. Spawned by AI clients (Claude Code, Cursor, etc.) via their MCP config; not run directly by humans. |
 | `yaao web` | Start the local HTTP+SSE web viewer. Defaults to `http://127.0.0.1:8787`. Flags: `--host`, `--port`, `--token`, `--no-open`. Non-loopback binds require `--token`. |
@@ -258,7 +264,7 @@ Each backend's MCP coverage and CLI surface evolves at its own pace. yaao's proj
 | **Tier 1** | Claude Code | CI-tested every commit. Reference target. Breakage blocks releases. |
 | **Tier 2** | Cursor, Codex | Smoke-tested per release against pinned versions. Issues triaged but may lag a release. |
 | **Tier 3** | Copilot | Best-effort. The `gh copilot` agentic surface is the youngest of the four; expect breakage on Copilot-side updates and version-pinning workarounds. |
-| **Tier 1 (separate path)** | API — Anthropic | Real (via native fetch). The same execution-plan / skill / merge surface as the CLI backends, with a separate in-process tool loop. OpenAI / OpenRouter providers are stubs; landing one of those is the next step on the API path. |
+| **Tier 1 (separate path)** | API — Anthropic / OpenAI / OpenRouter | Real (via native `fetch`). The same execution-plan / skill / merge surface as the CLI backends, with a separate in-process tool loop. All three providers run real tool-use loops; Anthropic gets cache-token telemetry. |
 
 Tiering is about *operational commitment*, not feature scope — every backend gets the same execution-plan schema, the same MCP wiring, the same skills.
 
@@ -333,7 +339,7 @@ Each agent backend's MCP coverage is uneven (Copilot's MCP support is newest, Co
 - **Validation gating** — a task with `validation.must-pass: true` whose pipeline exits non-zero **never** merges. The validation verdict is recorded on `task:completed` with `{exitCode, decisionReason, durationMs, mustPass}` so you can see why yaao decided pass/fail from `yaao_status` alone. Validation commands run under `bash -e -o pipefail`, so `make && nm build/kernel.elf | grep symbol` fails uniformly when any step in the pipe fails.
 - **Resume** — runs are journaled to `.yaao/runs/<run-id>/`; `yaao run --resume <id>` (or `yaao_resume({runId})`) picks up after a crash. The same runId carries through start → fail → resume → success in one continuous timeline.
 
-### Concurrent runs (Phase 16)
+### Concurrent runs
 
 Two `yaao run` invocations against distinct feature branches can execute in parallel — yaao does not serialize concurrent runs behind any project-wide lock. Invariants:
 
