@@ -2,7 +2,16 @@
   "name": "yaao",
   "version": "1.0.0-alpha",
   "description": "yet another agent orchestrator",
+  "author": "David Franz",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/david-franz/yaao.git"
+  },
+  "homepage": "https://github.com/david-franz/yaao#readme",
+  "bugs": {
+    "url": "https://github.com/david-franz/yaao/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
