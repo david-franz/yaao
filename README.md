@@ -7,7 +7,7 @@
 3. **Run** — execute the plan across multiple agents in parallel using **git worktrees** (one worktree per task), with merging back to a base branch.
 4. **Inspect & resume** — watch a running plan, browse history, recover from partial failures, all via the same CLI you started from or the MCP tools.
 
-It is editor- and agent-agnostic: every step in an execution plan can be assigned to **Claude Code**, **Cursor**, **GitHub Copilot**, **Codex**, or a raw **Anthropic API** model. The integration story across these is **MCP-first** — yaao itself is an MCP server, every agent registers it the same way, and skills live behind the MCP boundary instead of being duplicated per-agent. It integrates natively with [`ctx-sys`](../ctx-sys) for context retrieval when configured — agents are explicitly directed to query ctx-sys before writing code.
+It is editor- and agent-agnostic: every step in an execution plan can be assigned to **Claude Code**, **Cursor**, **GitHub Copilot**, **Codex**, or a raw **Anthropic API** model. The integration story across these is **MCP-first** — yaao itself is an MCP server, every agent registers it the same way, and skills live behind the MCP boundary instead of being duplicated per-agent. It integrates natively with [`ctx-sys`](https://github.com/david-franz/ctx-sys) for context retrieval when configured — agents are explicitly directed to query ctx-sys before writing code.
 
 ---
 
@@ -125,7 +125,7 @@ Worktree reuse across runs is keyed on `(planName, taskId, sha256(promptBody)[..
 
 ### ctx-sys integration (optional)
 
-[`ctx-sys`](../ctx-sys) is a local hybrid-RAG context system. yaao integrates with it cleanly but treats it as **completely optional** — yaao never depends on ctx-sys, never installs it, and the default config has it disabled.
+[`ctx-sys`](https://github.com/david-franz/ctx-sys) is a local hybrid-RAG context system. yaao integrates with it cleanly but treats it as **completely optional** — yaao never depends on ctx-sys, never installs it, and the default config has it disabled.
 
 When `context.ctx-sys.enabled: true`, yaao:
 
@@ -455,7 +455,7 @@ The full phase-by-phase implementation plan lives in [docs/IMPLEMENTATION.md](do
 
 ## Prior art and acknowledgments
 
-- [`ctx-sys`](../ctx-sys) — local hybrid-RAG context system; yaao's preferred context provider.
+- [`ctx-sys`](https://github.com/david-franz/ctx-sys) — local hybrid-RAG context system; yaao's preferred context provider.
 - [GitHub Spec Kit](https://github.com/github/spec-kit) — spec-first development workflow.
 - [Anthropic Claude Code](https://claude.com/claude-code), [Cursor](https://cursor.com), [GitHub Copilot](https://github.com/features/copilot), [OpenAI Codex](https://github.com/openai/codex) — the agents yaao orchestrates.
 
