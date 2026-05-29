@@ -38,6 +38,7 @@ config-honoring, all-providers-functional engine first.
 | **F14.7** | Copilot backend reality check + working implementation | [F14.7-copilot-backend-reality-check.md](F14.7-copilot-backend-reality-check.md) |
 | **F14.8** | Config UX & model discovery (`plan.agent`/`plan.model`, dead-field cleanup, `merge.history: rebase` default, `yaao agents --models`, `$schema` URL fix, "exited -1" fix) | [F14.8-config-ux-and-model-discovery.md](F14.8-config-ux-and-model-discovery.md) |
 | **F14.9** | Base-branch auto-detection at init + validation at run, and `--feature-branch` CLI flag plumbed across plan/convert/run with documented override semantics | [F14.9-base-branch-detection-and-feature-branch-flag.md](F14.9-base-branch-detection-and-feature-branch-flag.md) |
+| **F14.10** | `yaao skills import` — convert claude / cursor / copilot / codex / generic skill formats into yaao skills so any single-provider library becomes cross-provider via MCP | [F14.10-skills-import.md](F14.10-skills-import.md) |
 
 ## Why now
 
@@ -115,6 +116,16 @@ overstates its real integration support. Specifically:
   F14.9 closes both — detection at init, validation at run, and
   `--feature-branch` plumbed across the three commands with
   documented precedence.
+- **Skills are only portable inside their native provider.** A user
+  who has invested in a 30-skill Claude library can only use those
+  skills on Claude Code. Cursor rules only work in Cursor. Copilot
+  custom instructions only in Copilot. The MCP boundary makes
+  yaao-format skills cross-provider, but there's no path to *bring*
+  the user's existing single-provider libraries across. The agent
+  layer is integrated; the skill layer isn't. F14.10's
+  `yaao skills import` closes that gap — claude/cursor/copilot/codex
+  formats convert to yaao's portable format in one command and become
+  callable from every agent via MCP.
 
 ## Implementation order
 
@@ -148,9 +159,13 @@ overstates its real integration support. Specifically:
    runner.ts, git.ts, and the three CLI commands rather than the
    config schema. Could land in parallel with F14.8 if reviewers want
    smaller PRs.
-9. **F14.5** last. Lowest-impact of the nine; surfaces today's silent
-   Spec Kit parser failures and propagates `spec.md`/`plan.md`
-   content that's currently dropped on the floor.
+9. **F14.10** ninth. Independent of every other Phase 14 feature
+   (only F8.1 / F8.6 / F12.6 dependencies, all shipped). Could land
+   in parallel with anything from F14.4 onwards. Place this in PR
+   queue based on reviewer bandwidth.
+10. **F14.5** last. Lowest-impact of the ten; surfaces today's silent
+    Spec Kit parser failures and propagates `spec.md`/`plan.md`
+    content that's currently dropped on the floor.
 
 ## Out of scope
 
