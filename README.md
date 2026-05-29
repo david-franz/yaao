@@ -276,7 +276,7 @@ yaao is both an MCP **server** (exposing tools to agents) and an MCP **client** 
 ┌──────────────────┐       MCP        ┌────────────────┐
 │   agent backend  │ ◀──────────────▶ │  yaao server   │
 │ (cc/cursor/cop/  │   tools, plans   │ (per-run stdio │
-│  codex/api)      │   skill calls    │  or socket)    │
+│  codex/api)      │   skill calls    │  stdio server) │
 └──────────────────┘                  └───────┬────────┘
                                               │ MCP client
                                       ┌───────▼────────┐
