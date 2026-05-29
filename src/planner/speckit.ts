@@ -36,7 +36,24 @@ function renderTaskBlock(t: ParsedTask): string {
   return lines.join('\n');
 }
 
-const TASK_LINE_RE = /^-\s*\[[xX ]\]\s*\*\*([a-z][a-z0-9-_]*)\*\*\s*[—-]\s*(.+)$/;
+/**
+ * F14.5 — Task-line regex relaxed to accept common authoring variants
+ * without losing precision. Matches:
+ *  - bullet:    `-` or `*`
+ *  - checkbox:  optional `[ ]`, `[x]`, or `[X]`
+ *  - emphasis:  `**id**` (double asterisks; canonical), `__id__`,
+ *               `*id*`, or `_id_`. Plain `id` without emphasis still
+ *               fails — without that boundary we'd grab prose lines.
+ *  - separator: em-dash (—), en-dash (–), or ASCII hyphen-minus (-)
+ *  - id:        lowercase-only kebab/underscore slug
+ *
+ * A `tasks.md` whose task lines don't match this regex parses as zero
+ * tasks and surfaces YAAO_SPECKIT_PARSE_EMPTY with a hint pointing at
+ * the expected shape, rather than silently emitting an empty execution
+ * plan.
+ */
+const TASK_LINE_RE =
+  /^[-*]\s*(?:\[[xX ]\]\s*)?(?:\*\*|__|\*|_)([a-z][a-z0-9-_]*)(?:\*\*|__|\*|_)\s*[—–-]\s*(.+)$/;
 
 export function parseSpecKit(triplet: { spec?: string; plan?: string; tasks: string; title?: string }): ParsedPlan {
   const out: ParsedPlan = {
@@ -48,6 +65,12 @@ export function parseSpecKit(triplet: { spec?: string; plan?: string; tasks: str
   };
   out.title = triplet.title ?? extractTitle(triplet.spec ?? triplet.plan ?? triplet.tasks);
   out.description = extractDescription(triplet.spec ?? triplet.plan ?? '');
+  // F14.5 — preserve the full body of spec.md and plan.md when supplied
+  // so the converter can propagate them through to plan.context in the
+  // generated execution plan. Today only the title/description are read;
+  // architectural decisions written in plan.md were silently dropped.
+  if (triplet.spec !== undefined) out.specContent = triplet.spec;
+  if (triplet.plan !== undefined) out.planContent = triplet.plan;
 
   const lines = triplet.tasks.split(/\r?\n/);
   let current: ParsedTask | undefined;
@@ -87,6 +110,21 @@ export function parseSpecKit(triplet: { spec?: string; plan?: string; tasks: str
     promptBuf.push(line.replace(/^\s{0,2}/, ''));
   }
   flush();
+  // F14.5 — surface "no tasks parsed" as a discoverable warning.
+  // Without this, a tasks.md whose task lines miss the regex parses
+  // silently as an empty plan; `yaao convert` then succeeds and
+  // `yaao run` reports "0 tasks queued" with no breadcrumb pointing
+  // at the source file's actual problem.
+  if (out.tasks.length === 0) {
+    out.issues.push({
+      code: 'YAAO_SPECKIT_PARSE_EMPTY',
+      message:
+        'tasks.md produced zero tasks — the task-line shape did not match. ' +
+        'Expected `- [ ] **task-id** — Title` (or relaxed variants: ' +
+        'single asterisks, en-dash, missing checkbox). Check checkbox, ' +
+        'bold asterisks, and dash variant.',
+    });
+  }
   return out;
 }
 

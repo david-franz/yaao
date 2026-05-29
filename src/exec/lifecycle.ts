@@ -208,7 +208,15 @@ export class Lifecycle {
       const conflictPrefix = wt.unresolvedConflicts?.length
         ? buildConflictResolutionPrefix(wt.unresolvedConflicts, wt.conflictingParent, wt.deferredParents)
         : '';
-      const prompt = `${priorFailurePrefix}${conflictPrefix}${prefix}${promptBody}`;
+      // F14.5 — Inline plan.context (from a Spec Kit triplet's spec.md +
+      // plan.md, propagated by the converter) into every task's prompt
+      // ahead of the dep-context prefix. Token-budgeted via
+      // config.context.plan-context-budget (default 4000); 0 disables.
+      const planCtxPrefix = buildPlanContextPrefix(
+        this.opts.plan.plan.context,
+        ctxBudgets['plan-context-budget'] ?? 4000,
+      );
+      const prompt = `${priorFailurePrefix}${conflictPrefix}${planCtxPrefix}${prefix}${promptBody}`;
       const systemPrompt = computeSystemPrompt(task, this.opts.ctxSysDirective);
 
       // 3) Spawn agent. Snapshot HEAD first so we can later tell whether this
@@ -927,6 +935,27 @@ function extractPriorFailureContext(err: YaaoError, attempt = 1): PriorFailureCo
  * read on a retry/resume attempt. Kept short to leave room for the actual
  * task prompt; tails are already truncated to ~30 lines upstream.
  */
+/**
+ * F14.5 — Plan-level context block prepended to every task's prompt.
+ * Carries content propagated from a Spec Kit triplet's spec.md +
+ * plan.md so architectural decisions written outside the per-task
+ * prompts still reach the agent. Token-budgeted by the caller; 0
+ * disables. Approximates 4 chars/token (matches the existing
+ * trimToTokenBudget convention in exec/context.ts).
+ */
+function buildPlanContextPrefix(context: string | undefined, budget: number): string {
+  if (!context || context.trim().length === 0 || budget <= 0) return '';
+  const charBudget = budget * 4;
+  let body = context.trim();
+  let truncated = false;
+  if (body.length > charBudget) {
+    body = `${body.slice(0, charBudget)}\n\n_(plan-context truncated to fit ${budget}-token budget)_`;
+    truncated = true;
+  }
+  void truncated;
+  return `## Plan context\n\n${body}\n\n---\n\n`;
+}
+
 function buildPriorFailurePrefix(failure: PriorFailureContext): string {
   const lines: string[] = [];
   lines.push('## Previous attempt failed — please address the failure');

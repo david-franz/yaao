@@ -8,6 +8,7 @@ import { assignAgent, type AgentRule } from './assign-agent.js';
 import { inferDependencies, type InferMode } from './infer-deps.js';
 import { isNarrowDag } from '../plan/dag.js';
 import { PlanValidationError } from '../log/errors.js';
+import type { ParsedPlan } from '../planner/markdown.js';
 
 export interface ConvertOptions {
   cwd: string;
@@ -103,12 +104,19 @@ export async function convertPlan(opts: ConvertOptions): Promise<ConvertResult> 
     return task;
   });
 
+  // F14.5 — Propagate spec.md and plan.md content (when the source was a
+  // Spec Kit triplet) into `plan.context`. Lifecycle inlines this into
+  // every task's prompt at run time, token-budgeted by
+  // `config.context.plan-context-budget`. A converter that's seeing a
+  // markdown plan (no spec/plan side files) leaves the field empty.
+  const planContext = buildPlanContext(parsed);
   const plan: Plan = {
     plan: {
       name: planName,
       version: 1,
       ...(parsed.description ? { description: parsed.description } : {}),
       ...(opts.featureBranch ? { featureBranch: opts.featureBranch } : {}),
+      ...(planContext !== undefined ? { context: planContext } : {}),
     },
     config: undefined,
     context: undefined,
@@ -324,4 +332,23 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, '')
     .replace(/^([^a-z])/, 'p-$1')
     .slice(0, 60);
+}
+
+/**
+ * F14.5 — Compose `plan.context` from the source Spec Kit triplet's
+ * `spec.md` + `plan.md` bodies. Returns undefined when neither is
+ * present (the markdown-plan path); returns a concatenated string with
+ * H2 separators when one or both are. Lifecycle reads this and inlines
+ * into every task's prompt under a "Plan context" preamble.
+ */
+function buildPlanContext(parsed: ParsedPlan): string | undefined {
+  const blocks: string[] = [];
+  if (parsed.specContent && parsed.specContent.trim().length > 0) {
+    blocks.push(`## From spec.md\n\n${parsed.specContent.trim()}`);
+  }
+  if (parsed.planContent && parsed.planContent.trim().length > 0) {
+    blocks.push(`## From plan.md\n\n${parsed.planContent.trim()}`);
+  }
+  if (blocks.length === 0) return undefined;
+  return blocks.join('\n\n');
 }

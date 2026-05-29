@@ -21,6 +21,15 @@ export interface ParsedPlan {
   tasks: ParsedTask[];
   /** Issues discovered during parse (heading/table mismatches, etc). */
   issues: { code: string; message: string }[];
+  /**
+   * F14.5 — Verbatim contents of the source spec.md and plan.md files
+   * (when present), preserved for propagation into the generated
+   * execution plan's `plan.context` field. The markdown parser leaves
+   * these unset; the Spec Kit parser populates them when given a
+   * triplet. Consumers should treat undefined as "no propagation".
+   */
+  specContent?: string;
+  planContent?: string;
 }
 
 const SLUG_RE = /^[a-z][a-z0-9-_]*$/;

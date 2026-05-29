@@ -136,11 +136,13 @@ export const PlanConfigSchema = z
       .optional(),
     /** Token budgets for the upstream-context preamble prepended to a task's
      * prompt. Both are approximate (4 chars/token). When omitted, the lifecycle
-     * uses sensible defaults (2000 per dep, 12000 total). */
+     * uses sensible defaults (2000 per dep, 12000 total). plan-context-budget
+     * (F14.5) caps the plan.context inlined into every task; 0 disables it. */
     context: z
       .object({
         'per-dep-budget': z.number().int().positive().optional(),
         'total-budget': z.number().int().positive().optional(),
+        'plan-context-budget': z.number().int().nonnegative().optional(),
       })
       .strict()
       .optional(),
@@ -183,6 +185,15 @@ export const PlanHeaderSchema = z
      * tasks merge straight into the workspace base-branch.
      */
     featureBranch: z.string().min(1).optional(),
+    /**
+     * F14.5 — Plan-level context propagated to every task at run time.
+     * Populated by `yaao convert` from the source Spec Kit triplet's
+     * `spec.md` + `plan.md` bodies, so architectural decisions written
+     * outside the per-task prompts still reach the agents. Inlined into
+     * each task's resolved prompt by lifecycle.ts, token-budgeted via
+     * `config.context.plan-context-budget`.
+     */
+    context: z.string().optional(),
   })
   .strict();
 
