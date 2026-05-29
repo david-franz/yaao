@@ -6,8 +6,6 @@ import type { YaaoConfig } from '../config/types.js';
 export interface CtxSysStatus {
   installed: boolean;
   initialized: boolean;
-  running: boolean;
-  socketPath?: string;
   version?: string;
   /** True if `.ctx-sys/ctx-sys.db` exists and reports at least one indexed entity. */
   indexed?: boolean;
@@ -23,11 +21,13 @@ export interface DetectOptions {
 }
 
 /**
- * Probe ctx-sys against the project. Pure inspection — never spawns. The caller (F7.1's
- * spawn step) decides what to do with the report.
+ * Probe ctx-sys against the project. Pure inspection — never spawns. The caller
+ * (the `run` command's ctx-sys gate) decides what to do with the report: when
+ * enabled + installed + indexed it injects a per-agent `ctx-sys serve` MCP entry
+ * and the context_query directive; otherwise it warns and runs without them.
  */
 export async function detectCtxSys(opts: DetectOptions): Promise<CtxSysStatus> {
-  const status: CtxSysStatus = { installed: false, initialized: false, running: false };
+  const status: CtxSysStatus = { installed: false, initialized: false };
   const cwd = resolve(opts.cwd);
   const bin = opts.bin ?? 'ctx-sys';
 
@@ -59,14 +59,7 @@ export async function detectCtxSys(opts: DetectOptions): Promise<CtxSysStatus> {
     dir = parent;
   }
 
-  // 3) Is there a project socket? If so, ctx-sys is already serving.
-  const sock = join(cwd, '.ctx-sys', 'yaao-mcp.sock');
-  if (existsSync(sock)) {
-    status.running = true;
-    status.socketPath = sock;
-  }
-
-  // 4) Is the index present and non-empty? `ctx-sys status --json` would be the canonical
+  // 3) Is the index present and non-empty? `ctx-sys status --json` would be the canonical
   // probe; we fall back to inspecting the on-disk DB file.
   if (status.initialized) {
     const dbPath = join(dir, '.ctx-sys', 'ctx-sys.db');

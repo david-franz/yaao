@@ -49,7 +49,7 @@ tasks:
 
     const mcpServers: McpServerConfig[] = [
       { name: 'yaao', command: 'yaao', args: ['serve'], env: {} },
-      { name: 'ctx-sys', command: 'ctx-sys', args: ['serve', '--socket', '/tmp/x'], env: {} },
+      { name: 'ctx-sys', command: 'ctx-sys', args: ['serve', '--project', repo.path], env: {} },
     ];
     const result = await runPlan({
       requireTrackedPlan: 'off',

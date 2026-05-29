@@ -1,5 +1,4 @@
 import type { McpServerConfig } from '../agents/backend.js';
-import type { CtxSysHandle } from './spawn.js';
 import { YaaoError } from '../log/errors.js';
 
 export const RESERVED_MCP_NAMES = new Set(['yaao', 'ctx-sys']);
@@ -7,8 +6,15 @@ export const RESERVED_MCP_NAMES = new Set(['yaao', 'ctx-sys']);
 export interface BuildMcpServersOptions {
   /** yaao's own MCP server (Phase 12 will land this). Omit if not yet running. */
   yaaoServer?: McpServerConfig;
-  /** A ctx-sys handle if F7.1 spawned one. */
-  ctxSys?: CtxSysHandle;
+  /**
+   * Absolute path to the project root whose ctx-sys index agents should query.
+   * When set, every agent gets its own `ctx-sys serve --project <root>` stdio
+   * MCP server (each agent process spawns its own — MCP stdio is per-client, and
+   * the on-disk SQLite index is shared read-only via WAL). Pinning `--project`
+   * to the root means agents query the base index, not the worktree they run in.
+   * Omit to leave ctx-sys out entirely.
+   */
+  ctxSysProjectRoot?: string;
   /** User-declared MCP servers from `yaao.config.json.mcp-servers`. */
   userServers?: Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
   /** Override the ctx-sys binary name when materializing the entry. */
@@ -23,11 +29,11 @@ export interface BuildMcpServersOptions {
 export function buildMcpServers(opts: BuildMcpServersOptions): McpServerConfig[] {
   const out: McpServerConfig[] = [];
   if (opts.yaaoServer) out.push(opts.yaaoServer);
-  if (opts.ctxSys) {
+  if (opts.ctxSysProjectRoot) {
     out.push({
       name: 'ctx-sys',
       command: opts.ctxSysBin ?? 'ctx-sys',
-      args: ['serve', '--socket', opts.ctxSys.socketPath],
+      args: ['serve', '--project', opts.ctxSysProjectRoot],
       env: {},
     });
   }
