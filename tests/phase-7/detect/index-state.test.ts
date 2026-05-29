@@ -27,7 +27,7 @@ describe('detectCtxSys: index state', () => {
     project = createTmpProject();
     project.write('.git/HEAD', 'ref: refs/heads/main\n');
     mkdirSync(join(project.path, '.ctx-sys'), { recursive: true });
-    writeFileSync(join(project.path, '.ctx-sys', 'db.sqlite'), 'sqlite-bytes');
+    writeFileSync(join(project.path, '.ctx-sys', 'ctx-sys.db'), 'sqlite-bytes');
     const r = await detectCtxSys({
       cwd: project.path,
       config: DEFAULT_CONFIG,

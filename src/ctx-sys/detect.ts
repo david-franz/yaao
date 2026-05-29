@@ -9,7 +9,7 @@ export interface CtxSysStatus {
   running: boolean;
   socketPath?: string;
   version?: string;
-  /** True if `.ctx-sys/db.sqlite` exists and reports at least one indexed entity. */
+  /** True if `.ctx-sys/ctx-sys.db` exists and reports at least one indexed entity. */
   indexed?: boolean;
   /** Reason populated when the status reports a problem (e.g. missing index). */
   reason?: string;
@@ -69,7 +69,7 @@ export async function detectCtxSys(opts: DetectOptions): Promise<CtxSysStatus> {
   // 4) Is the index present and non-empty? `ctx-sys status --json` would be the canonical
   // probe; we fall back to inspecting the on-disk DB file.
   if (status.initialized) {
-    const dbPath = join(dir, '.ctx-sys', 'db.sqlite');
+    const dbPath = join(dir, '.ctx-sys', 'ctx-sys.db');
     if (existsSync(dbPath)) {
       try {
         status.indexed = statSync(dbPath).size > 0;
