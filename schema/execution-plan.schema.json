@@ -21,6 +21,9 @@
             "featureBranch": {
               "type": "string",
               "minLength": 1
+            },
+            "context": {
+              "type": "string"
             }
           },
           "required": [
@@ -80,6 +83,10 @@
                 "total-budget": {
                   "type": "integer",
                   "exclusiveMinimum": 0
+                },
+                "plan-context-budget": {
+                  "type": "integer",
+                  "minimum": 0
                 }
               },
               "additionalProperties": false

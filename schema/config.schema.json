@@ -81,7 +81,7 @@
                 "merge",
                 "rebase"
               ],
-              "default": "merge"
+              "default": "rebase"
             },
             "conflict-resolver": {
               "type": "object",
@@ -244,8 +244,7 @@
               "default": "markdown"
             },
             "speckit": {
-              "type": "boolean",
-              "default": false
+              "type": "boolean"
             },
             "out-dir": {
               "type": "string",
@@ -254,6 +253,26 @@
             "exec-dir": {
               "type": "string",
               "default": ".yaao/exec"
+            },
+            "agent": {
+              "$ref": "#/definitions/YaaoConfig/properties/defaults/properties/agent"
+            },
+            "model": {
+              "type": "string"
+            },
+            "api": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "anthropic",
+                    "openai",
+                    "openrouter"
+                  ]
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false,
