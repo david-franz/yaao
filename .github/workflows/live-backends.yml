@@ -1,0 +1,88 @@
+# F14.4 — Live backend smoke tests.
+#
+# Separate from ci.yml so default PR runs stay fast (no vendor CLI installs,
+# no real API calls). This workflow opts into the gated live tests under
+# tests/phase-14/live/ via YAAO_LIVE_BACKENDS=1 and supplies whichever
+# binaries / API keys are configured as secrets. Tests that can't satisfy
+# their gate (binary missing, key absent) still skip cleanly — the runner's
+# summary will show which coverage was lost.
+#
+# Triggers:
+#  - nightly cron (catches vendor CLI updates between PRs)
+#  - manual dispatch from the Actions UI
+#
+# NOT a PR / push gate — this workflow can fail (e.g. a vendor ships a
+# breaking CLI change) without blocking merge. Failures here are an alert,
+# not a block; F14.7 / F14.6 / followups address whatever surfaces.
+
+name: live-backends
+
+on:
+  schedule:
+    # 07:00 UTC daily — runs after most West-coast vendor pushes.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: live-backends-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-backends:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Opt every gated live test in. Tests still skip when their backend's
+      # binary or key is unavailable, so missing-secret rows surface as
+      # skipped not failed.
+      YAAO_LIVE_BACKENDS: '1'
+      # Vendor secrets — configure these in Settings → Secrets and
+      # variables → Actions. Unset secrets resolve to empty strings; the
+      # tests' hasEnvVar / hasBinary checks then skip cleanly.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Best-effort install of vendor CLIs. Each step continues on
+      # failure so a missing vendor (e.g. gh-copilot extension not
+      # installable in CI) doesn't fail the whole workflow — the gated
+      # test will skip with a clear reason.
+      - name: Install gh + gh-copilot
+        continue-on-error: true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+          gh --version
+          gh extension install github/gh-copilot || true
+
+      - name: Install codex CLI
+        continue-on-error: true
+        run: |
+          # Codex install path is intentionally left blank — update once
+          # F14.7's reality check pins down the supported install method.
+          which codex || echo 'codex CLI not installed; codex live test will skip'
+
+      - name: Install cursor-agent
+        continue-on-error: true
+        run: |
+          # cursor-agent install path is intentionally left blank — see F14.4.
+          which cursor-agent || echo 'cursor-agent not installed; cursor live test will skip'
+
+      - name: Install claude
+        continue-on-error: true
+        run: |
+          # claude CLI install path: see anthropic.com/claude-code docs.
+          which claude || echo 'claude CLI not installed; claude-code live test will skip'
+
+      - name: Run live backend tests
+        run: npm test -- tests/phase-14/live/
