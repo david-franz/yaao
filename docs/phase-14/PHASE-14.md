@@ -37,6 +37,7 @@ config-honoring, all-providers-functional engine first.
 | **F14.6** | OpenAI + OpenRouter provider implementations (replace the stubs with working impls) | [F14.6-openai-openrouter-providers.md](F14.6-openai-openrouter-providers.md) |
 | **F14.7** | Copilot backend reality check + working implementation | [F14.7-copilot-backend-reality-check.md](F14.7-copilot-backend-reality-check.md) |
 | **F14.8** | Config UX & model discovery (`plan.agent`/`plan.model`, dead-field cleanup, `merge.history: rebase` default, `yaao agents --models`, `$schema` URL fix, "exited -1" fix) | [F14.8-config-ux-and-model-discovery.md](F14.8-config-ux-and-model-discovery.md) |
+| **F14.9** | Base-branch auto-detection at init + validation at run, and `--feature-branch` CLI flag plumbed across plan/convert/run with documented override semantics | [F14.9-base-branch-detection-and-feature-branch-flag.md](F14.9-base-branch-detection-and-feature-branch-flag.md) |
 
 ## Why now
 
@@ -103,6 +104,17 @@ overstates its real integration support. Specifically:
   there's no exit code to report — and F14.8 closes all three threads
   with `yaao agents --models`, a per-backend static catalog, and the
   spawn-failure rendering fix.
+- **Base-branch is hard-coded to `main` through the whole stack.**
+  Schema, init scaffold, plan resolution, branch policy — all assume
+  `main`. A repo using `master` fails at worktree creation with a
+  cryptic `git rev-parse --verify` error, no detection, no suggestion.
+  Every sufficiently old GitHub repo hits this on first `yaao run`.
+  And the CLI surface is asymmetric with the MCP one: `yaao_convert`
+  and `yaao_run` already take a `featureBranch` argument, but
+  `yaao plan` / `yaao convert` / `yaao run` have no CLI flag for it.
+  F14.9 closes both — detection at init, validation at run, and
+  `--feature-branch` plumbed across the three commands with
+  documented precedence.
 
 ## Implementation order
 
@@ -132,7 +144,11 @@ overstates its real integration support. Specifically:
 7. **F14.8** seventh. Depends on F14.1 (planner config-awareness) and
    F14.6 (api backend usable for planning). Bundles the config-block
    cleanup, the model-discovery surface, and the `$schema` URL fix.
-8. **F14.5** last. Lowest-impact of the eight; surfaces today's silent
+8. **F14.9** eighth. Independent of F14.8 — touches init.ts,
+   runner.ts, git.ts, and the three CLI commands rather than the
+   config schema. Could land in parallel with F14.8 if reviewers want
+   smaller PRs.
+9. **F14.5** last. Lowest-impact of the nine; surfaces today's silent
    Spec Kit parser failures and propagates `spec.md`/`plan.md`
    content that's currently dropped on the floor.
 
