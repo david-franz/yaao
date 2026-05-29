@@ -16,7 +16,7 @@ yaao is implemented in 18 phases, progressing from foundational CLI infrastructu
 | 4  | Agent backends              | Backend interface + Claude Code, Cursor, Copilot, Codex, API    | Shipped |
 | 5  | Execution engine            | Scheduler, lifecycle, event bus, `run`, resume, dry-run         | Shipped |
 | 6  | Merge engine                | Topological merge, manual/auto/agent conflict modes, PR mode    | Shipped |
-| 7  | ctx-sys integration         | Detection, auto-spawn, MCP injection, query enforcement         | Shipped (yaao-side; runtime gated on ctx-sys 2.0 F1.3) |
+| 7  | ctx-sys integration         | Detection, per-agent MCP injection, context_query directive     | Shipped |
 | 8  | Skills system               | Source-of-truth format, per-agent emitters, `skills install`    | Shipped |
 | 9  | yaao-planner skill          | Plan generation (markdown + Spec Kit), `plan` command           | Shipped |
 | 10 | yaao-converter skill        | Plan → execution-plan compiler, `convert` command               | Shipped |
@@ -158,17 +158,17 @@ How completed worktrees come back together — and what happens when they collid
 
 Make ctx-sys a first-class context provider for any agent yaao runs, **but completely optional**. yaao never depends on ctx-sys, never installs it, and ships with `ctx-sys.enabled: false` in the default config. When the user opts in, the integration is proactive — not lazy or deferred.
 
-> **Runtime status.** Auto-spawn calls `ctx-sys serve --socket <path>` and waits for a `ready` log line — both part of the contract being formalized in ctx-sys 2.0 ([F1.3](../../ctx-sys/docs/v2/phase-1/F1.3-yaao-native-integration.md)). Until ctx-sys 2.0 ships, the `ctx-sys.enabled: true` path errors at first task spawn (commander rejects the unknown `--socket` flag and the spawn times out waiting for ready). The default config (`enabled: false`) is unaffected.
+> **Runtime status.** Live. With `ctx-sys.enabled: true` (and `auto-spawn: true`), the `run` command gives every agent its own `ctx-sys serve --project <root>` stdio MCP server — no yaao-side daemon, no socket. Each agent process spawns its own ctx-sys (MCP stdio is per-client); the on-disk index is shared read-only via SQLite WAL, and `--project <root>` pins queries to the base index rather than the agent's worktree. Requires `ctx-sys` on `PATH` + an indexed project; otherwise yaao warns and degrades to running without context. (The earlier shared-socket design — `ctx-sys serve --socket` + a ready handshake — was dropped: a single-connection socket can't serve a fan-out of agents.)
 
 | Feature | Description | Status | Doc |
 |---------|-------------|--------|-----|
-| **F7.1** | Detection & auto-spawn (when enabled)       | shipped | [F7.1-detect-and-spawn.md](phase-7/F7.1-detect-and-spawn.md) |
+| **F7.1** | Detection & per-agent injection (when enabled) | shipped | [F7.1-detect-and-spawn.md](phase-7/F7.1-detect-and-spawn.md) |
 | **F7.2** | MCP server registration (ctx-sys + user MCPs) | shipped | [F7.2-mcp-injection.md](phase-7/F7.2-mcp-injection.md) |
 | **F7.3** | System-prompt directive (advisory)          | shipped | [F7.3-query-enforcement.md](phase-7/F7.3-query-enforcement.md) |
 | **F7.4** | Optional git-hook impact reports            | removed | [F7.4-impact-hook.md](phase-7/F7.4-impact-hook.md) |
 
 **Key Deliverables:**
-- Default-off in `yaao.config.json`. When `ctx-sys.enabled: true`, yaao detects whether `ctx-sys serve` is running and (if `auto-spawn: true`) spawns it for the run.
+- Default-off in `yaao.config.json`. When `ctx-sys.enabled: true` (and `auto-spawn: true`), yaao injects a per-agent `ctx-sys serve --project <root>` stdio MCP server after confirming ctx-sys is installed + indexed; `--no-ctx-sys` skips it for one run, and `auto-spawn: false` leaves wiring to the user.
 - Generic MCP-server registration: ctx-sys is one entry; users can add other MCP servers via `mcp-servers:` and they flow through the same injection path.
 - Every step gets an advisory system-prompt directive recommending `context_query` before writing code. **No hard enforcement** — agents decide whether to query.
 - ~~Optional: install a git pre-commit hook that calls `ctx-sys hooks.impact_report` and feeds the result to merge-time conflict-resolution agents.~~ **Removed** — ctx-sys 2.0 cut the `hooks impact-report` command; the impact-on-demand role is now served by the advisory `context_query` directive above. See [F7.4](phase-7/F7.4-impact-hook.md).

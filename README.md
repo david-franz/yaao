@@ -17,7 +17,7 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 Recent additions worth knowing about even mid-MVP: a per-plan `plan.featureBranch` so feature-branch routing lives in the plan YAML instead of mutating workspace config per feature; a `yaao stop` CLI + `yaao_stop` MCP tool that cross-process cancels a run via SIGTERM (the runner stamps `cancelled` in the journal before exit); a converter `YAAO_PLAN_NARROW_DAG` warning that nudges away from strict-chain plans; and planner-skill prompt updates that prefer parallel siblings over a serial spine.
 
-> **ctx-sys runtime caveat.** Phase 7's yaao-side code (detect, auto-spawn, MCP injection, directive) is shipped, but live auto-spawn depends on the `ctx-sys serve --socket <path>` + ready-signal contract being formalized in ctx-sys 2.0 ([F1.3](../ctx-sys/docs/v2/phase-1/F1.3-yaao-native-integration.md)). Until ctx-sys 2.0 lands, setting `ctx-sys.enabled: true` errors at first task spawn. The default config (`ctx-sys.enabled: false`) is unaffected.
+> **ctx-sys runtime note.** Phase 7's ctx-sys integration (detect, per-agent MCP injection, directive) is live: with `ctx-sys.enabled: true` each agent gets its own `ctx-sys serve --project <root>` stdio MCP server. It requires `ctx-sys` on `PATH` and an indexed project (`ctx-sys index`); if either is missing yaao warns and runs without codebase context. The default config (`ctx-sys.enabled: false`) is unaffected.
 
 Planned phases (in this order):
 
@@ -122,9 +122,9 @@ Worktree reuse across runs is keyed on `(planName, taskId, sha256(promptBody)[..
 
 When `context.ctx-sys.enabled: true`, yaao:
 
-- Auto-spawns `ctx-sys serve` on a project-scoped socket for the duration of the run (toggleable; if you'd rather run it yourself, set `auto-spawn: false`).
-- Registers ctx-sys as an MCP server alongside yaao's own MCP server, so every agent that connects to yaao's MCP also has `context_query` available.
+- Gives every agent its own `ctx-sys serve --project <root>` stdio MCP server, so each agent has `context_query` available. The server is pinned to the project root, so agents query the base index rather than the worktree they run in; the on-disk index is shared read-only (SQLite WAL). Set `auto-spawn: false` if you'd rather wire ctx-sys yourself — yaao then stays out entirely.
 - Prepends a system-prompt directive to every step: "Before writing or modifying code, call the `context_query` MCP tool to retrieve relevant context from this codebase."
+- Degrades gracefully: if ctx-sys is enabled but not installed or the project isn't indexed, yaao logs a warning and runs without codebase context rather than failing. Use `yaao run --no-ctx-sys` to skip injection for a single run.
 
 ctx-sys is one example of an MCP context provider. yaao's MCP wiring is generic — you can plug in any MCP server you like via `context.mcp-servers:` and the same injection path applies.
 
