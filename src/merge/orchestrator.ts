@@ -1,6 +1,8 @@
+import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { ResolvedPlan, ResolvedTask } from '../plan/schema/types.js';
 import type { BranchPlan } from '../git/branch-graph.js';
-import type { Git, MergeResult } from '../git/git.js';
+import type { Git } from '../git/git.js';
 
 export type MergeMode = 'auto' | 'manual' | 'agent';
 export type TaskMergePolicy = 'auto' | 'manual' | 'agent' | 'pr' | 'none';
@@ -78,6 +80,9 @@ export async function runMerge(req: MergeRequest): Promise<MergeOutcome> {
   const completed = new Set(req.completedTaskIds);
   const taskById = new Map(req.plan.tasks.map((t) => [t.id, t]));
   const order = req.branchPlan.topoOrder.length > 0 ? req.branchPlan.topoOrder : req.plan.tasks.map((t) => t.id);
+  // Honour the plan's history strategy, same as the live runner. Falls back to
+  // a merge commit when unset.
+  const historyMode = req.plan.config.merge?.history === 'rebase' ? 'rebase' : 'merge';
 
   const outcome: MergeOutcome = {
     merged: [],
@@ -88,8 +93,11 @@ export async function runMerge(req: MergeRequest): Promise<MergeOutcome> {
   };
   const blocked = new Set<string>(); // task ids whose downstream we should skip
 
-  // Make sure we're on the base branch.
-  await rawCheckout(git, req.baseBranch, req.rootDir);
+  // No `git checkout` here: every merge goes through plumbing (git.mergeRefs),
+  // so the user's working tree at rootDir is never touched and the target ref
+  // is advanced atomically (CAS via update-ref, or `reset --keep` when it is
+  // the checked-out branch). This mirrors the concurrency-safe path the live
+  // runner uses in exec/lifecycle.ts.
 
   for (const id of order) {
     const task = taskById.get(id);
@@ -128,65 +136,112 @@ export async function runMerge(req: MergeRequest): Promise<MergeOutcome> {
       continue;
     }
 
-    // Local merge (auto / manual / agent)
-    const mergeRes: MergeResult = await git.merge(branchEntry.branch, { ff: false }, req.rootDir);
+    // Local merge (auto / manual / agent) via plumbing — no working tree.
+    const message = `Merge ${branchEntry.branch} into ${req.baseBranch} (task ${id})`;
+    const mergeRes = await git.mergeRefs(
+      req.baseBranch,
+      branchEntry.branch,
+      { message, mode: historyMode },
+      req.rootDir,
+    );
     if (mergeRes.ok) {
       outcome.merged.push(id);
       continue;
     }
-    // Conflict. Abort first, then call resolver; in manual/auto modes we don't write markers
-    // unless the resolver opts in.
-    await git.mergeAbort(req.rootDir).catch(() => {
-      // ignore
-    });
 
     const taskMode = pickMode(policy, req.policy.onConflict);
-    if (taskMode === 'auto') {
-      outcome.conflicts.push({ taskId: id, files: mergeRes.conflicts, mode: 'auto' });
-      blocked.add(id);
-      continue;
-    }
-    if (taskMode === 'manual') {
-      outcome.conflicts.push({ taskId: id, files: mergeRes.conflicts, mode: 'manual' });
+    if (taskMode === 'auto' || taskMode === 'manual') {
+      // No working tree was touched, so there is nothing to abort or clean up.
+      outcome.conflicts.push({ taskId: id, files: mergeRes.conflicts, mode: taskMode });
       blocked.add(id);
       continue;
     }
 
-    // agent mode: redo the merge to populate markers, then call resolver.
-    await rawMergeNoCommit(git, branchEntry.branch, req.rootDir);
-    const decision = await resolver.resolve({
+    // agent mode: resolve the conflict in a throwaway detached worktree so the
+    // root working tree stays clean, then advance the target ref atomically.
+    const resolved = await resolveConflictInWorktree(
+      git,
+      req,
       task,
-      branch: branchEntry.branch,
-      files: mergeRes.conflicts,
-      worktreeRoot: req.rootDir,
-    });
-    if (decision.resolved) {
-      const msg = decision.commitMessage ?? `[merge-resolve] ${task.id} into ${req.baseBranch}`;
-      try {
-        await git.addAll(req.rootDir);
-        const sha = await git.commit(msg, undefined, req.rootDir);
-        outcome.merged.push(id);
-        void sha;
-      } catch (err) {
-        // commit failed (e.g., still markers); abort and treat as conflict.
-        await git.mergeAbort(req.rootDir).catch(() => undefined);
-        outcome.conflicts.push({
-          taskId: id,
-          files: mergeRes.conflicts,
-          mode: 'agent',
-        });
-        blocked.add(id);
-        void err;
-      }
+      branchEntry.branch,
+      mergeRes.conflicts,
+      resolver,
+    );
+    if (resolved) {
+      outcome.merged.push(id);
     } else {
-      await git.mergeAbort(req.rootDir).catch(() => undefined);
-      outcome.conflicts.push({ taskId: id, files: mergeRes.conflicts, mode: decision.mode });
+      outcome.conflicts.push({ taskId: id, files: mergeRes.conflicts, mode: 'agent' });
       blocked.add(id);
     }
   }
 
   outcome.finalCommit = await git.revParse('HEAD', req.rootDir);
   return outcome;
+}
+
+/**
+ * Resolve an `agent`-mode merge conflict without touching the root working
+ * tree. Mirrors the live runner's outgoing-conflict flow (exec/lifecycle.ts):
+ * stand up a detached worktree at the target's tip, replay the merge there to
+ * surface conflict markers, hand it to the resolver, and — on success —
+ * advance the target ref with an atomic CAS keyed on the target's old tip.
+ *
+ * Returns true on a clean resolution + ref advance, false otherwise (the
+ * caller records the conflict and blocks downstream).
+ */
+async function resolveConflictInWorktree(
+  git: Git,
+  req: MergeRequest,
+  task: ResolvedTask,
+  sourceBranch: string,
+  conflicts: string[],
+  resolver: ConflictResolver,
+): Promise<boolean> {
+  const targetSha = await git.revParse(req.baseBranch, req.rootDir).catch(() => '');
+  if (!targetSha) return false;
+
+  const safe = `${task.id}-into-${req.baseBranch}`.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const tmpPath = join(req.rootDir, '.yaao', 'runs', `_merge-${safe}-${req.runId}`);
+  try {
+    mkdirSync(dirname(tmpPath), { recursive: true });
+    await git.worktreeAdd(tmpPath, targetSha, req.rootDir);
+  } catch {
+    return false;
+  }
+
+  try {
+    // Populate conflict markers in the throwaway worktree for the resolver.
+    const { execa } = await import('execa');
+    await execa('git', ['merge', '--no-commit', '--no-ff', sourceBranch], {
+      cwd: tmpPath,
+      reject: false,
+    });
+
+    const decision = await resolver.resolve({
+      task,
+      branch: sourceBranch,
+      files: conflicts,
+      worktreeRoot: tmpPath,
+    });
+    if (!decision.resolved) return false;
+
+    const msg = decision.commitMessage ?? `[merge-resolve] ${task.id} into ${req.baseBranch}`;
+    let newHead: string;
+    try {
+      await git.addAll(tmpPath);
+      newHead = await git.commit(msg, undefined, tmpPath);
+    } catch {
+      // commit failed (e.g. markers remained / nothing staged); treat as conflict.
+      return false;
+    }
+    if (!newHead || newHead === targetSha) return false;
+
+    // CAS: only advances if the target still points at the tip we merged onto.
+    await git.advanceRef(req.baseBranch, newHead, targetSha, req.rootDir);
+    return true;
+  } finally {
+    await git.worktreeRemove(tmpPath, { force: true }, req.rootDir).catch(() => undefined);
+  }
 }
 
 function pickMode(taskPolicy: TaskMergePolicy, defaultMode: MergeMode): MergeMode {
@@ -199,14 +254,4 @@ function anyAncestorBlocked(task: ResolvedTask, blocked: Set<string>): boolean {
     if (blocked.has(dep)) return true;
   }
   return false;
-}
-
-async function rawCheckout(_git: Git, branch: string, cwd: string): Promise<void> {
-  const { execa } = await import('execa');
-  await execa('git', ['checkout', branch], { cwd, reject: false });
-}
-
-async function rawMergeNoCommit(_git: Git, branch: string, cwd: string): Promise<void> {
-  const { execa } = await import('execa');
-  await execa('git', ['merge', '--no-commit', '--no-ff', branch], { cwd, reject: false });
 }
