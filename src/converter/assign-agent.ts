@@ -1,5 +1,7 @@
 import type { YaaoConfig, AgentName } from '../config/types.js';
+import { isAgentEnabled, enabledAgents } from '../config/enabled-agents.js';
 import type { ParsedTask } from '../planner/markdown.js';
+import { NoEnabledAgentsError } from '../log/errors.js';
 
 export interface MatchPredicate {
   'title-regex'?: string;
@@ -65,7 +67,7 @@ export function assignAgent(task: ParsedTask, opts: AssignOptions): AssignmentRe
       // Skip rules that point at a disabled agent so we don't silently route work
       // to a backend the user hasn't set up. Falls through to the next matching
       // rule, or eventually the project default.
-      if (!isAgentEnabled(rule.agent, opts.config)) continue;
+      if (!isAgentEnabled(opts.config, rule.agent)) continue;
       return finalizeApiFallback(
         withResolvedModel(
           {
@@ -81,12 +83,20 @@ export function assignAgent(task: ParsedTask, opts: AssignOptions): AssignmentRe
   }
 
   // 3) Project default. defaults.model is the final fallback when no per-agent
-  // default-model is set for the chosen agent.
+  // default-model is set for the chosen agent. Note: pickEnabledFallback walks
+  // the enabled list when the project default is itself disabled — without
+  // that, configs whose disabled agent matches defaults.agent (the schema
+  // default `claude-code`) would route every unmatched task to a backend that
+  // will fail at spawn time.
+  const fallback = pickEnabledFallback(opts.config, opts.config.defaults.agent);
   return withResolvedModel(
     {
-      agent: opts.config.defaults.agent,
+      agent: fallback,
       model: opts.config.defaults.model,
-      reason: 'project default',
+      reason:
+        fallback === opts.config.defaults.agent
+          ? 'project default'
+          : `project default; demoted from ${opts.config.defaults.agent} (disabled) to first enabled agent`,
     },
     opts,
   );
@@ -113,24 +123,37 @@ function withResolvedModel(r: AssignmentResult, opts: AssignOptions): Assignment
 }
 
 /**
- * `agents.<name>.enabled` is the user's "I have this CLI set up" switch. If a
- * task or user rule explicitly asks for a disabled agent, we honor the user's
- * config and demote to the project default rather than queuing work that will
- * fail at preflight. `api` doesn't have an `enabled` flag — its availability is
- * decided by whether a provider key is resolvable (see finalizeApiFallback).
+ * Resolve the project's effective default agent. Prefers `defaults.agent` when
+ * the user has it enabled; otherwise walks the canonical enabled list and
+ * picks the first available one. Throws `YAAO_NO_ENABLED_AGENTS` when nothing
+ * resolves — the user has disabled every CLI agent AND has no API provider
+ * key configured, so we have nothing to demote *to*. Raising loudly at this
+ * boundary beats producing a plan that names a non-functional default.
  */
-function isAgentEnabled(agent: AgentName, config: YaaoConfig): boolean {
-  if (agent === 'api') return true;
-  const entry = (config.agents as unknown as Record<string, { enabled?: boolean } | undefined>)[agent];
-  return entry?.enabled !== false;
+function pickEnabledFallback(config: YaaoConfig, preferred: AgentName): AgentName {
+  if (isAgentEnabled(config, preferred)) return preferred;
+  const candidates = enabledAgents(config);
+  const first = candidates[0];
+  if (!first) {
+    throw new NoEnabledAgentsError({
+      message:
+        `no enabled agent in yaao.config.json to fall back to (defaults.agent='${preferred}' is disabled)`,
+    });
+  }
+  return first;
 }
 
 function finalizeEnabledFallback(r: AssignmentResult, opts: AssignOptions): AssignmentResult {
-  if (isAgentEnabled(r.agent, opts.config)) return r;
+  if (isAgentEnabled(opts.config, r.agent)) return r;
+  // Walk to the first enabled agent rather than demoting to defaults.agent
+  // blindly — defaults.agent may itself be the disabled one (the schema
+  // default `claude-code` paired with `enabled: false` is a real config
+  // a user can land in).
+  const fallback = pickEnabledFallback(opts.config, opts.config.defaults.agent);
   return {
-    agent: opts.config.defaults.agent,
+    agent: fallback,
     model: opts.config.defaults.model,
-    reason: `${r.reason}; demoted from ${r.agent} (disabled in config)`,
+    reason: `${r.reason}; demoted from ${r.agent} (disabled) to ${fallback}`,
     demoted: true,
   };
 }

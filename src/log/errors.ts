@@ -36,6 +36,10 @@ export const DEFAULT_HINTS: Record<string, string> = {
   YAAO_PLAN_INCLUDE_DEPTH: 'Flatten the include tree or raise maxIncludeDepth.',
   YAAO_GIT: 'Inspect the git command, stdout, and stderr in the error for the underlying cause.',
   YAAO_WORKTREE: 'Inspect the worktree path; remove leftovers via `yaao clean` if necessary.',
+  YAAO_AGENT_DISABLED:
+    "Set agents.<name>.enabled = true in yaao.config.json, choose an enabled agent for the task, or rerun with --allow-disabled-agents to downgrade to a warning.",
+  YAAO_NO_ENABLED_AGENTS:
+    'Enable at least one agent in yaao.config.json (set agents.<name>.enabled = true) or configure agents.api.providers with a resolvable API key.',
 };
 
 export class NotInitializedError extends YaaoError {
@@ -176,6 +180,34 @@ export class AgentUnavailableError extends YaaoError {
   constructor(opts: Omit<YaaoErrorOptions, 'code'> & { agent: string }) {
     super({ ...opts, code: 'YAAO_AGENT_UNAVAILABLE' });
     this.agent = opts.agent;
+  }
+}
+
+/**
+ * Thrown at the backend-dispatch layer (both CLI `yaao run` and MCP
+ * `yaao_run`) when a task targets an agent that has been disabled in
+ * `agents.<name>.enabled`. The validation gate (`YAAO_PLAN_AGENT_DISABLED`)
+ * fires first under normal flow; this error exists as defense-in-depth for
+ * programmatic callers that bypass validation or for the
+ * `--allow-disabled-agents` path where the gate has been deliberately
+ * relaxed.
+ */
+export class AgentDisabledError extends YaaoError {
+  readonly agent: string;
+  constructor(opts: Omit<YaaoErrorOptions, 'code'> & { agent: string }) {
+    super({ ...opts, code: 'YAAO_AGENT_DISABLED' });
+    this.agent = opts.agent;
+  }
+}
+
+/**
+ * Thrown when no agent in the user's config is usable: every CLI agent has
+ * `enabled: false` AND no API provider key resolves. Surfaces both at the
+ * converter's fallback walk and at the planner's backend resolver.
+ */
+export class NoEnabledAgentsError extends YaaoError {
+  constructor(opts: Omit<YaaoErrorOptions, 'code'>) {
+    super({ ...opts, code: 'YAAO_NO_ENABLED_AGENTS' });
   }
 }
 

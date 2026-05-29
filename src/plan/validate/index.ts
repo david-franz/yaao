@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { YaaoConfig } from '../../config/types.js';
+import { isAgentEnabled } from '../../config/enabled-agents.js';
 import type { ResolvedPlan, ResolvedTask } from '../schema/resolve.js';
 import type { SourceMap, SourcePosition } from '../yaml/loader.js';
 import type { AgentAvailability, ValidationIssue } from './types.js';
@@ -253,14 +254,6 @@ export function validatePlan(
   }
 
   return finalize(issues, opts.strict);
-}
-
-function isAgentEnabled(cfg: YaaoConfig, name: string): boolean {
-  if (name === 'api') {
-    return Object.keys(cfg.agents.api.providers).length > 0;
-  }
-  const entry = (cfg.agents as Record<string, { enabled?: boolean } | undefined>)[name];
-  return entry?.enabled !== false;
 }
 
 function finalize(issues: ValidationIssue[], strict: boolean | undefined): ValidationIssue[] {

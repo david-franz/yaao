@@ -10,6 +10,11 @@ You MUST:
 - For each task, include: `id` (slug), `title`, a 1-3 sentence prompt, and
   `depends:` (list of task ids it depends on, or empty).
 - Ensure dependencies form a DAG (no cycles).
+- **Agent suggestions must come from this enabled set: {{enabled-agents}}.**
+  Any other agent will be rejected by `yaao validate` and `yaao run` with
+  `YAAO_PLAN_AGENT_DISABLED`. If only one agent is enabled, assign every
+  task to it. The example tables below use `claude-code`/`cursor`/`codex`
+  for illustration only — substitute names from the enabled set above.
 - **Prefer parallel siblings over a serial chain.** yaao runs every
   ready task at once (up to `max-parallel`), so the wall-clock cost of a
   plan is set by its longest dependency *chain*, not its task count. A

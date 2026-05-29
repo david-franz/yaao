@@ -92,7 +92,9 @@ describe('assignAgent', () => {
     const r = assignAgent(t({ id: 'a', title: 'A', agent: 'cursor' }), { config });
     expect(r.demoted).toBe(true);
     expect(r.agent).toBe(config.defaults.agent);
-    expect(r.reason).toMatch(/disabled in config/);
+    // F14.1: the demotion reason now names both the source (disabled) and
+    // destination agents so users can read the chain at a glance.
+    expect(r.reason).toMatch(/demoted from cursor \(disabled\) to claude-code/);
   });
 
   describe('per-agent default-model', () => {

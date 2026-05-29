@@ -9,6 +9,8 @@ import { CursorBackend } from '../../agents/cursor.js';
 import { CopilotBackend } from '../../agents/copilot.js';
 import { CodexBackend } from '../../agents/codex.js';
 import type { AgentBackend, AgentName } from '../../agents/backend.js';
+import { isAgentEnabled, pickEnabledAgent } from '../../config/enabled-agents.js';
+import { AgentDisabledError, NoEnabledAgentsError } from '../../log/errors.js';
 
 interface PlanFlags {
   scope?: PlanScope;
@@ -39,7 +41,30 @@ export const planCommand: CommandModule = {
       .option('--non-interactive', 'never prompt for confirmation')
       .action(async (description: string, flags: PlanFlags) => {
         const cwd = resolve(ctx.cwd);
-        const agentName = flags.agent ?? ctx.config.defaults.agent;
+        // Resolve which backend drives the planner. `--agent` wins; otherwise
+        // fall back to defaults.agent when it's enabled, or walk the enabled
+        // list when defaults.agent has been disabled. An explicit `--agent`
+        // pointing at a disabled backend is a hard error: the user asked for
+        // it specifically and we shouldn't silently retarget.
+        let agentName: AgentName;
+        if (flags.agent) {
+          if (!isAgentEnabled(ctx.config, flags.agent)) {
+            throw new AgentDisabledError({
+              message: `--agent '${flags.agent}' is disabled in yaao.config.json`,
+              agent: flags.agent,
+            });
+          }
+          agentName = flags.agent;
+        } else {
+          const picked = pickEnabledAgent(ctx.config);
+          if (!picked) {
+            throw new NoEnabledAgentsError({
+              message:
+                'yaao plan: no enabled agent in yaao.config.json (every CLI agent is disabled and no API provider key is configured)',
+            });
+          }
+          agentName = picked;
+        }
         const backend = backendFor(agentName);
         const isTty = process.stderr.isTTY === true;
         const isDryRun = Boolean(flags.dryRun);

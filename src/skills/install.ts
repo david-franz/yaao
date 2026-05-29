@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import type { YaaoConfig, AgentName } from '../config/types.js';
-import { AGENT_NAMES } from '../config/types.js';
+import { enabledAgents as configEnabledAgents } from '../config/enabled-agents.js';
 import { listSkillDirs, loadSkillDir, validateSkill, type LoadedSkill, type ValidateResult } from './format.js';
 import { emitClaudeCode, removeClaudeCodeSkill } from './emitters/claude-code.js';
 import { emitCursor, removeCursorSkill } from './emitters/cursor.js';
@@ -135,9 +135,5 @@ export async function removeSkill(opts: RemoveOptions): Promise<string[]> {
 
 function enabledAgents(config: YaaoConfig, override?: AgentName): AgentName[] {
   if (override) return [override];
-  const a = config.agents as unknown as Record<string, { enabled?: boolean } | undefined>;
-  return AGENT_NAMES.filter((n) => {
-    if (n === 'api') return Object.keys(config.agents.api.providers).length > 0;
-    return a[n]?.enabled !== false;
-  });
+  return configEnabledAgents(config);
 }

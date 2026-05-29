@@ -21,5 +21,8 @@ inputs:
   - name: out
     description: Output directory
     default: .yaao/plans/
+  - name: enabled-agents
+    description: Comma-separated list of agents the user has enabled in yaao.config.json
+    required: true
 trigger:
   manual: true

@@ -2,7 +2,8 @@ import type { Command } from 'commander';
 import type { CommandModule } from '../command.js';
 import type { CliContext } from '../context.js';
 import { detectAgents } from '../../agents/detect.js';
-import type { AgentName, YaaoConfig } from '../../config/types.js';
+import type { AgentName } from '../../config/types.js';
+import { isAgentEnabled } from '../../config/enabled-agents.js';
 
 interface AgentsFlags {
   strict?: boolean;
@@ -60,9 +61,3 @@ export const agentsCommand: CommandModule = {
       });
   },
 };
-
-function isAgentEnabled(cfg: YaaoConfig, name: AgentName): boolean {
-  if (name === 'api') return Object.keys(cfg.agents.api.providers).length > 0;
-  const a = (cfg.agents as unknown as Record<string, { enabled?: boolean } | undefined>)[name];
-  return a?.enabled !== false;
-}

@@ -7,7 +7,8 @@ import { parseMarkdownPlan, type ParsedPlan } from './markdown.js';
 import { parseSpecKit } from './speckit.js';
 import { suggestScope, type PlanScope } from './scope.js';
 import { getBuiltinSkillsDir } from '../skills/builtin-dir.js';
-import { YaaoError, AgentUnavailableError } from '../log/errors.js';
+import { enabledAgents } from '../config/enabled-agents.js';
+import { YaaoError, AgentUnavailableError, NoEnabledAgentsError } from '../log/errors.js';
 
 /**
  * Counter the defensive system reminders that Claude Code (and similar) inject
@@ -123,6 +124,17 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
     }
   }
 
+  // Resolve the list of agents the user has enabled. If nothing's enabled
+  // we surface YAAO_NO_ENABLED_AGENTS before spawning so the user sees an
+  // actionable hint at the planner boundary rather than a cryptic "default
+  // agent disabled" downstream.
+  const enabled = enabledAgents(opts.config);
+  if (enabled.length === 0) {
+    throw new NoEnabledAgentsError({
+      message:
+        'yaao plan: no enabled agents in yaao.config.json (every CLI agent is disabled and no API provider key is configured)',
+    });
+  }
   const prompt = substitutePlaceholders(
     skill.prompt,
     {
@@ -130,6 +142,7 @@ export async function runPlanner(opts: RunPlannerOptions): Promise<RunPlannerRes
       scope,
       format,
       out: outDir,
+      'enabled-agents': enabled.join(', '),
     },
     skill.metadata.inputs,
   );

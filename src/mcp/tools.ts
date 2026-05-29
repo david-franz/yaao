@@ -36,7 +36,8 @@ import { ClaudeCodeBackend } from '../agents/claude-code.js';
 import { CursorBackend } from '../agents/cursor.js';
 import { CopilotBackend } from '../agents/copilot.js';
 import { CodexBackend } from '../agents/codex.js';
-import { YaaoError } from '../log/errors.js';
+import { YaaoError, AgentDisabledError } from '../log/errors.js';
+import { isAgentEnabled } from '../config/enabled-agents.js';
 
 /**
  * Common envelope every tool's `structuredContent` extends. Designed so a
@@ -300,6 +301,26 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
         loaded.plan.plan.featureBranch = input.featureBranch;
       }
     }
+    // Pre-flight validation gate — mirrors the CLI `yaao run` behaviour.
+    // A plan that names a disabled agent (or violates any other validate-
+    // time invariant) gets refused here rather than spawning a backend
+    // that will fail at the underlying CLI. The MCP envelope surfaces the
+    // errors structurally so the calling agent sees them.
+    const { validatePlan } = await import('../plan/validate/index.js');
+    const issues = validatePlan(loaded.plan, loaded.source, { cwd, config: ctx.config });
+    const errors = issues.filter((i) => i.severity === 'error');
+    if (errors.length > 0) {
+      return {
+        text: `${errors.length} error(s); refusing to run`,
+        structuredContent: {
+          ok: false,
+          files: [],
+          warnings: issues.filter((i) => i.severity !== 'error').map((w) => w.message),
+          errors: errors.map((e) => ({ code: e.code, message: e.message, ...(e.hint ? { hint: e.hint } : {}) })),
+          status: 'failed' as const,
+        },
+      };
+    }
     const runId = `run-${Date.now().toString(36)}`;
     const result = await runPlan({
       runId,
@@ -307,7 +328,15 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
       planFile: planAbs,
       rootDir: cwd,
       config: ctx.config,
-      backendFor: (task) => (ctx.backendFor ?? defaultBackendFor)(task.agent),
+      backendFor: (task) => {
+        if (!isAgentEnabled(ctx.config, task.agent)) {
+          throw new AgentDisabledError({
+            message: `task '${task.id}' targets agent '${task.agent}' which is disabled in yaao.config.json`,
+            agent: task.agent,
+          });
+        }
+        return (ctx.backendFor ?? defaultBackendFor)(task.agent);
+      },
       ...(input.only || input.skip
         ? { filter: { ...(input.only ? { only: input.only } : {}), ...(input.skip ? { skip: input.skip } : {}) } }
         : {}),
@@ -465,7 +494,15 @@ export async function yaaoResumeTool(input: ResumeToolInput, ctx: ToolContext): 
       planFile: prior.planFile,
       rootDir: cwd,
       config: ctx.config,
-      backendFor: (task) => (ctx.backendFor ?? defaultBackendFor)(task.agent),
+      backendFor: (task) => {
+        if (!isAgentEnabled(ctx.config, task.agent)) {
+          throw new AgentDisabledError({
+            message: `task '${task.id}' targets agent '${task.agent}' which is disabled in yaao.config.json`,
+            agent: task.agent,
+          });
+        }
+        return (ctx.backendFor ?? defaultBackendFor)(task.agent);
+      },
       resume: true,
       ...(skipIds.length > 0 ? { filter: { skip: skipIds } } : {}),
     });

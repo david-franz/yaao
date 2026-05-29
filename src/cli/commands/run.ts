@@ -19,7 +19,10 @@ import type { ApiProvider } from '../../agents/api/provider.js';
 import { WorktreeManager } from '../../git/worktree-manager.js';
 import { git } from '../../git/git.js';
 import type { YaaoConfig } from '../../config/types.js';
+import { isAgentEnabled } from '../../config/enabled-agents.js';
 import type { ResolvedPlan } from '../../plan/schema/types.js';
+import { validatePlan, type ValidationIssue } from '../../plan/validate/index.js';
+import { AgentDisabledError } from '../../log/errors.js';
 
 interface RunFlags {
   maxParallel?: string;
@@ -34,6 +37,7 @@ interface RunFlags {
   allowUntrackedPlan?: boolean;
   commitPlan?: boolean;
   noMerge?: boolean;
+  allowDisabledAgents?: boolean;
 }
 
 export const runCommand: CommandModule = {
@@ -68,6 +72,10 @@ export const runCommand: CommandModule = {
         '--no-merge',
         'skip the post-task auto-merge into base-branch — tasks land on their own branches only, so you can review and PR them yourself',
       )
+      .option(
+        '--allow-disabled-agents',
+        "downgrade YAAO_PLAN_AGENT_DISABLED to a warning so a plan referencing a disabled agent still runs (the backend-dispatch guard still refuses to spawn — this flag affects the pre-flight validation gate only)",
+      )
       .action(async (planPath: string, flags: RunFlags) => {
         if (flags.only && flags.skip) {
           ctx.logger.error('--only and --skip are mutually exclusive');
@@ -95,6 +103,38 @@ export const runCommand: CommandModule = {
         }
         if (flags.baseBranch) {
           loaded.plan.config['base-branch'] = flags.baseBranch;
+        }
+
+        // Pre-flight validation gate. We refuse to start a run that names a
+        // disabled agent or a stub provider, so the bug a user hit ("disabled
+        // claude-code, ran anyway") is closed end-to-end. --allow-disabled-agents
+        // downgrades the YAAO_PLAN_AGENT_DISABLED error to a warning; the
+        // backend-dispatch guard below still refuses to actually spawn it.
+        // Resume runs skip the gate — the plan was already validated on the
+        // initial run and the user has opted into continuing.
+        if (!flags.resume) {
+          const issues = validatePlan(loaded.plan, loaded.source, { cwd, config: ctx.config });
+          const filtered = flags.allowDisabledAgents
+            ? issues.map((i): ValidationIssue =>
+                i.code === 'YAAO_PLAN_AGENT_DISABLED' ? { ...i, severity: 'warning' } : i,
+              )
+            : issues;
+          const errors = filtered.filter((i) => i.severity === 'error');
+          const warnings = filtered.filter((i) => i.severity === 'warning');
+          for (const w of warnings) {
+            const loc = w.location ? ` (${w.location.file}:${w.location.line}:${w.location.col})` : '';
+            ctx.logger.warn(`${w.code}${loc}: ${w.message}`);
+            if (w.hint) ctx.logger.warn(`  hint: ${w.hint}`);
+          }
+          if (errors.length > 0) {
+            for (const e of errors) {
+              const loc = e.location ? ` (${e.location.file}:${e.location.line}:${e.location.col})` : '';
+              ctx.logger.error(`${e.code}${loc}: ${e.message}`);
+              if (e.hint) ctx.logger.error(`  hint: ${e.hint}`);
+            }
+            ctx.exit(1);
+            return;
+          }
         }
 
         const filter = buildFilter(flags);
@@ -210,6 +250,17 @@ function buildFilter(flags: RunFlags): { only?: string[]; skip?: string[] } | un
 }
 
 function backendForTask(task: ResolvedTask, config: YaaoConfig): AgentBackend {
+  // Defense in depth: even when --allow-disabled-agents downgrades the
+  // pre-flight validation gate, the actual spawn path still refuses to
+  // construct a backend for a disabled agent. A run with the flag set
+  // surfaces the error here rather than producing a confusing "agent not
+  // found" from the underlying CLI.
+  if (!isAgentEnabled(config, task.agent)) {
+    throw new AgentDisabledError({
+      message: `task '${task.id}' targets agent '${task.agent}' which is disabled in yaao.config.json`,
+      agent: task.agent,
+    });
+  }
   const a = config.agents as unknown as Record<string, { bin?: string } | undefined>;
   switch (task.agent as AgentName) {
     case 'claude-code':
