@@ -25,7 +25,7 @@ yaao is implemented in 18 phases, progressing from foundational CLI infrastructu
 | 13 | Web viewer | HTTP+SSE server, DAG view, live run view, workspace, plan + config editors | Shipped |
 | 14 | Integration correctness     | Enable-disable enforcement end-to-end, per-spawn MCP overlays for Cursor/Codex/Copilot, Anthropic prompt caching, OpenAI + OpenRouter provider implementations, Copilot backend reality check, live backend smoke tests for every backend, Spec Kit hardening, config UX + model discovery (`plan.agent`/`plan.model`, `yaao agents --models`, `$schema` URL fix, dead-field cleanup, `merge.history: rebase` default, "exited -1" rendering fix), base-branch auto-detection + `--feature-branch` CLI plumbing, `yaao skills import` from claude/cursor/copilot/codex/generic formats — at the end, every documented integration (claude-code / cursor / codex / copilot / api with all three providers) works confidently, the config block is honest about what's actually wired up, master-default repos work as smoothly as main-default ones, and the user's existing single-provider skill library becomes cross-provider via MCP | Shipped |
 | 15 | Release polish              | `yaao doctor` (incl. orphan-run detection), `yaao init --mcp`, quickstart + examples, help-text + error audit, README truth-up + every-markdown-link-resolves regression test | Shipped |
-| 16 | Concurrent runs & context handoff | runId entropy, branch namespacing, concurrency-model docs + tests, `context.md` enrichment (prompt, validation, commits, diff) | Planned |
+| 16 | Concurrent runs & context handoff | runId entropy, branch namespacing, concurrency-model docs + tests, `context.md` enrichment (prompt, validation, commits, diff) | Shipped |
 | 17 | Session → Skill distillation | `yaao-distiller` skill, session readers, `yaao_distill` MCP tool, refinement | Planned |
 | 18 | Distribution                | npm publish, docs site | Planned |
 
@@ -367,23 +367,23 @@ The work that turns yaao from feature-complete into v1-shippable. Closes the fir
 
 ---
 
-## Phase 16: Concurrent Runs & Context Handoff
+## Phase 16: Concurrent Runs & Context Handoff **(shipped)**
 
-Two findings from the v1 pre-flight review motivate this phase. First, concurrent runs against distinct feature branches are *almost* supported by the engine (worktree paths isolate by runId; merges use git plumbing + atomic ref CAS) but two naming choices block the workflow: runIds use millisecond resolution and the default task branch is `${plan.name}/${task.id}` with no featureBranch namespace. Second, the parent→child context handoff is correct but lossy — dependents receive an 80-line stdout tail and a file list, but not the parent's task prompt, not the validation outcome, and only `--numstat` totals instead of a per-file diff shape. This phase ships both. See [phase-16/PHASE-16.md](phase-16/PHASE-16.md) for the phase overview.
+Two findings from the v1 pre-flight review motivated this phase. First, concurrent runs against distinct feature branches were *almost* supported by the engine (worktree paths isolate by runId; merges use git plumbing + atomic ref CAS) but two naming choices blocked the workflow: runIds used millisecond resolution and the default task branch was `${plan.name}/${task.id}` with no featureBranch namespace. Second, the parent→child context handoff was correct but lossy — dependents received an 80-line stdout tail and a file list, but not the parent's task prompt, not the validation outcome, and only `--numstat` totals instead of a per-file diff shape. Both shipped together. See [phase-16/PHASE-16.md](phase-16/PHASE-16.md) for the phase overview.
 
-| Feature | Description | Doc |
-| --- | --- | --- |
-| **F16.1** | Concurrent-run isolation hardening (runId entropy + branch namespacing) | [F16.1-concurrent-run-isolation.md](phase-16/F16.1-concurrent-run-isolation.md) |
-| **F16.2** | Concurrency model — docs alignment + integration tests | [F16.2-concurrency-model.md](phase-16/F16.2-concurrency-model.md) |
-| **F16.3** | Context handoff enrichment (parent prompt, validation, commits, diff) | [F16.3-context-handoff.md](phase-16/F16.3-context-handoff.md) |
+| Feature | Description | Status | Doc |
+| --- | --- | --- | --- |
+| **F16.1** | Concurrent-run isolation hardening (runId entropy + branch namespacing) | shipped | [F16.1-concurrent-run-isolation.md](phase-16/F16.1-concurrent-run-isolation.md) |
+| **F16.2** | Concurrency model — docs alignment + integration tests | shipped | [F16.2-concurrency-model.md](phase-16/F16.2-concurrency-model.md) |
+| **F16.3** | Context handoff enrichment (parent prompt, validation, commits, diff) | shipped | [F16.3-context-handoff.md](phase-16/F16.3-context-handoff.md) |
 
 **Key Deliverables:**
 
-- **runId entropy.** `run-${Date.now().toString(36)}-${nanoid(6)}` replaces the millisecond-only id everywhere (`src/cli/commands/run.ts`, `src/mcp/tools.ts`). Two MCP-driven `yaao_run` calls in the same tick get distinct ids. Forward-only — `--resume <oldRunId>` keeps working.
-- **Default branch namespacing.** Task default branch becomes `${featureBranch}/${task.id}` when `plan.featureBranch` is set; falls back to the historical `${plan.name}/${task.id}` otherwise. Two concurrent runs of the same plan against distinct feature branches now have disjoint task-branch namespaces by construction.
-- **Concurrency model documented + tested.** Removes the `.yaao/.lock` claim from Phase 12 docs (no such lock exists in `src/`, and we deliberately don't add it — concurrent runs are what we want). README gets a "Concurrent runs" section. Integration tests under `tests/phase-16/concurrent-runs/` prove two runs against distinct feature branches finish independently and don't trample the root checkout.
-- **Context handoff enrichment.** `context.md` gains four bounded sections (toggleable via `config.context.include: […]`): the parent's resolved task prompt (first 30 lines), the validation outcome when present (command, exitCode, durationMs, decisionReason, mustPass), the full commit chain (`git log baseCommit..HEAD --format=- %h %s`), and a per-file `git diff --stat` (~30-line cap). All sit inside the existing per-dep token budget so the budgeting logic is unchanged.
-- **F16.1 ships first.** Pure naming change, unblocks F16.2's integration tests. F16.2 follows. F16.3 is orthogonal and can land in parallel.
+- **runId entropy.** `run-${Date.now().toString(36)}-${nanoid(6)}` replaces the millisecond-only id everywhere (`src/cli/commands/run.ts`, `src/mcp/tools.ts`, via the new `src/exec/run-id.ts`). Two MCP-driven `yaao_run` calls in the same tick get distinct ids. Forward-only — `--resume <oldRunId>` keeps working.
+- **Default branch namespacing.** Task default branch becomes `${sanitizedFeatureBranch}/${task.id}` when `plan.featureBranch` is set, with `/` in the featureBranch replaced by `-` so git's ref store doesn't refuse the create (a branch named `feature/alpha` and a would-be sibling `feature/alpha/api` can't coexist in `refs/heads/`). `feature/alpha` → namespace `feature-alpha` → task branches `feature-alpha/api`, `feature-alpha/ui`. Falls back to the historical `${plan.name}/${task.id}` when featureBranch is absent. Two concurrent runs of the same plan against distinct feature branches now have disjoint task-branch namespaces by construction.
+- **Concurrency model documented + tested.** Removed the `.yaao/.lock` claim from Phase 12 docs (no such lock exists in `src/`, and we deliberately don't add it — concurrent runs are what we want). README gained a "Concurrent runs" section. Integration tests under `tests/phase-16/concurrent-runs/` prove two runs against distinct feature branches finish independently and don't trample the root checkout, including the directory-vs-file-ref edge case that motivated the slash sanitization.
+- **Context handoff enrichment.** `context.md` gained four bounded sections (toggleable via `config.context.include: […]`): the parent's resolved task prompt (first 30 lines), the validation outcome when present (command, exitCode, durationMs, decisionReason, mustPass), the full commit chain (`git log baseCommit..HEAD --format=%H%x09%s`), and a per-file `git diff --stat` (~30-line cap). All sit inside the existing per-dep token budget so the budgeting logic is unchanged. `include: []` reproduces the pre-F16.3 artifact byte-for-byte.
+- **Ship order.** F16.1 first (pure naming change, unblocks F16.2's integration tests). F16.2 second. F16.3 third — orthogonal to the others but sequenced after so each PR is small and reviewable.
 
 ---
 
