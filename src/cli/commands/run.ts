@@ -23,6 +23,7 @@ import { isAgentEnabled } from '../../config/enabled-agents.js';
 import type { ResolvedPlan } from '../../plan/schema/types.js';
 import { validatePlan, type ValidationIssue } from '../../plan/validate/index.js';
 import { AgentDisabledError } from '../../log/errors.js';
+import { generateRunId } from '../../exec/run-id.js';
 import { resolveCtxSysInjection } from '../../ctx-sys/inject.js';
 
 interface RunFlags {
@@ -177,7 +178,7 @@ export const runCommand: CommandModule = {
           await wipeLeftovers(cwd, loaded.plan, ctx);
         }
 
-        const runId = flags.resume ?? `run-${Date.now().toString(36)}`;
+        const runId = flags.resume ?? generateRunId();
         const opts: RunOptions = {
           runId,
           plan: loaded.plan,

@@ -38,6 +38,7 @@ import { CopilotBackend } from '../agents/copilot.js';
 import { CodexBackend } from '../agents/codex.js';
 import { YaaoError, AgentDisabledError } from '../log/errors.js';
 import { isAgentEnabled } from '../config/enabled-agents.js';
+import { generateRunId } from '../exec/run-id.js';
 
 /**
  * Common envelope every tool's `structuredContent` extends. Designed so a
@@ -321,7 +322,7 @@ export async function yaaoRunTool(input: RunToolInput, ctx: ToolContext): Promis
         },
       };
     }
-    const runId = `run-${Date.now().toString(36)}`;
+    const runId = generateRunId();
     const result = await runPlan({
       runId,
       plan: loaded.plan,

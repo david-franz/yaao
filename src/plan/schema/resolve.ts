@@ -98,8 +98,19 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
     },
   };
 
+  // F16.1 — Default branch namespacing. When `plan.featureBranch` is
+  // set, each task's default branch lives under that integration
+  // branch's namespace (`feature/foo/api`, `feature/foo/ui`) so two
+  // concurrent runs against distinct feature branches have disjoint
+  // task-branch namespaces by construction. Without featureBranch we
+  // fall back to the historical `${plan.name}/${task.id}` shape.
+  // Tasks with an explicit `branch:` field are unaffected.
+  const featureBranchForNs = plan.plan.featureBranch;
   const tasks: ResolvedTask[] = plan.tasks.map((t) => {
-    const branch = t.branch ?? `${plan.plan.name}/${t.id}`;
+    const defaultBranch = featureBranchForNs
+      ? `${featureBranchForNs}/${t.id}`
+      : `${plan.plan.name}/${t.id}`;
+    const branch = t.branch ?? defaultBranch;
     const worktree = t.worktree ?? `${resolvedConfig['worktree-root']}/${plan.plan.name}/${t.id}`;
     const merge = resolveTaskMerge(t.merge, resolvedConfig.merge.strategy);
     const { merge: _drop, ...rest } = t;
