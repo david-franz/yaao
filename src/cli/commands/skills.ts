@@ -4,6 +4,7 @@ import type { CommandModule } from '../command.js';
 import type { CliContext } from '../context.js';
 import { installSkills, removeSkill } from '../../skills/install.js';
 import { listSkillDirs, loadSkillDir, validateSkill } from '../../skills/format.js';
+import { importSkill, type SkillImportScope, type SkillSourceFormat } from '../../skills/import.js';
 import { getBuiltinSkillsDir } from '../../skills/builtin-dir.js';
 import type { AgentName } from '../../config/types.js';
 import { AGENT_NAMES } from '../../config/types.js';
@@ -13,6 +14,15 @@ interface SkillsFlags {
   force?: boolean;
   user?: boolean;
   remove?: string;
+}
+
+interface ImportFlags {
+  from?: SkillSourceFormat | 'auto';
+  name?: string;
+  scope?: SkillImportScope;
+  dryRun?: boolean;
+  force?: boolean;
+  noInstall?: boolean;
 }
 
 const KNOWN_AGENTS = new Set<AgentName>(AGENT_NAMES);
@@ -106,6 +116,54 @@ export const skillsCommand: CommandModule = {
           }
         }
         ctx.exit(failed > 0 ? 1 : 0);
+      });
+
+    skills
+      .command('import')
+      .description(
+        'Import a Claude / Cursor / Copilot / Codex / generic-markdown skill into the yaao skill format so every yaao-supported agent can call it via MCP',
+      )
+      .argument('<source>', 'path to the source artifact (SKILL.md, .mdc, .md, or Claude skill directory)')
+      .option('--from <fmt>', 'claude | cursor | copilot | codex | generic | auto', 'auto')
+      .option('--name <slug>', 'override the derived skill name')
+      .option('--scope <scope>', 'project | user (where to write)', 'project')
+      .option('--dry-run', "print what would happen without writing anything")
+      .option('--force', 'overwrite an existing yaao skill with the same name')
+      .option('--no-install', 'skip the post-import `yaao skills install` re-emit')
+      .action(async (source: string, flags: ImportFlags) => {
+        const cwd = resolve(ctx.cwd);
+        const r = importSkill({
+          cwd,
+          source,
+          ...(flags.from !== undefined ? { from: flags.from } : {}),
+          ...(flags.name !== undefined ? { name: flags.name } : {}),
+          ...(flags.scope !== undefined ? { scope: flags.scope } : {}),
+          ...(flags.dryRun !== undefined ? { dryRun: flags.dryRun } : {}),
+          ...(flags.force !== undefined ? { force: flags.force } : {}),
+          ...(flags.noInstall !== undefined ? { noInstall: flags.noInstall } : {}),
+        });
+        // Post-import re-emit: get the per-agent stubs back in sync so
+        // the new skill shows up as yaao_skill_<name>. Skip on dry-run
+        // and on --no-install (the user is staging multiple imports).
+        if (!r.dryRun && !flags.noInstall) {
+          await installSkills({ cwd, config: ctx.config, only: [r.name] });
+        }
+        if (ctx.json) {
+          process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
+        } else {
+          ctx.logger.info(
+            `${r.dryRun ? 'would import' : 'imported'} ${r.format} skill '${r.name}' → ${r.destination}`,
+          );
+          for (const w of r.written) ctx.logger.info(`  ${w.rel}  (${w.bytes} bytes)`);
+          if (r.validation.ok) {
+            ctx.logger.info(r.dryRun ? '  validation: ok (dry-run)' : '  validation: ok');
+          } else {
+            for (const i of r.validation.issues) {
+              ctx.logger.warn(`  ${i.code}: ${i.message}`);
+            }
+          }
+        }
+        ctx.exit(r.validation.ok ? 0 : 1);
       });
   },
 };
