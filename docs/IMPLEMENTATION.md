@@ -47,7 +47,7 @@ Sets up the TypeScript project, CLI skeleton, configuration system, and the `ini
 - TypeScript + Node ≥ 20 + ESM project, bundled with `tsup`, tested with `vitest`.
 - `commander`-based CLI with stub commands for the full surface area.
 - Layered config: defaults → global (`~/.yaao/config.json`) → project (`.yaao/yaao.config.json`) → secrets (`.yaao/secrets.local.json`) → env-var expansion.
-- `yaao init` scaffolds `.yaao/`, writes `yaao.config.json`, `.yaaoignore`, updates `.gitignore`.
+- `yaao init` scaffolds `.yaao/`, writes `yaao.config.json`, updates `.gitignore`.
 - Structured logger with levels, JSON-or-text output, and a typed error hierarchy.
 
 ---

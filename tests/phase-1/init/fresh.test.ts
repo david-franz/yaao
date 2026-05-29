@@ -26,7 +26,6 @@ describe('yaao init on a fresh empty dir', () => {
     // doesn't track empty dirs.
     expect(existsSync(join(project.path, '.yaao', 'worktrees', '.gitkeep'))).toBe(false);
     expect(existsSync(join(project.path, '.yaao', 'runs', '.gitkeep'))).toBe(false);
-    expect(existsSync(join(project.path, '.yaaoignore'))).toBe(true);
     const gi = readFileSync(join(project.path, '.gitignore'), 'utf8');
     expect(gi).toContain('# >>> yaao');
     expect(gi).toContain('.yaao/secrets.local.json');

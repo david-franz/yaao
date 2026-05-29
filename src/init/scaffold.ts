@@ -63,17 +63,6 @@ export const DEFAULT_SECRETS_JSON = `${JSON.stringify(
   2,
 )}\n`;
 
-export const DEFAULT_YAAOIGNORE = `# Files / patterns yaao should ignore when scanning the project for context.
-node_modules/
-dist/
-build/
-.next/
-.turbo/
-.yaao/
-.git/
-*.log
-`;
-
 export const GITIGNORE_BEGIN = '# >>> yaao';
 export const GITIGNORE_END = '# <<< yaao';
 export const GITIGNORE_BLOCK_LINES = [
@@ -218,15 +207,6 @@ export function scaffoldProject(opts: ScaffoldOptions): ScaffoldResult {
   }
 
   if (!opts.minimal) {
-    const yaaoignore = join(opts.cwd, '.yaaoignore');
-    if (!existsSync(yaaoignore)) {
-      writeFileSafe(yaaoignore, DEFAULT_YAAOIGNORE, '.yaaoignore');
-      result.created.push('.yaaoignore');
-    } else if (opts.force) {
-      writeFileSafe(yaaoignore, DEFAULT_YAAOIGNORE, '.yaaoignore');
-      result.overwritten.push('.yaaoignore');
-    }
-
     const gi = updateGitignoreBlock(opts.cwd, opts.force);
     if (gi.updated) result.gitignoreUpdated = true;
     if (gi.skippedReason) result.gitignoreSkippedReason = gi.skippedReason;

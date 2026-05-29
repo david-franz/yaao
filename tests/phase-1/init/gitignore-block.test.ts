@@ -58,11 +58,10 @@ describe('.gitignore managed block', () => {
     expect(text).toContain('.yaao/secrets.local.json');
   });
 
-  it('--minimal skips creating .gitignore changes and .yaaoignore', async () => {
+  it('--minimal skips creating .gitignore changes', async () => {
     project = createTmpProject();
     project.write('.git/HEAD', 'ref: refs/heads/main\n');
     await runCli(['--cwd', project.path, 'init', '--minimal']);
     expect(existsSync(join(project.path, '.gitignore'))).toBe(false);
-    expect(existsSync(join(project.path, '.yaaoignore'))).toBe(false);
   });
 });
