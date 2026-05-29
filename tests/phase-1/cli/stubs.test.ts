@@ -1,17 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { runCli } from '../../helpers/cli.js';
+import { describe, it } from 'vitest';
 
-const STUB_COMMANDS: { argv: string[]; phase: string }[] = [
-  { argv: ['doctor'], phase: 'F13' },
-];
-
+/**
+ * F15.1 (Phase 15) shipped `yaao doctor` as a real implementation —
+ * the previous stub-checking entry has been removed. This file is kept
+ * as a placeholder so future stub commands can land here without
+ * having to re-create the test file.
+ */
 describe('non-init stub commands', () => {
-  for (const { argv, phase } of STUB_COMMANDS) {
-    it(`yaao ${argv.join(' ')} exits 2 with phase=${phase}`, async () => {
-      const r = await runCli(argv);
-      expect(r.exitCode).toBe(2);
-      expect(r.stderr).toContain('not yet implemented');
-      expect(r.stderr).toContain(phase);
-    });
-  }
+  it.skip('placeholder — no stub commands remain post-Phase 15 F15.1', () => {
+    // intentional skip
+  });
 });

@@ -1,5 +1,4 @@
 import type { CommandModule } from './command.js';
-import { makeStubCommand } from './command.js';
 import { initCommand } from './commands/init.js';
 import { validateCommand } from './commands/validate.js';
 import { agentsCommand } from './commands/agents.js';
@@ -14,6 +13,7 @@ import { viewCommand } from './commands/view.js';
 import { statusCommand } from './commands/status.js';
 import { serveCommand } from './commands/serve.js';
 import { webCommand } from './commands/web.js';
+import { doctorCommand } from './commands/doctor.js';
 
 export const COMMAND_MODULES: CommandModule[] = [
   initCommand,
@@ -28,11 +28,7 @@ export const COMMAND_MODULES: CommandModule[] = [
   cleanCommand,
   agentsCommand,
   skillsCommand,
-  makeStubCommand({
-    name: 'doctor',
-    describe: 'Diagnose environment and config',
-    phase: 'F13',
-  }),
+  doctorCommand,
   serveCommand,
   webCommand,
 ];
