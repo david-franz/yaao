@@ -5,20 +5,25 @@
 A live test against a real project surfaced a load-bearing failure: a user
 who disables `claude-code` in `yaao.config.json` and keeps only `copilot`
 active runs `yaao plan` and `yaao run`, and **claude-code agents spawn
-anyway**. The same audit caught four related defects across the agent
+anyway**. The same audit caught related defects across the agent
 backends, the planner skill, the run command, the converter's fallback
-logic, the MCP overlay path, and one outright-false claim in the README
-(Anthropic prompt caching).
+logic, the MCP overlay path, one outright-false claim in the README
+(Anthropic prompt caching), and the OpenAI / OpenRouter / Copilot
+integrations being either stubs that throw at spawn time or wrappers
+around CLI commands whose current shape we haven't verified.
 
-Phase 14 fixes all of them before v1 ships. Each one is small and
-localized; together they make the four-agent / API matrix actually
-honor the user's config and the docs match the code.
+Phase 14 fixes all of them before v1 ships. The phase's commitment is
+explicit: **at the end of Phase 14, a user can confidently assign any
+step of a plan to `claude-code`, `cursor`, `codex`, `copilot`, or `api`
+(with any of the three providers).** The four-agent + multi-provider
+matrix becomes a real surface, not aspirational marketing.
 
 This phase is sequenced **before** release polish (now Phase 15) because
-polish is wasted effort on top of a broken enable/disable contract — the
-quickstart in `examples/` and the `yaao doctor` audit both rely on
-"disabling an agent actually disables it." Concurrent runs (Phase 16)
-and everything beyond also benefit from a config-honoring engine first.
+polish is wasted effort on top of a broken integration matrix — the
+quickstart in `examples/`, the `yaao doctor` audit, and the README's
+"backend support tiers" all rely on the integrations actually working.
+Concurrent runs (Phase 16) and everything beyond also benefit from a
+config-honoring, all-providers-functional engine first.
 
 ## Features
 
@@ -27,8 +32,10 @@ and everything beyond also benefit from a config-honoring engine first.
 | **F14.1** | Enable-disable enforcement end-to-end (planner, converter, validate, run, MCP) | [F14.1-enable-disable-enforcement.md](F14.1-enable-disable-enforcement.md) |
 | **F14.2** | Per-spawn MCP overlays for Cursor / Codex / Copilot | [F14.2-per-spawn-mcp-overlays.md](F14.2-per-spawn-mcp-overlays.md) |
 | **F14.3** | API provider truth-up (Anthropic prompt caching, OpenAI/OpenRouter stub gating) | [F14.3-api-provider-truthup.md](F14.3-api-provider-truthup.md) |
-| **F14.4** | Live backend smoke tests (Cursor / Codex / Copilot / Anthropic) | [F14.4-live-backend-smoke-tests.md](F14.4-live-backend-smoke-tests.md) |
+| **F14.4** | Live backend smoke tests (Cursor / Codex / Copilot / Anthropic / OpenAI / OpenRouter) | [F14.4-live-backend-smoke-tests.md](F14.4-live-backend-smoke-tests.md) |
 | **F14.5** | Spec Kit parser hardening + content propagation | [F14.5-speckit-hardening.md](F14.5-speckit-hardening.md) |
+| **F14.6** | OpenAI + OpenRouter provider implementations (replace the stubs with working impls) | [F14.6-openai-openrouter-providers.md](F14.6-openai-openrouter-providers.md) |
+| **F14.7** | Copilot backend reality check + working implementation | [F14.7-copilot-backend-reality-check.md](F14.7-copilot-backend-reality-check.md) |
 
 ## Why now
 
@@ -66,6 +73,17 @@ overstates its real integration support. Specifically:
 - **Spec Kit parsing is brittle.** The task-line regex is strict; a
   slightly-off `tasks.md` parses as zero tasks with no warning. `spec.md`
   and `plan.md` content is dropped — only title/description extracted.
+- **OpenAI and OpenRouter providers are stubs that throw at spawn
+  time.** `api` is one of the five integrations yaao claims to support,
+  but two-thirds of its provider surface is unimplemented. Anthropic
+  alone isn't "the API backend works."
+- **Copilot's CLI surface is unverified.** [src/agents/copilot.ts](../../src/agents/copilot.ts)
+  uses `gh copilot agent run`, but `gh copilot` historically exposed
+  shell-suggestion commands, not an agentic runner. Whether the
+  agentic command exists in the shipped `gh-copilot` extension is an
+  open question that F14.7 closes — either by aligning to the real
+  command, by pivoting to a REST integration, or by documenting
+  Copilot as a v2 deferral.
 
 ## Implementation order
 
@@ -76,21 +94,28 @@ overstates its real integration support. Specifically:
    identical to ClaudeCodeBackend's MCP overlay. Without this, ctx-sys
    integration (Phase 7) is silently broken for three of four agents
    and the Phase 16 concurrent-runs story has a gap.
-3. **F14.3** third. Smaller scope: either add caching markers or strip
-   the claim; add a validation rule for stub providers.
-4. **F14.4** fourth. Backstops the rest of the phase. Live smoke tests
-   prove F14.1 + F14.2 actually work against real CLIs, not just our
-   parsers' assumptions about them.
-5. **F14.5** last. Lowest-impact of the five; surfaces today's silent
+3. **F14.3** third. Smaller scope: add Anthropic caching markers; add
+   the validation rule for stub providers (which F14.6 then makes
+   unreachable).
+4. **F14.6** fourth. Ship the OpenAI and OpenRouter provider
+   implementations so `provider: openai` and `provider: openrouter`
+   work for real. Removes F14.3's `YAAO_PLAN_API_PROVIDER_UNIMPLEMENTED`
+   rule in the same PR.
+5. **F14.7** fifth. Stage 1 (discovery) is small and quick — confirm
+   what `gh-copilot` actually ships today. Stage 2 commits to one of
+   three paths (align CLI / REST pivot / document as deferred). If the
+   outcome is "deferred," F14.7 still ships honest validation and
+   docs, and Phase 14's promise becomes "four of five integrations
+   work confidently; Copilot is documented v2 work."
+6. **F14.4** sixth. Backstops the whole phase. Live smoke tests prove
+   F14.1, F14.2, F14.6, and F14.7 actually work against real
+   CLIs/APIs, not just our parsers' assumptions about them.
+7. **F14.5** last. Lowest-impact of the seven; surfaces today's silent
    parser failures and propagates Spec Kit content that's currently
    dropped on the floor.
 
 ## Out of scope
 
-- **Building OpenAI and OpenRouter providers.** F14.3 turns the stubs
-  into a hard validation error so users see the gap. Implementing the
-  providers themselves is a separate piece of work (likely sequenced
-  with Phase 16 + 17 — after distillation lands, before npm publish).
 - **A unified MCP-overlay primitive across all four backends.** F14.2
   ships the per-backend overlay each agent's CLI actually accepts. A
   factored-out `writeMcpOverlay(agent, servers)` helper is a v2 cleanup,
@@ -102,3 +127,11 @@ overstates its real integration support. Specifically:
 - **`yaao doctor`-style end-to-end agent probing.** The shipped
   per-backend `isAvailable()` plus F14.1's config-aware spawning is
   sufficient. The probe layer doctor consumes is unchanged.
+- **Anthropic Bedrock / Vertex / other deployments.** F14.6 ships
+  OpenAI and OpenRouter. Additional Anthropic deployments are separate
+  providers and not phase-blocking.
+- **Streaming responses across the API providers.** All three use the
+  non-streaming completion shape today. The tool-use loop is
+  round-trip based; streaming saves wall-clock only on the final
+  assistant turn. v2 candidate.
+- **Vision / image input** on any provider. Tools-only for v1.
