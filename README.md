@@ -333,6 +333,17 @@ Each agent backend's MCP coverage is uneven (Copilot's MCP support is newest, Co
 - **Validation gating** — a task with `validation.must-pass: true` whose pipeline exits non-zero **never** merges. The validation verdict is recorded on `task:completed` with `{exitCode, decisionReason, durationMs, mustPass}` so you can see why yaao decided pass/fail from `yaao_status` alone. Validation commands run under `bash -e -o pipefail`, so `make && nm build/kernel.elf | grep symbol` fails uniformly when any step in the pipe fails.
 - **Resume** — runs are journaled to `.yaao/runs/<run-id>/`; `yaao run --resume <id>` (or `yaao_resume({runId})`) picks up after a crash. The same runId carries through start → fail → resume → success in one continuous timeline.
 
+### Concurrent runs (Phase 16)
+
+Two `yaao run` invocations against distinct feature branches can execute in parallel — yaao does not serialize concurrent runs behind any project-wide lock. Invariants:
+
+- **Per-runId isolation on disk.** Worktrees live at `.yaao/worktrees/<runId>/<taskId>` and journals at `.yaao/runs/<runId>/`. The runId itself carries a nanoid suffix (`run-<ms>-<nanoid6>`) so two MCP-driven runs fired in the same tick never collide.
+- **Per-branch isolation in git.** When `plan.featureBranch` is set, the default task-branch name becomes `<featureBranch>/<task-id>` instead of `<plan-name>/<task-id>`. Two runs against `feature/foo` and `feature/bar` have disjoint task-branch namespaces by construction.
+- **Atomic merge-target CAS.** `git update-ref refs/heads/<target> <new> <expectedOld>` is used for every auto-merge. If two runs race on the same target branch, the loser emits `task:merge-failed` rather than silently overwriting.
+- **Plumbing-based merge.** The user's checked-out branch at the repo root is never touched unless the merge target *is* the checked-out branch (in which case `git reset --keep` is used and bails on a dirty working tree).
+
+**Foot-guns**: (a) two plans sharing `plan.name` *and* no `featureBranch` will collide on default task branches — give each a distinct `featureBranch` or override `branch:` per task; (b) two runs both auto-merging straight into `base-branch` with no `featureBranch` will race on the trunk — give each its own `featureBranch` so they land on disjoint integration branches first.
+
 ---
 
 ## TUI / monitoring

@@ -99,18 +99,32 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
   };
 
   // F16.1 — Default branch namespacing. When `plan.featureBranch` is
-  // set, each task's default branch lives under that integration
-  // branch's namespace (`feature/foo/api`, `feature/foo/ui`) so two
-  // concurrent runs against distinct feature branches have disjoint
-  // task-branch namespaces by construction. Without featureBranch we
-  // fall back to the historical `${plan.name}/${task.id}` shape.
-  // Tasks with an explicit `branch:` field are unaffected.
+  // set, each task's default branch lives under a namespace derived
+  // from the featureBranch so two concurrent runs against distinct
+  // feature branches have disjoint task-branch namespaces by
+  // construction.
+  //
+  // git's ref store treats slashes as directory separators, so we
+  // can't naively use `${featureBranch}/${task.id}`: if featureBranch
+  // is `feature/alpha`, then both `feature/alpha` (the branch) and
+  // `feature/alpha/<task>` (a would-be task branch) want to live at
+  // the same path and git rejects the create with `cannot lock ref ...
+  // 'refs/heads/feature/alpha' exists`. We sidestep this by replacing
+  // every `/` in the featureBranch with `-` to form the task-branch
+  // namespace: `feature/alpha` → ns `feature-alpha` → task branches
+  // `feature-alpha/api`, `feature-alpha/ui`. The featureBranch ref
+  // itself is unchanged.
+  //
+  // Without featureBranch we fall back to the historical
+  // `${plan.name}/${task.id}` shape (backward-compatible). Tasks with
+  // an explicit `branch:` field are unaffected — the override path is
+  // never namespaced.
   const featureBranchForNs = plan.plan.featureBranch;
+  const branchNamespace = featureBranchForNs
+    ? featureBranchForNs.replace(/\//g, '-')
+    : plan.plan.name;
   const tasks: ResolvedTask[] = plan.tasks.map((t) => {
-    const defaultBranch = featureBranchForNs
-      ? `${featureBranchForNs}/${t.id}`
-      : `${plan.plan.name}/${t.id}`;
-    const branch = t.branch ?? defaultBranch;
+    const branch = t.branch ?? `${branchNamespace}/${t.id}`;
     const worktree = t.worktree ?? `${resolvedConfig['worktree-root']}/${plan.plan.name}/${t.id}`;
     const merge = resolveTaskMerge(t.merge, resolvedConfig.merge.strategy);
     const { merge: _drop, ...rest } = t;

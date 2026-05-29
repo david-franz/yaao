@@ -74,12 +74,13 @@ describe('plan.featureBranch', () => {
     const bp = planBranches(resolved);
     // Layer-0 tasks branch off featureBranch (preserving any pre-existing
     // commits on it); dependent tasks still branch off their parent.
-    // F16.1: task default branches now namespace under featureBranch
-    // when one is set — task 'a' becomes 'feature/serial/a' instead of
-    // the legacy 'p/a', so task 'b's baseBranch (its parent's branch)
-    // follows the new shape too.
+    // F16.1: task default branches namespace under a slash-sanitized
+    // featureBranch (so git's ref store doesn't conflict with the
+    // featureBranch ref itself) — task 'a' becomes 'feature-serial/a'
+    // instead of the legacy 'p/a', and task 'b's baseBranch follows
+    // its parent's branch through the new shape.
     expect(bp.byTask.get('a')?.baseBranch).toBe('feature/serial');
-    expect(bp.byTask.get('b')?.baseBranch).toBe('feature/serial/a');
+    expect(bp.byTask.get('b')?.baseBranch).toBe('feature-serial/a');
   });
 
   it('yaao_convert writes featureBranch into plan.featureBranch and echoes it back', async () => {
