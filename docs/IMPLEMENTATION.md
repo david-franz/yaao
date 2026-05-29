@@ -165,13 +165,13 @@ Make ctx-sys a first-class context provider for any agent yaao runs, **but compl
 | **F7.1** | Detection & auto-spawn (when enabled)       | shipped | [F7.1-detect-and-spawn.md](phase-7/F7.1-detect-and-spawn.md) |
 | **F7.2** | MCP server registration (ctx-sys + user MCPs) | shipped | [F7.2-mcp-injection.md](phase-7/F7.2-mcp-injection.md) |
 | **F7.3** | System-prompt directive (advisory)          | shipped | [F7.3-query-enforcement.md](phase-7/F7.3-query-enforcement.md) |
-| **F7.4** | Optional git-hook impact reports            | shipped | [F7.4-impact-hook.md](phase-7/F7.4-impact-hook.md) |
+| **F7.4** | Optional git-hook impact reports            | removed | [F7.4-impact-hook.md](phase-7/F7.4-impact-hook.md) |
 
 **Key Deliverables:**
 - Default-off in `yaao.config.json`. When `ctx-sys.enabled: true`, yaao detects whether `ctx-sys serve` is running and (if `auto-spawn: true`) spawns it for the run.
 - Generic MCP-server registration: ctx-sys is one entry; users can add other MCP servers via `mcp-servers:` and they flow through the same injection path.
 - Every step gets an advisory system-prompt directive recommending `context_query` before writing code. **No hard enforcement** — agents decide whether to query.
-- Optional: install a git pre-commit hook that calls `ctx-sys hooks.impact_report` and feeds the result to merge-time conflict-resolution agents.
+- ~~Optional: install a git pre-commit hook that calls `ctx-sys hooks.impact_report` and feeds the result to merge-time conflict-resolution agents.~~ **Removed** — ctx-sys 2.0 cut the `hooks impact-report` command; the impact-on-demand role is now served by the advisory `context_query` directive above. See [F7.4](phase-7/F7.4-impact-hook.md).
 
 ---
 

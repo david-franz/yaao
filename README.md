@@ -17,7 +17,7 @@ It is editor- and agent-agnostic: every step in an execution plan can be assigne
 
 Recent additions worth knowing about even mid-MVP: a per-plan `plan.featureBranch` so feature-branch routing lives in the plan YAML instead of mutating workspace config per feature; a `yaao stop` CLI + `yaao_stop` MCP tool that cross-process cancels a run via SIGTERM (the runner stamps `cancelled` in the journal before exit); a converter `YAAO_PLAN_NARROW_DAG` warning that nudges away from strict-chain plans; and planner-skill prompt updates that prefer parallel siblings over a serial spine.
 
-> **ctx-sys runtime caveat.** Phase 7's yaao-side code (detect, auto-spawn, MCP injection, directive, optional pre-commit hook) is shipped, but live auto-spawn depends on the `ctx-sys serve --socket <path>` + ready-signal contract being formalized in ctx-sys 2.0 ([F1.3](../ctx-sys/docs/v2/phase-1/F1.3-yaao-native-integration.md)). Until ctx-sys 2.0 lands, setting `ctx-sys.enabled: true` errors at first task spawn. The default config (`ctx-sys.enabled: false`) is unaffected.
+> **ctx-sys runtime caveat.** Phase 7's yaao-side code (detect, auto-spawn, MCP injection, directive) is shipped, but live auto-spawn depends on the `ctx-sys serve --socket <path>` + ready-signal contract being formalized in ctx-sys 2.0 ([F1.3](../ctx-sys/docs/v2/phase-1/F1.3-yaao-native-integration.md)). Until ctx-sys 2.0 lands, setting `ctx-sys.enabled: true` errors at first task spawn. The default config (`ctx-sys.enabled: false`) is unaffected.
 
 Planned phases (in this order):
 
