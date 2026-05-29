@@ -52,6 +52,23 @@ export interface AssistantStep {
    * loop, not by providers.
    */
   toolResults?: ApiToolResult[];
+  /**
+   * Cache + token usage for this step, when the provider surfaces it.
+   * Anthropic returns `cache_creation_input_tokens` / `cache_read_input_tokens`
+   * on every response when the request used `cache_control` markers; OpenAI's
+   * automatic caching returns `usage.prompt_tokens_details.cached_tokens`.
+   * Both are normalized to a flat shape here so the lifecycle / journal /
+   * web viewer can accumulate them uniformly. Undefined when the provider
+   * doesn't surface usage (e.g. the FakeApiProvider used in tests).
+   */
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    /** Tokens written to a fresh cache breakpoint on this request. */
+    cacheCreation?: number;
+    /** Tokens served from cache on this request. */
+    cacheRead?: number;
+  };
 }
 
 export interface ApiProviderConfig {

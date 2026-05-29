@@ -274,16 +274,49 @@ export class AnthropicProvider implements ApiProvider {
       }
     }
 
-    const body = {
-      model: req.model,
-      max_tokens: this.opts.maxTokens ?? 4096,
-      system: req.systemPrompt,
-      messages,
-      tools: req.tools.map((t) => ({
+    // F14.3 — Prompt caching. We set three cache breakpoints:
+    //  1. The system prompt (stable across every step in a spawn).
+    //  2. The last tool in the tools array (marks the whole tools list).
+    //  3. The most recent tool_result block in messages (marks the
+    //     accumulating conversation prefix so step N+1 reuses step N's
+    //     cache).
+    // Anthropic permits up to 4 breakpoints per request; we use 3 with one
+    // slot held in reserve. TTL is ephemeral (5 minutes), good enough for
+    // a single task spawn.
+    const cacheControl = { type: 'ephemeral' as const };
+    const systemBlocks: { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }[] = [
+      { type: 'text', text: req.systemPrompt },
+    ];
+    if (systemBlocks.length > 0 && systemBlocks[0]) {
+      systemBlocks[systemBlocks.length - 1] = {
+        ...(systemBlocks[systemBlocks.length - 1] as { type: 'text'; text: string }),
+        cache_control: cacheControl,
+      };
+    }
+    const tools = req.tools.map((t, i, arr) => {
+      const base = {
         name: t.name,
         description: t.description,
         input_schema: t.inputSchema,
-      })),
+      };
+      // Mark the LAST tool as the cache breakpoint for the entire tools
+      // array. Subsequent requests with the same tools list re-use the
+      // cached tokens; a tools-list change invalidates the breakpoint.
+      return i === arr.length - 1
+        ? { ...base, cache_control: cacheControl }
+        : base;
+    });
+    // Mark the last tool_result block in the most recent user-turn as the
+    // conversation cache breakpoint. Anthropic caches everything UP TO and
+    // INCLUDING the marker, so step N+1 sees step N's tool result in cache.
+    markLastToolResultCacheControl(messages, cacheControl);
+
+    const body = {
+      model: req.model,
+      max_tokens: this.opts.maxTokens ?? 4096,
+      system: systemBlocks,
+      messages,
+      tools,
     };
 
     const resp = await fetchImpl(`${baseUrl}/v1/messages`, {
@@ -315,7 +348,53 @@ export class AnthropicProvider implements ApiProvider {
       }
     }
     const stop = parsed.stop_reason !== 'tool_use';
-    return { text, toolCalls, stop };
+    const usage = parsed.usage
+      ? {
+          ...(parsed.usage.input_tokens !== undefined ? { inputTokens: parsed.usage.input_tokens } : {}),
+          ...(parsed.usage.output_tokens !== undefined ? { outputTokens: parsed.usage.output_tokens } : {}),
+          ...(parsed.usage.cache_creation_input_tokens !== undefined
+            ? { cacheCreation: parsed.usage.cache_creation_input_tokens }
+            : {}),
+          ...(parsed.usage.cache_read_input_tokens !== undefined
+            ? { cacheRead: parsed.usage.cache_read_input_tokens }
+            : {}),
+        }
+      : undefined;
+    const step: AssistantStep = { text, toolCalls, stop };
+    if (usage !== undefined) step.usage = usage;
+    return step;
+  }
+}
+
+/**
+ * Walk `messages` from the end backwards and mark the most recent
+ * `tool_result` block (or the last block of the most recent user turn if
+ * none) with the supplied `cache_control` marker. No-op when messages is
+ * empty. Mutates in place because the message array is local to the request
+ * builder and disposed after the fetch.
+ */
+function markLastToolResultCacheControl(
+  messages: AnthropicMessage[],
+  cacheControl: { type: 'ephemeral' },
+): void {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || m.role !== 'user' || typeof m.content === 'string') continue;
+    // Prefer marking the last tool_result block; fall back to the last block.
+    for (let j = m.content.length - 1; j >= 0; j--) {
+      const b = m.content[j];
+      if (b && b.type === 'tool_result') {
+        (b as AnthropicContentBlock & { cache_control?: { type: 'ephemeral' } }).cache_control =
+          cacheControl;
+        return;
+      }
+    }
+    const last = m.content[m.content.length - 1];
+    if (last) {
+      (last as AnthropicContentBlock & { cache_control?: { type: 'ephemeral' } }).cache_control =
+        cacheControl;
+      return;
+    }
   }
 }
 
@@ -332,6 +411,12 @@ type AnthropicContentBlock =
 interface AnthropicResponse {
   content: AnthropicContentBlock[];
   stop_reason: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence' | string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
 }
 
 export class OpenAIProvider implements ApiProvider {

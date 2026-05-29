@@ -79,13 +79,21 @@ describe('AnthropicProvider', () => {
     expect(headers['content-type']).toBe('application/json');
     const body = c.body as Record<string, unknown>;
     expect(body['model']).toBe('claude-opus-4-7');
-    expect(body['system']).toBe('be terse');
+    // F14.3 — system is now an array of content blocks with a
+    // cache_control marker on the last (only) block to enable prompt
+    // caching across steps in a spawn.
+    expect(body['system']).toEqual([
+      { type: 'text', text: 'be terse', cache_control: { type: 'ephemeral' } },
+    ]);
     expect(body['messages']).toEqual([{ role: 'user', content: 'hi' }]);
+    // F14.3 — the last tool in the tools array carries cache_control so
+    // the tools list is cached across requests within a spawn.
     expect(body['tools']).toEqual([
       {
         name: 'read_file',
         description: 'Read a file in the worktree.',
         input_schema: TOOLS[0]!.inputSchema,
+        cache_control: { type: 'ephemeral' },
       },
     ]);
   });
@@ -146,6 +154,8 @@ describe('AnthropicProvider', () => {
     // Second request's messages array carries the full multi-turn conversation:
     //   user prompt → assistant (text + tool_use) → user (tool_result) → ?
     const second_body = calls[1]!.body as { messages: unknown[] };
+    // F14.3 — the most recent tool_result block carries cache_control:
+    // ephemeral so step N+1 sees step N's conversation in cache.
     expect(second_body.messages).toEqual([
       { role: 'user', content: 'read README' },
       {
@@ -162,7 +172,14 @@ describe('AnthropicProvider', () => {
       },
       {
         role: 'user',
-        content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: '# yaao\n' }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'tu_1',
+            content: '# yaao\n',
+            cache_control: { type: 'ephemeral' },
+          },
+        ],
       },
     ]);
   });
