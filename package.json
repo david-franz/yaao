@@ -1,6 +1,6 @@
 {
   "name": "yaao",
-  "version": "0.0.1",
+  "version": "1.0.0-alpha",
   "description": "yet another agent orchestrator",
   "license": "MIT",
   "type": "module",
