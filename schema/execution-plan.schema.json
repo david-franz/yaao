@@ -87,6 +87,18 @@
                 "plan-context-budget": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "include": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "prompt",
+                      "validation",
+                      "commits",
+                      "diff"
+                    ]
+                  }
                 }
               },
               "additionalProperties": false
