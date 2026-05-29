@@ -26,6 +26,13 @@ export interface ResolvedPlanConfig {
     'per-dep-budget'?: number;
     'total-budget'?: number;
     'plan-context-budget'?: number;
+    /**
+     * F16.3 — Optional override for which handoff sections appear in
+     * each task's `context.md`. When undefined, all four (`prompt`,
+     * `validation`, `commits`, `diff`) are emitted. Set to `[]` to
+     * reproduce the pre-F16.3 artifact byte-for-byte.
+     */
+    include?: ('prompt' | 'validation' | 'commits' | 'diff')[];
   };
   hooks: {
     'post-task': { command: string; cwd?: string; 'must-pass': boolean }[];
@@ -84,6 +91,9 @@ export function resolvePlan(plan: Plan, opts: ResolveOptions): ResolvedPlan {
         : {}),
       ...(planContext['plan-context-budget'] !== undefined
         ? { 'plan-context-budget': planContext['plan-context-budget'] }
+        : {}),
+      ...(planContext.include !== undefined
+        ? { include: planContext.include }
         : {}),
     },
     hooks: {

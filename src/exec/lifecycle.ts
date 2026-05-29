@@ -449,7 +449,17 @@ export class Lifecycle {
         }
       }
 
-      // 7) Write context.md artifact
+      // 7) Write context.md artifact. F16.3 captures four richer
+      // sections for downstream tasks: the parent's original prompt,
+      // the validation outcome, the full commit chain, and the
+      // git-diff-stat summary. `config.context.include` lets a plan
+      // narrow the set — undefined emits all four, [] reproduces the
+      // pre-F16.3 shape byte-for-byte.
+      const enrichment = await this.computeContextEnrichment(
+        wt.path,
+        branchEntry.baseBranch,
+        headBeforeSpawn,
+      );
       const artifact: TaskOutcomeArtifact = {
         branch: wt.branch,
         filesChanged: diffStats.filesChanged,
@@ -459,8 +469,28 @@ export class Lifecycle {
         summary: stdout,
         ...(commitOutcome.commit !== undefined ? { commit: commitOutcome.commit } : {}),
         ...(commitOutcome.subject !== undefined ? { commitSubject: commitOutcome.subject } : {}),
+        originalPrompt: promptBody,
+        ...(validationOutcome !== undefined
+          ? {
+              validation: {
+                command: validationOutcome.command,
+                exitCode: validationOutcome.exitCode,
+                durationMs: validationOutcome.durationMs,
+                mustPass: validationOutcome.mustPass,
+                decisionReason: validationOutcome.decisionReason,
+              },
+            }
+          : {}),
+        ...(enrichment.commits.length > 0 ? { commits: enrichment.commits } : {}),
+        ...(enrichment.diffStat ? { diffStat: enrichment.diffStat } : {}),
       };
-      writeContextMd(this.opts.runDir, task, artifact);
+      const includeCfg = this.opts.plan.config.context.include;
+      writeContextMd(
+        this.opts.runDir,
+        task,
+        artifact,
+        includeCfg !== undefined ? { include: includeCfg } : {},
+      );
 
       // 8) Notify scheduler + journal
       const durationMs = Date.now() - start;
@@ -855,6 +885,61 @@ export class Lifecycle {
       if (Number.isFinite(del)) out.deletions += del;
     }
     return out;
+  }
+
+  /**
+   * F16.3 — Capture the additional handoff signal that goes into
+   * `context.md`: the full commit chain the task produced (so a
+   * dependent agent sees more than the head commit subject) and the
+   * `--stat` summary against the base branch (so it sees *which*
+   * subsystems were touched without paging the whole diff).
+   *
+   * Both calls reject=false so a missing base ref or unborn HEAD
+   * degrades to "no enrichment", never throws. The rest of the
+   * artifact is already written; F16.3 augments it.
+   */
+  private async computeContextEnrichment(
+    cwd: string,
+    baseBranch: string,
+    headBeforeSpawn: string,
+  ): Promise<{ commits: { sha: string; subject: string }[]; diffStat: string }> {
+    const { execa } = await import('execa');
+    const commits: { sha: string; subject: string }[] = [];
+    // Prefer the in-process head-snapshot as the range base (handles
+    // the case where the task branched off an unmerged sibling), and
+    // fall back to the configured base branch when we never captured a
+    // pre-spawn HEAD (e.g. resumed runs).
+    const rangeBase = headBeforeSpawn !== '' ? headBeforeSpawn : baseBranch;
+    try {
+      const log = await execa(
+        'git',
+        ['log', `${rangeBase}..HEAD`, '--format=%H%x09%s'],
+        { cwd, reject: false },
+      );
+      const raw = log.stdout?.toString() ?? '';
+      for (const line of raw.split(/\r?\n/)) {
+        if (!line) continue;
+        const tab = line.indexOf('\t');
+        if (tab < 0) continue;
+        const sha = line.slice(0, tab);
+        const subject = line.slice(tab + 1);
+        if (sha) commits.push({ sha, subject });
+      }
+    } catch {
+      // ignore — enrichment is best-effort
+    }
+    let diffStat = '';
+    try {
+      const stat = await execa(
+        'git',
+        ['diff', '--stat', `${baseBranch}...HEAD`],
+        { cwd, reject: false },
+      );
+      diffStat = (stat.stdout?.toString() ?? '').trim();
+    } catch {
+      // ignore
+    }
+    return { commits, diffStat };
   }
 }
 

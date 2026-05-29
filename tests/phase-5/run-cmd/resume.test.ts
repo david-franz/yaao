@@ -38,16 +38,23 @@ describe('yaao run --resume', () => {
     });
 
     // First run: a succeeds, b fails its validation.
+    //
+    // Task discrimination via prompt content is now ambiguous: F16.3
+    // propagates the parent's `## Original task` (its raw prompt) into
+    // each dependent's resolved prompt, so task b's prompt also
+    // contains task a's "write a" string. We discriminate on task b's
+    // own marker `pass after fix` instead — it only appears in b's
+    // resolved prompt.
     let firstRunPromptForB = '';
     const aWritesFile = new Proxy(new FakeBackend({ events: [{ type: 'stdout', data: 'ok' }] }), {
       get(target, prop) {
         if (prop === 'spawn') {
           return async (opts: Parameters<typeof target.spawn>[0]) => {
             // task a writes some artifact; b records its prompt but does NOT write marker.
-            if (opts.prompt.includes('write a')) {
-              writeFileSync(join(opts.cwd, 'a.txt'), 'hello');
-            } else {
+            if (opts.prompt.includes('pass after fix')) {
               firstRunPromptForB = opts.prompt;
+            } else {
+              writeFileSync(join(opts.cwd, 'a.txt'), 'hello');
             }
             return target.spawn(opts);
           };
@@ -76,11 +83,15 @@ describe('yaao run --resume', () => {
       get(target, prop) {
         if (prop === 'spawn') {
           return async (opts: Parameters<typeof target.spawn>[0]) => {
-            if (opts.prompt.includes('write a')) {
-              aSpawnsOnResume += 1;
-            } else {
+            // Same discrimination caveat as the first run — match on
+            // task b's own prompt marker (`pass after fix`) since the
+            // F16.3 dep-context preamble now inlines task a's
+            // original prompt into task b's prompt too.
+            if (opts.prompt.includes('pass after fix')) {
               resumedPromptForB = opts.prompt;
               writeFileSync(join(opts.cwd, 'marker.txt'), 'ok');
+            } else {
+              aSpawnsOnResume += 1;
             }
             return target.spawn(opts);
           };

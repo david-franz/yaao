@@ -6,6 +6,17 @@ export interface ContextDirOptions {
   runDir: string;
 }
 
+/**
+ * F16.3 — Sections the parent→child context handoff can include in the
+ * generated `context.md` artifact. Each name maps to one rendered
+ * section under the existing artifact layout. The default
+ * (`include: undefined`) emits all four — opt out by setting
+ * `config.context.include: []` (or any subset) in the plan.
+ */
+export type ContextSection = 'prompt' | 'validation' | 'commits' | 'diff';
+
+export const DEFAULT_CONTEXT_SECTIONS: ContextSection[] = ['prompt', 'validation', 'commits', 'diff'];
+
 export interface TaskOutcomeArtifact {
   branch: string;
   filesChanged: number;
@@ -16,45 +27,161 @@ export interface TaskOutcomeArtifact {
   summary: string;
   commit?: string;
   commitSubject?: string;
+  /**
+   * F16.3 — Parent task's resolved prompt body (the planner's prompt-ref
+   * content, or the inline task.prompt). When present and `include`
+   * permits, the first 30 lines are rendered under `## Original task` so
+   * a downstream agent reading the artifact knows *what the parent was
+   * asked to do*, not just what its stdout said.
+   */
+  originalPrompt?: string;
+  /**
+   * F16.3 — Captured validation outcome (command, exit code, duration,
+   * decision reason, must-pass). When present and `include` permits,
+   * rendered under `## Validation` so a dependent agent sees whether
+   * the parent's tests/lint passed.
+   */
+  validation?: {
+    command: string;
+    exitCode: number;
+    durationMs: number;
+    mustPass: boolean;
+    decisionReason: string;
+  };
+  /**
+   * F16.3 — Full commit chain `baseCommit..HEAD` on the parent's
+   * branch — one entry per commit, newest first. Replaces the single
+   * "Commit" section's head-only view so multi-commit tasks surface
+   * their full trajectory.
+   */
+  commits?: { sha: string; subject: string }[];
+  /**
+   * F16.3 — `git diff --stat <baseBranch>...HEAD` output, trimmed to
+   * the configured cap so the artifact stays under budget.
+   */
+  diffStat?: string;
 }
 
 export const DEFAULT_PER_DEP_TOKEN_BUDGET = 2000;
 export const DEFAULT_TOTAL_TOKEN_BUDGET = 12_000;
+const PROMPT_PREVIEW_LINES = 30;
+const DIFF_STAT_LINE_CAP = 30;
+
+export interface WriteContextMdOptions {
+  /** Subset of sections to render. Defaults to all four. Pass `[]` to
+   * reproduce the pre-F16.3 artifact shape byte-for-byte. */
+  include?: ContextSection[];
+}
 
 export function writeContextMd(
   runDir: string,
   task: ResolvedTask,
   artifact: TaskOutcomeArtifact,
+  opts: WriteContextMdOptions = {},
 ): string {
   const dir = join(runDir, task.id);
   mkdirSync(dir, { recursive: true });
+  const sections = opts.include ?? DEFAULT_CONTEXT_SECTIONS;
+  const include = new Set(sections);
+
   const summaryLines = artifact.summary.trim().split(/\r?\n/);
   const lastN = summaryLines.slice(-80).join('\n');
-
   const fileList = artifact.files
     .map((f) => `- \`${f.path}\` (${f.status})`)
     .join('\n');
 
-  const md = `# ${task.id} — ${task.title}
+  // Header is unchanged by F16.3 — existing readers keep working.
+  const out: string[] = [
+    `# ${task.id} — ${task.title}`,
+    '',
+    `**Branch**: ${artifact.branch}`,
+    `**Files changed**: ${artifact.filesChanged} (+${artifact.insertions} / -${artifact.deletions})`,
+    '',
+  ];
 
-**Branch**: ${artifact.branch}
-**Files changed**: ${artifact.filesChanged} (+${artifact.insertions} / -${artifact.deletions})
+  // F16.3 additions are rendered in a fixed order so a reader can rely
+  // on the layout. Each section is omitted entirely when its data is
+  // absent OR when `include` excludes it — no empty headings.
 
-## Summary
+  if (include.has('prompt') && artifact.originalPrompt && artifact.originalPrompt.trim().length > 0) {
+    const lines = artifact.originalPrompt.trim().split(/\r?\n/);
+    const preview = lines.slice(0, PROMPT_PREVIEW_LINES).join('\n');
+    const truncated = lines.length > PROMPT_PREVIEW_LINES;
+    out.push('## Original task');
+    out.push('');
+    out.push(preview);
+    if (truncated) {
+      out.push('');
+      out.push(`_(truncated at ${PROMPT_PREVIEW_LINES} lines)_`);
+    }
+    out.push('');
+  }
 
-${lastN}
+  if (include.has('validation') && artifact.validation) {
+    const v = artifact.validation;
+    out.push('## Validation');
+    out.push('');
+    out.push(`- Command: \`${v.command}\``);
+    out.push(
+      `- Exit code: ${v.exitCode} (${v.exitCode === 0 ? 'passed' : 'failed'}, must-pass=${v.mustPass})`,
+    );
+    out.push(`- Duration: ${v.durationMs}ms`);
+    out.push(`- Decision: ${v.decisionReason}`);
+    out.push('');
+  }
 
-## Files
+  // Summary stays where it always was — between the new "Original task" /
+  // "Validation" sections and the new "Diff" / "Commits" sections.
+  out.push('## Summary');
+  out.push('');
+  out.push(lastN);
+  out.push('');
 
-${fileList || '_(none)_'}
+  if (include.has('diff') && artifact.diffStat && artifact.diffStat.trim().length > 0) {
+    const diffLines = artifact.diffStat.trim().split(/\r?\n/);
+    const cappedDiff = diffLines.slice(0, DIFF_STAT_LINE_CAP).join('\n');
+    const truncated = diffLines.length > DIFF_STAT_LINE_CAP;
+    out.push('## Diff');
+    out.push('');
+    out.push('```');
+    out.push(cappedDiff);
+    out.push('```');
+    if (truncated) {
+      out.push('');
+      out.push(`_(diff stat truncated at ${DIFF_STAT_LINE_CAP} lines)_`);
+    }
+    out.push('');
+  }
 
-## Commit
+  if (include.has('commits') && artifact.commits && artifact.commits.length > 0) {
+    out.push('## Commits');
+    out.push('');
+    for (const c of artifact.commits) {
+      out.push(`- ${c.sha.slice(0, 7)} ${c.subject}`);
+    }
+    out.push('');
+  } else {
+    // Legacy single-head commit fallback when F16.3's full chain is
+    // absent (e.g. when the lifecycle didn't capture it, or when
+    // include explicitly opts out of commits and the legacy artifact
+    // shape is wanted).
+    out.push('## Commit');
+    out.push('');
+    out.push(
+      artifact.commit
+        ? `${artifact.commit.slice(0, 7)} ${artifact.commitSubject ?? task.title}`
+        : '_(no commit)_',
+    );
+    out.push('');
+  }
 
-${artifact.commit ? `${artifact.commit.slice(0, 7)} ${artifact.commitSubject ?? task.title}` : '_(no commit)_'}
-`;
+  out.push('## Files');
+  out.push('');
+  out.push(fileList || '_(none)_');
+  out.push('');
 
   const path = join(dir, 'context.md');
-  writeFileSync(path, md);
+  writeFileSync(path, out.join('\n'));
   return path;
 }
 

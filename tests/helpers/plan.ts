@@ -4,7 +4,7 @@ import { DEFAULT_CONFIG } from '../../src/config/types.js';
 import type { SourceMap } from '../../src/plan/yaml/loader.js';
 
 export interface FakePlanInput {
-  plan?: { name?: string; version?: 1; description?: string };
+  plan?: { name?: string; version?: 1; description?: string; featureBranch?: string; context?: string };
   config?: unknown;
   context?: unknown;
   includes?: string[];

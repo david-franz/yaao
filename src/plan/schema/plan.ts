@@ -143,6 +143,16 @@ export const PlanConfigSchema = z
         'per-dep-budget': z.number().int().positive().optional(),
         'total-budget': z.number().int().positive().optional(),
         'plan-context-budget': z.number().int().nonnegative().optional(),
+        /**
+         * F16.3 — Which optional handoff sections to render into a
+         * task's `context.md` artifact. When omitted, all four
+         * sections are emitted (`prompt`, `validation`, `commits`,
+         * `diff`). Set to `[]` to fall back to the pre-F16.3 artifact
+         * shape; pass a subset to opt into specific sections only.
+         */
+        include: z
+          .array(z.enum(['prompt', 'validation', 'commits', 'diff']))
+          .optional(),
       })
       .strict()
       .optional(),
