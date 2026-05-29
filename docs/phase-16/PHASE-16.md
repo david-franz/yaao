@@ -1,64 +1,78 @@
-# Phase 16: Session → Skill Distillation
+# Phase 16: Concurrent Runs & Context Handoff
 
-**Status**: Planned
-**Depends on**: Phase 8 (skills system), Phase 12 (yaao-as-MCP — specifically F12.5 auto-registration *and* [F12.6](../phase-12/F12.6-skill-hot-reload.md) hot reload, which delivers the "callable across all connected agents within the same MCP session" UX this phase relies on)
+## Purpose
 
-## Goal
+Two findings from the v1 pre-flight review motivate this phase:
 
-Capture the useful patterns from a finished chat session — the conventions discovered, the file/dir focus areas, the user's corrections, the ordered approach that actually worked — and crystallize them into a reusable yaao skill. The skill is then immediately available to **every** agent connected to yaao's MCP server (Claude Code, Cursor, Copilot, Codex, raw API), regardless of which agent the original session ran in.
+1. **Concurrent runs against distinct feature branches are *almost* supported,
+   but have two sharp edges** that prevent the workflow from being claimed in
+   the docs: task default branches are namespaced by plan name (not runId or
+   featureBranch), so two runs of the same plan collide on `<plan-name>/<task-id>`;
+   and runIds use millisecond resolution (`run-${Date.now().toString(36)}`),
+   so two runs kicked off in the same tick get the same id. The merge path
+   already uses git plumbing and atomic ref CAS — the bones are right — but
+   the naming layer has to catch up before "two yaao runs against two feature
+   branches simultaneously" can be a documented, tested workflow.
+2. **The parent→child context handoff is correct but lossy.** A dependent
+   agent today receives an 80-line stdout tail, a file list, a single commit
+   subject, and the parent's branch — but **not** the parent's task prompt,
+   **not** the validation outcome, and only `--numstat`-shaped diff totals
+   instead of any per-file shape. The child's worktree branches off the parent
+   so the actual code is on disk; the gap is in the *meta-context* (why was
+   this done, did it pass validation, what changed semantically). Two of the
+   four fixes are tiny.
 
-This phase closes a missing half of the skill lifecycle: yaao already makes a written skill *portable*. Phase 16 makes the act of *writing* the skill cheap by lifting it out of a representative session you already had.
-
-## Why this belongs in yaao
-
-Three properties of the existing yaao skill system make the fit unusually clean:
-
-1. **One canonical skill format** (`skill.yaml` + `prompt.md`, F8.1) already exists — the distiller emits into the same shape every other skill uses.
-2. **Auto-MCP-registration plus hot reload** (F12.5 + [F12.6](../phase-12/F12.6-skill-hot-reload.md)) means any skill written to `.yaao/skills/<name>/` becomes a callable tool `yaao_skill_<name>` within one debounce window (~250 ms), across all connected agents. F12.5 covers the static catalog at server build; F12.6 keeps it in sync mid-session via an `fs.watch`-driven reconciler that fires `tools/list_changed`. No reconnect, no further wiring.
-3. **Per-agent emitters** (F8.2–F8.5) already translate one canonical skill into each agent's native artifact via `yaao skills install`. Distillation just produces the canonical form; the existing pipeline takes it the rest of the way.
-
-A skill written from a Claude Code session is therefore usable from Cursor, Copilot, Codex, and the raw API tomorrow — same name, same inputs, same body.
+This phase ships both. Concurrency hardening is a small surface-area change
+with a high reliability return; context enrichment is a fixed-size addition
+to one artifact (`context.md`) with no new schema surface.
 
 ## Features
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F16.1** | `yaao-distiller` built-in skill (prompt + metadata) | [F16.1-distiller-skill.md](F16.1-distiller-skill.md) |
-| **F16.2** | In-session capture (structured self-summary contract, redaction) | [F16.2-session-readers.md](F16.2-session-readers.md) |
-| **F16.3** | Skill emission, validation, and post-emit `skills install` | [F16.3-skill-emission.md](F16.3-skill-emission.md) |
-| **F16.4** | `yaao_distill` MCP tool (sole entry point) | [F16.4-distill-mcp-tool.md](F16.4-distill-mcp-tool.md) |
-| **F16.5** | Skill refinement (re-distill with new session, diff review) | [F16.5-skill-refinement.md](F16.5-skill-refinement.md) |
+| **F16.1** | Concurrent-run isolation hardening — runId entropy + branch namespacing | [F16.1-concurrent-run-isolation.md](F16.1-concurrent-run-isolation.md) |
+| **F16.2** | Concurrency model — docs alignment + integration tests | [F16.2-concurrency-model.md](F16.2-concurrency-model.md) |
+| **F16.3** | Context handoff enrichment (parent prompt, validation, commit chain, diff stat) | [F16.3-context-handoff.md](F16.3-context-handoff.md) |
 
-## Key Deliverables
+## Why now
 
-- `yaao-distiller` sits next to `yaao-planner` and `yaao-converter` in `src/skills/builtin/` and is registered as the MCP tool `yaao_distill` (custom, parallel to `yaao_plan` / `yaao_convert`).
-- **MCP is the only entry point.** Distillation is inherently an in-context operation — its primary input is "what just happened in this conversation," which only meaningfully exists inside the conversation. Unlike every other yaao command, there is no shell-CLI equivalent: a shell user can't construct a useful `SessionRecord` from memory, and every supported agent already speaks MCP. The symmetry-break with the rest of yaao is intentional.
-- **In-session capture.** The invoking agent supplies its own structured self-summary of the conversation as the `session` MCP argument; yaao never reads IDE-internal transcript stores. This works on every agent (Claude Code, Cursor, Copilot, Codex, raw API).
-- The new skill is written to `.yaao/skills/<name>/` (project) or `~/.yaao/skills/<name>/` (user), reusing `validateSkill` (F8.1) before persisting. After write, F8.6's `skills install` re-emits per-agent stubs automatically.
-- Re-running the distiller against an existing skill **merges** rather than overwrites — preserving anti-patterns and distillation notes, surfacing a diff + changelog for review, and refusing auto-apply on convention contradictions. **Version history lives in git** (`.yaao/skills/` is repo-tracked); yaao does not touch the `version` field on refinement and keeps no parallel backup directory.
+Phase 14 (release polish) tightens the *single-run* first-use story. Phase 16
+unlocks the workflow the engine was always shaped for but never actually
+claimed: **two agents-on-feature-branches running side by side**, both safely
+auto-merging into their own integration branch with no cross-talk. That is
+the killer demo for the worktree model — without it, yaao reads as "one big
+parallel run" rather than "your background process queue for AI coding."
 
-## Implementation Order
+F16.3 is sequenced into the same phase because the review surfaced both gaps
+at the same time and they ship in the same window. They share no code, but
+they share a release: v1 lands with concurrent runs + richer handoff.
 
-F16.1, F16.2, and F16.3 are tightly coupled and should land as a single PR, not three:
+## Implementation order
 
-- F16.1's prompt has to know what shape of `SessionRecord` to expect (defined in F16.2).
-- F16.1's emitted output has to pass `validateSkill` as F16.3 calls it; if the prompt is wrong the validator rejects.
-- F16.3's idempotency guarantees (atomic write, refuse-overwrite-without-merge) only matter if F16.1 is actually producing files.
+1. **F16.1** first — pure plumbing, no schema or API change. Unblocks F16.2's
+   integration tests.
+2. **F16.2** second — wires the tests that prove the workflow and aligns the
+   docs (Phase 12 internal docs claim a `.yaao/.lock` that doesn't exist in
+   `src/`; we either build it or remove the claim — the latter, since the
+   workflow we *want* is concurrency, not serialization).
+3. **F16.3** last — orthogonal to F16.1/F16.2 and can land in parallel, but
+   sequenced after so the phase's first PR is small and reviewable.
 
-Sequence:
+## Out of scope
 
-1. **F16.1 + F16.2 + F16.3** together — `SessionRecord` contract, distiller prompt, emission pipeline. End state: a hand-built `SessionRecord` fed into `runPlanner`-style harness produces a written, validated skill on disk.
-2. **F16.4** — the MCP tool wires everything together end-to-end and surfaces it to calling agents. F12.6 hot reload (already shipped) makes the new tool callable in the same session.
-3. **F16.5** last — refinement is the multiplier, but only meaningful once F16.1–F16.4 have produced a few real skills.
-
-## Removing a bad skill
-
-A distilled skill that turns out wrong is recovered by deleting `.yaao/skills/<name>/` and re-running `yaao skills install` to reap per-agent stubs. F12.6's watcher fires `tools/list_changed` on directory deletion, so the stale `yaao_skill_<name>` tool drops from connected clients in the same session. `yaao_prune` does not currently cover skills — adding `target: skill` is a possible follow-up but out of scope for this phase.
-
-## Non-goals
-
-- **Auto-detecting when a session is "skill-worthy."** The user knows whether they'll do this kind of work again better than any heuristic. Distillation is always user-invoked.
-- **A `yaao distill` CLI command.** Distillation is in-context only — see Key Deliverables. Skill *management* commands (list, view, remove) may live under `yaao skills` later, but those are Phase 8 surface, not Phase 16.
-- **Running the distilled skill server-side.** Same model as F12.5 — yaao produces the skill; the calling agent uses it.
-- **Cross-session synthesis** (combining N unrelated sessions into one skill). Out of scope for v1; refinement (F16.5) handles the iterative case.
-- **`yaao_prune` coverage for skills.** Recovery is `rm -rf` + `skills install`; see above.
+- **Cross-run merge serialization.** Two runs auto-merging into the *same*
+  target branch (e.g. both straight into `main`, no feature branch) is
+  protected by atomic `update-ref` CAS today — the second one gets a
+  `task:merge-failed` event. Adding a per-target advisory lock to give those
+  runs a friendlier retry experience is a v2 idea, not a v1 gating concern.
+- **Cross-process project lock.** The phase-12 docs imply a `.yaao/.lock`
+  that serializes `yaao_run` invocations on one MCP server. We're explicitly
+  *not* adding that lock — the workflow the user wants is concurrent runs,
+  not queueing — and F16.2 removes the doc claim.
+- **Streaming the full agent transcript into the handoff.** F16.3 enriches
+  `context.md` with bounded, high-signal additions. Forwarding the entire
+  tool-use trace or thinking blocks would blow past the token budget. The
+  journal + web viewer remain the place to inspect a parent's full activity.
+- **A `yaao runs` command.** Cross-run inspection lives in `yaao_inspect` /
+  `yaao status` / the web viewer's Workspace page; we're not adding a new
+  CLI surface.

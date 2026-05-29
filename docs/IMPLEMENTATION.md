@@ -4,7 +4,7 @@ This document is the working spec for `yaao`, organized by phase. Each feature h
 
 ## Overview
 
-yaao is implemented in 17 phases, progressing from foundational CLI infrastructure through the execution engine, agent integrations, the planner/converter skills, the TUI, the MCP server, the web viewer, release polish, concurrent-run hardening + context-handoff enrichment, session-to-skill distillation, and finally npm distribution + the docs site.
+yaao is implemented in 18 phases, progressing from foundational CLI infrastructure through the execution engine, agent integrations, the planner/converter skills, the TUI, the MCP server, the web viewer, integration correctness, release polish, concurrent-run hardening + context-handoff enrichment, session-to-skill distillation, and finally npm distribution + the docs site.
 
 > **Architectural keystone — MCP-first agent compatibility.** The integration story across Claude Code, Cursor, Copilot, Codex, and raw API models is built around yaao itself being an MCP server. Per-agent files are *thin* — each agent only needs to register yaao's MCP server. Skills, tool definitions, and prompts live behind the MCP boundary, not duplicated four ways. This means **Phase 12 (yaao-as-MCP) is foundational, not auxiliary**, and is intended to be implemented in parallel with Phase 8 (skills system). Phase 8's emitters write MCP-config bootstraps, not large skill artifacts. See the Implementation Priority section.
 
@@ -23,10 +23,11 @@ yaao is implemented in 17 phases, progressing from foundational CLI infrastructu
 | 11 | TUI                         | Ink primitives, DAG renderer, `view`, live monitor, streaming   | Shipped (text-mode) |
 | 12 | yaao-as-MCP                 | MCP server exposing `generate_plan`, `convert_plan`, `run_plan` | Shipped |
 | 13 | Web viewer | HTTP+SSE server, DAG view, live run view, workspace, plan + config editors | Shipped |
-| 14 | Release polish              | `yaao doctor` (incl. orphan-run detection), `yaao init --mcp`, quickstart + examples, help-text + error audit, README truth-up | Planned |
-| 15 | Concurrent runs & context handoff | runId entropy, branch namespacing, concurrency-model docs + tests, `context.md` enrichment (prompt, validation, commits, diff) | Planned |
-| 16 | Session → Skill distillation | `yaao-distiller` skill, session readers, `yaao_distill` MCP tool, refinement | Planned |
-| 17 | Distribution                | npm publish, docs site | Planned |
+| 14 | Integration correctness     | Enable-disable enforcement end-to-end, per-spawn MCP overlays for Cursor/Codex/Copilot, API provider truth-up (Anthropic caching + stub validation), live backend smoke tests, Spec Kit hardening | Planned |
+| 15 | Release polish              | `yaao doctor` (incl. orphan-run detection), `yaao init --mcp`, quickstart + examples, help-text + error audit, README truth-up | Planned |
+| 16 | Concurrent runs & context handoff | runId entropy, branch namespacing, concurrency-model docs + tests, `context.md` enrichment (prompt, validation, commits, diff) | Planned |
+| 17 | Session → Skill distillation | `yaao-distiller` skill, session readers, `yaao_distill` MCP tool, refinement | Planned |
+| 18 | Distribution                | npm publish, docs site | Planned |
 
 ---
 
@@ -281,7 +282,7 @@ Expose yaao itself as an MCP server. **This is the canonical way every agent —
 - `yaao_plan` mirrors `yaao plan`; returns the plan body plus the path written.
 - `yaao_convert` mirrors `yaao convert`; returns YAML and validates.
 - `yaao_run` starts a run asynchronously; `yaao_status` reports live state. Long-running progress flows via MCP progress notifications.
-- Every user-defined skill in `.yaao/skills/` is auto-registered as `yaao_skill_<name>` with input schema derived from `skill.yaml` (F12.5). A debounced FS watcher keeps the catalog in sync mid-session: adding or removing a skill directory triggers register/remove + `tools/list_changed` within ~250 ms, no reconnect needed (F12.6). This is what makes the Phase 16 distiller's "callable in the next turn" UX work.
+- Every user-defined skill in `.yaao/skills/` is auto-registered as `yaao_skill_<name>` with input schema derived from `skill.yaml` (F12.5). A debounced FS watcher keeps the catalog in sync mid-session: adding or removing a skill directory triggers register/remove + `tools/list_changed` within ~250 ms, no reconnect needed (F12.6). This is what makes the Phase 17 distiller's "callable in the next turn" UX work.
 
 ---
 
@@ -310,80 +311,103 @@ The browser surface for everything that isn't actually starting a run. Run launc
 
 ---
 
-## Phase 14: Release Polish
+## Phase 14: Integration Correctness
 
-The work that turns yaao from feature-complete into v1-shippable. Closes the first-use gaps (auto-MCP registration on `yaao init`, an environment-audit `yaao doctor`, a 60-second quickstart), audits error messages + their hints, and trues up the README to what the engine actually does. Sequenced ahead of concurrent-run hardening (Phase 15), distillation (Phase 16) and distribution (Phase 17) so polish lands before any of those branches off. See [phase-14/PHASE-14.md](phase-14/PHASE-14.md) for the phase overview.
+The v1 pre-flight surfaced a load-bearing failure: disabling an agent in `yaao.config.json` doesn't actually disable it. A user who turned off `claude-code` and kept only `copilot` ran `yaao plan` and `yaao run`, and claude-code agents spawned anyway. The same audit caught four related defects: only Claude Code's backend reads per-spawn MCP server config (so ctx-sys and `context.mcp-servers:` are silently dropped for Cursor/Codex/Copilot); Anthropic prompt caching is claimed in the README but no `cache_control` markers are emitted; OpenAI/OpenRouter are stubs that throw at spawn time rather than at validate; non-Claude backends have argv-only test coverage; the Spec Kit parser silently emits zero tasks on slightly-off input and drops `spec.md`/`plan.md` content. Phase 14 fixes all of them. See [phase-14/PHASE-14.md](phase-14/PHASE-14.md) for the phase overview.
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F14.1** | `yaao doctor` (subsumes `yaao agents`; orphan-run detection) | [F14.1-doctor.md](phase-14/F14.1-doctor.md) |
-| **F14.2** | `yaao init --mcp` — auto-register yaao's MCP server in `.mcp.json` | [F14.2-init-mcp.md](phase-14/F14.2-init-mcp.md) |
-| **F14.3** | First-use experience — 60-second quickstart + `examples/` directory | [F14.3-first-use.md](phase-14/F14.3-first-use.md) |
-| **F14.4** | Help text & error message audit | [F14.4-help-and-errors.md](phase-14/F14.4-help-and-errors.md) |
-| **F14.5** | README + IMPLEMENTATION.md accuracy pass | [F14.5-docs-truthup.md](phase-14/F14.5-docs-truthup.md) |
+| **F14.1** | Enable-disable enforcement end-to-end (planner, converter, validate, run, MCP) | [F14.1-enable-disable-enforcement.md](phase-14/F14.1-enable-disable-enforcement.md) |
+| **F14.2** | Per-spawn MCP overlays for Cursor / Codex / Copilot | [F14.2-per-spawn-mcp-overlays.md](phase-14/F14.2-per-spawn-mcp-overlays.md) |
+| **F14.3** | API provider truth-up (Anthropic prompt caching + OpenAI/OpenRouter stub validation) | [F14.3-api-provider-truthup.md](phase-14/F14.3-api-provider-truthup.md) |
+| **F14.4** | Live backend smoke tests (Cursor / Codex / Copilot / Anthropic) | [F14.4-live-backend-smoke-tests.md](phase-14/F14.4-live-backend-smoke-tests.md) |
+| **F14.5** | Spec Kit parser hardening + content propagation | [F14.5-speckit-hardening.md](phase-14/F14.5-speckit-hardening.md) |
+
+**Key Deliverables:**
+
+- **Enable-disable contract honored across every yaao surface.** `yaao run` and `yaao_run` gate on a fresh `validatePlan` pass that blocks `YAAO_PLAN_AGENT_DISABLED` and the new `YAAO_PLAN_API_PROVIDER_UNIMPLEMENTED`. `backendForTask` in both CLI and MCP refuses to construct a disabled backend (defense-in-depth). The planner skill gets a fifth input — `enabled-agents` — so its worked examples reflect the user's actual config instead of hard-coding `claude-code`. The converter's fallback walks the enabled list instead of demoting to `defaults.agent` blindly. `--allow-disabled-agents` is the escape hatch.
+- **Per-spawn MCP overlays for Cursor/Codex/Copilot.** Each backend's `spawn()` writes a transient MCP config in the format its CLI accepts (`.cursor/mcp.json` overlay swap, per-run TOML for codex, per-run `.vscode/mcp.json` for copilot), points the CLI at it, restores the user's original on completion. Factored into a shared `src/agents/mcp-overlay.ts` helper. Closes the silent-drop of `context.mcp-servers:` and ctx-sys auto-spawn for three of four CLI agents.
+- **Anthropic prompt caching shipped.** `cache_control: { type: 'ephemeral' }` on the system prompt, the tools-list tail, and the most recent tool-result block. `cache_creation_input_tokens` + `cache_read_input_tokens` accumulated per spawn and surfaced on `task:completed` so users can see hit rate in the journal + web viewer. OpenAI and OpenRouter providers now emit `YAAO_PLAN_API_PROVIDER_UNIMPLEMENTED` at validate time instead of crashing at first step.
+- **Live backend smoke tests.** Skip-if-missing live spawn tests under `tests/phase-14/live/` for each CLI backend + Anthropic; recorded fixture parsers under `tests/phase-14/parser-fixtures/`. A new `live-backends` CI job runs the live tests on nightly cron + manual dispatch; PRs stay fast. Catches the "vendor shipped a CLI update that broke our parser" failure mode that argv-only tests miss.
+- **Spec Kit hardening.** Strict task-line regex relaxed to accept common variants (single asterisks, en-dash, missing checkbox bullet); `YAAO_SPECKIT_PARSE_EMPTY` warning surfaces zero-tasks failures with a hint pointing at the expected shape. `spec.md` and `plan.md` bodies propagate through to the generated execution plan's new `plan.context` field and get inlined into per-task prompts (token-budgeted via `config.context.plan-context-budget`).
+- **F14.1 ships first** (closes the user-visible bug end-to-end). **F14.2 second** (unblocks ctx-sys for non-Claude agents). **F14.3 third** (truth-up). **F14.4 fourth** (test backstop). **F14.5 last** (lowest impact, surfaces silent failures + propagates dropped content).
+
+---
+
+## Phase 15: Release Polish
+
+The work that turns yaao from feature-complete into v1-shippable. Closes the first-use gaps (auto-MCP registration on `yaao init`, an environment-audit `yaao doctor`, a 60-second quickstart), audits error messages + their hints, and trues up the README to what the engine actually does. Sequenced after integration correctness (Phase 14) so the polish lands on top of an engine that actually honors its enable/disable contract — and ahead of concurrent-run hardening (Phase 16), distillation (Phase 17) and distribution (Phase 18) so polish lands before any of those branches off. See [phase-15/PHASE-15.md](phase-15/PHASE-15.md) for the phase overview.
+
+| Feature | Description | Doc |
+| --- | --- | --- |
+| **F15.1** | `yaao doctor` (subsumes `yaao agents`; orphan-run detection) | [F15.1-doctor.md](phase-15/F15.1-doctor.md) |
+| **F15.2** | `yaao init --mcp` — auto-register yaao's MCP server in `.mcp.json` | [F15.2-init-mcp.md](phase-15/F15.2-init-mcp.md) |
+| **F15.3** | First-use experience — 60-second quickstart + `examples/` directory | [F15.3-first-use.md](phase-15/F15.3-first-use.md) |
+| **F15.4** | Help text & error message audit | [F15.4-help-and-errors.md](phase-15/F15.4-help-and-errors.md) |
+| **F15.5** | README + IMPLEMENTATION.md accuracy pass | [F15.5-docs-truthup.md](phase-15/F15.5-docs-truthup.md) |
 
 **Key Deliverables:**
 
 - `yaao doctor` is the single command a confused user can run: Node version, git version, agent CLI presence + versions, ctx-sys presence + version, config sanity, write permissions, secrets-not-in-config rule, every enabled provider's API key resolves. Subsumes the per-agent availability check previously surfaced as `yaao agents`. **Also detects orphaned runs** — runs whose journal still says `running` but whose `runner.pid` is dead or whose journal mtime is stale — closing the "kill -9 left it stuck on running" gap that the CLI's SIGINT/SIGTERM handler (5a05f8c) doesn't cover. The same helper feeds `yaao_inspect`'s workspace listing so the web viewer's status pill stops lying.
 - `yaao init` default-on writes a `yaao` entry to the project's `.mcp.json` (and the per-agent equivalents: `.cursor/mcp.json`, `~/.codex/config.toml`, an inline reference in `.github/copilot-instructions.md`). Preserves siblings, never silently overwrites an existing `yaao` entry that differs from what we'd write. `--no-mcp` opts out.
-- A copy-pasteable five-line quickstart in the README — `npm i -g yaao && yaao init && yaao plan ... && yaao convert ... && yaao run ...` — works on a fresh machine because F14.1 + F14.2 close the previously-manual setup gap. Three real, runnable plans under `examples/` (TypeScript monorepo, Python service, C kernel) double as live tests of the convention.
+- A copy-pasteable five-line quickstart in the README — `npm i -g yaao && yaao init && yaao plan ... && yaao convert ... && yaao run ...` — works on a fresh machine because F15.1 + F15.2 close the previously-manual setup gap. Three real, runnable plans under `examples/` (TypeScript monorepo, Python service, C kernel) double as live tests of the convention.
 - Every command's `--help` is at least one sentence beyond the bare verb (the pre-v1 audit listed concrete gaps for `yaao stop`, `yaao serve`, `yaao plan --scope`, `yaao web --no-open`, etc.) AND every user-facing `YaaoError` carries a `hint:` that points at the fix; stale hints (referencing renamed commands) are caught.
-- The README + IMPLEMENTATION.md sweep closes accumulated drifts: API backend status (no longer stubs for Anthropic), `yaao agents` retired into `yaao doctor`, `format: both` and `--scope project` either dropped or marked experimental, all phase-N references retargeted after this renumbering. Runs *last* in the phase so drift introduced by F14.1–F14.4 is caught in the same pass.
-- End-to-end validation on real projects is deliberately **not** a Phase 14 feature — it's done out-of-band as part of v1 sign-off so the phase has a deterministic completion bar (every feature shipped + tested) rather than a human-time-dependent one.
+- The README + IMPLEMENTATION.md sweep closes accumulated drifts: API backend status (Anthropic shipped with prompt caching post-Phase 14, OpenAI/OpenRouter explicitly stubs surfaced at validate time), `yaao agents` retired into `yaao doctor`, `format: both` and `--scope project` either dropped or marked experimental, all phase-N references retargeted after this renumbering. Runs *last* in the phase so drift introduced by F15.1–F15.4 is caught in the same pass.
+- End-to-end validation on real projects is deliberately **not** a Phase 15 feature — it's done out-of-band as part of v1 sign-off so the phase has a deterministic completion bar (every feature shipped + tested) rather than a human-time-dependent one.
 
 ---
 
-## Phase 15: Concurrent Runs & Context Handoff
+## Phase 16: Concurrent Runs & Context Handoff
 
-Two findings from the v1 pre-flight review motivate this phase. First, concurrent runs against distinct feature branches are *almost* supported by the engine (worktree paths isolate by runId; merges use git plumbing + atomic ref CAS) but two naming choices block the workflow: runIds use millisecond resolution and the default task branch is `${plan.name}/${task.id}` with no featureBranch namespace. Second, the parent→child context handoff is correct but lossy — dependents receive an 80-line stdout tail and a file list, but not the parent's task prompt, not the validation outcome, and only `--numstat` totals instead of a per-file diff shape. This phase ships both. See [phase-15/PHASE-15.md](phase-15/PHASE-15.md) for the phase overview.
+Two findings from the v1 pre-flight review motivate this phase. First, concurrent runs against distinct feature branches are *almost* supported by the engine (worktree paths isolate by runId; merges use git plumbing + atomic ref CAS) but two naming choices block the workflow: runIds use millisecond resolution and the default task branch is `${plan.name}/${task.id}` with no featureBranch namespace. Second, the parent→child context handoff is correct but lossy — dependents receive an 80-line stdout tail and a file list, but not the parent's task prompt, not the validation outcome, and only `--numstat` totals instead of a per-file diff shape. This phase ships both. See [phase-16/PHASE-16.md](phase-16/PHASE-16.md) for the phase overview.
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F15.1** | Concurrent-run isolation hardening (runId entropy + branch namespacing) | [F15.1-concurrent-run-isolation.md](phase-15/F15.1-concurrent-run-isolation.md) |
-| **F15.2** | Concurrency model — docs alignment + integration tests | [F15.2-concurrency-model.md](phase-15/F15.2-concurrency-model.md) |
-| **F15.3** | Context handoff enrichment (parent prompt, validation, commits, diff) | [F15.3-context-handoff.md](phase-15/F15.3-context-handoff.md) |
+| **F16.1** | Concurrent-run isolation hardening (runId entropy + branch namespacing) | [F16.1-concurrent-run-isolation.md](phase-16/F16.1-concurrent-run-isolation.md) |
+| **F16.2** | Concurrency model — docs alignment + integration tests | [F16.2-concurrency-model.md](phase-16/F16.2-concurrency-model.md) |
+| **F16.3** | Context handoff enrichment (parent prompt, validation, commits, diff) | [F16.3-context-handoff.md](phase-16/F16.3-context-handoff.md) |
 
 **Key Deliverables:**
 
 - **runId entropy.** `run-${Date.now().toString(36)}-${nanoid(6)}` replaces the millisecond-only id everywhere (`src/cli/commands/run.ts`, `src/mcp/tools.ts`). Two MCP-driven `yaao_run` calls in the same tick get distinct ids. Forward-only — `--resume <oldRunId>` keeps working.
 - **Default branch namespacing.** Task default branch becomes `${featureBranch}/${task.id}` when `plan.featureBranch` is set; falls back to the historical `${plan.name}/${task.id}` otherwise. Two concurrent runs of the same plan against distinct feature branches now have disjoint task-branch namespaces by construction.
-- **Concurrency model documented + tested.** Removes the `.yaao/.lock` claim from Phase 12 docs (no such lock exists in `src/`, and we deliberately don't add it — concurrent runs are what we want). README gets a "Concurrent runs" section. Integration tests under `tests/phase-15/concurrent-runs/` prove two runs against distinct feature branches finish independently and don't trample the root checkout.
+- **Concurrency model documented + tested.** Removes the `.yaao/.lock` claim from Phase 12 docs (no such lock exists in `src/`, and we deliberately don't add it — concurrent runs are what we want). README gets a "Concurrent runs" section. Integration tests under `tests/phase-16/concurrent-runs/` prove two runs against distinct feature branches finish independently and don't trample the root checkout.
 - **Context handoff enrichment.** `context.md` gains four bounded sections (toggleable via `config.context.include: […]`): the parent's resolved task prompt (first 30 lines), the validation outcome when present (command, exitCode, durationMs, decisionReason, mustPass), the full commit chain (`git log baseCommit..HEAD --format=- %h %s`), and a per-file `git diff --stat` (~30-line cap). All sit inside the existing per-dep token budget so the budgeting logic is unchanged.
-- **F15.1 ships first.** Pure naming change, unblocks F15.2's integration tests. F15.2 follows. F15.3 is orthogonal and can land in parallel.
+- **F16.1 ships first.** Pure naming change, unblocks F16.2's integration tests. F16.2 follows. F16.3 is orthogonal and can land in parallel.
 
 ---
 
-## Phase 16: Session → Skill Distillation
+## Phase 17: Session → Skill Distillation
 
-Close the missing half of the skill lifecycle: capture the patterns from a finished chat session — conventions, focus files, user corrections, the approach that actually worked — and crystallize them into a reusable yaao skill that immediately becomes available across every connected agent via the existing F8.1 format, F12.5 auto-MCP-registration, and F12.6 hot reload. See [phase-16/PHASE-16.md](phase-16/PHASE-16.md) for the phase overview.
+Close the missing half of the skill lifecycle: capture the patterns from a finished chat session — conventions, focus files, user corrections, the approach that actually worked — and crystallize them into a reusable yaao skill that immediately becomes available across every connected agent via the existing F8.1 format, F12.5 auto-MCP-registration, and F12.6 hot reload. See [phase-17/PHASE-17.md](phase-17/PHASE-17.md) for the phase overview.
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F16.1** | `yaao-distiller` built-in skill | [F16.1-distiller-skill.md](phase-16/F16.1-distiller-skill.md) |
-| **F16.2** | In-session capture (`SessionRecord` contract, redaction) | [F16.2-session-readers.md](phase-16/F16.2-session-readers.md) |
-| **F16.3** | Skill emission, validation, post-emit install | [F16.3-skill-emission.md](phase-16/F16.3-skill-emission.md) |
-| **F16.4** | `yaao_distill` MCP tool (sole entry point) | [F16.4-distill-mcp-tool.md](phase-16/F16.4-distill-mcp-tool.md) |
-| **F16.5** | Skill refinement (re-distill, diff review) | [F16.5-skill-refinement.md](phase-16/F16.5-skill-refinement.md) |
+| **F17.1** | `yaao-distiller` built-in skill | [F17.1-distiller-skill.md](phase-17/F17.1-distiller-skill.md) |
+| **F17.2** | In-session capture (`SessionRecord` contract, redaction) | [F17.2-session-readers.md](phase-17/F17.2-session-readers.md) |
+| **F17.3** | Skill emission, validation, post-emit install | [F17.3-skill-emission.md](phase-17/F17.3-skill-emission.md) |
+| **F17.4** | `yaao_distill` MCP tool (sole entry point) | [F17.4-distill-mcp-tool.md](phase-17/F17.4-distill-mcp-tool.md) |
+| **F17.5** | Skill refinement (re-distill, diff review) | [F17.5-skill-refinement.md](phase-17/F17.5-skill-refinement.md) |
 
 **Key Deliverables:**
 
 - `yaao-distiller` joins `yaao-planner` and `yaao-converter` as a third built-in skill under `src/skills/builtin/`. Its prompt is the whole product: a three-stage pipeline (identify the generalizable task → split signal from instance → emit a draft `skill.yaml` + `prompt.md`) with explicit anti-leakage rules.
-- **MCP is the only entry point.** Unlike every other yaao command, Phase 16 has no shell-CLI surface — distillation is inherently in-context, and the agent producing the `SessionRecord` is by definition the agent calling the tool. The calling agent supplies its own structured self-summary as the `session` argument; yaao never reads IDE-internal transcript stores. Works across every supported agent (Claude Code, Cursor, Copilot, Codex, raw API).
+- **MCP is the only entry point.** Unlike every other yaao command, Phase 17 has no shell-CLI surface — distillation is inherently in-context, and the agent producing the `SessionRecord` is by definition the agent calling the tool. The calling agent supplies its own structured self-summary as the `session` argument; yaao never reads IDE-internal transcript stores. Works across every supported agent (Claude Code, Cursor, Copilot, Codex, raw API).
 - `yaao_distill` writes to `.yaao/skills/<name>/` (project) or `~/.yaao/skills/<name>/` (user) and reuses `validateSkill` from F8.1. After write, `yaao skills install` re-emits per-agent stubs automatically. F12.6's hot reload picks up the new directory and the SDK fires `tools/list_changed` — so a skill distilled from a Claude Code session is callable from Cursor, Copilot, Codex, and the raw API in the next turn, with no reconnect.
-- **F16.1, F16.2, and F16.3 land together** as one PR — the distiller prompt, the `SessionRecord` contract it consumes, and the emission pipeline it produces output for are deeply coupled and can't be sensibly built in isolation. F16.4 (MCP driver) and F16.5 (refinement) layer on top once those three are working end-to-end.
-- Refinement (F16.5): re-run the distiller against an existing skill with a fresh session. The distiller merges (preserving anti-patterns and distillation notes); yaao returns a diff + changelog in the MCP response so the calling agent can show the user before committing (or call with `apply: false` for explicit preview). Contradictions between old and new conventions block auto-apply, detected via a **structural rule** over backtick-quoted identifiers shared between bullets (LLM-driven semantic conflict detection is a v2 candidate). **Versioning is git's job** — yaao does not touch the `version` field on refinement and keeps no parallel backup directory. `.yaao/skills/` is repo-tracked, so `git log -p` is the audit trail. A pre-refine `YAAO_SKILL_DIRTY` check surfaces uncommitted changes to the calling agent, which is expected to confirm with the user before re-calling with `force: true`.
+- **F17.1, F17.2, and F17.3 land together** as one PR — the distiller prompt, the `SessionRecord` contract it consumes, and the emission pipeline it produces output for are deeply coupled and can't be sensibly built in isolation. F17.4 (MCP driver) and F17.5 (refinement) layer on top once those three are working end-to-end.
+- Refinement (F17.5): re-run the distiller against an existing skill with a fresh session. The distiller merges (preserving anti-patterns and distillation notes); yaao returns a diff + changelog in the MCP response so the calling agent can show the user before committing (or call with `apply: false` for explicit preview). Contradictions between old and new conventions block auto-apply, detected via a **structural rule** over backtick-quoted identifiers shared between bullets (LLM-driven semantic conflict detection is a v2 candidate). **Versioning is git's job** — yaao does not touch the `version` field on refinement and keeps no parallel backup directory. `.yaao/skills/` is repo-tracked, so `git log -p` is the audit trail. A pre-refine `YAAO_SKILL_DIRTY` check surfaces uncommitted changes to the calling agent, which is expected to confirm with the user before re-calling with `force: true`.
 - Recovery from a bad distillation: `rm -rf .yaao/skills/<name>` + `yaao skills install`. F12.6's watcher drops the stale `yaao_skill_<name>` tool in the same session. `yaao_prune` does not currently cover skills; a `target: skill` extension is a possible follow-up.
 
 ---
 
-## Phase 17: Distribution
+## Phase 18: Distribution
 
 Publish yaao on npm and stand up a docs site. Sequenced last so the docs site can be built against a frozen v1 surface rather than chasing in-flight phases.
 
 | Feature | Description | Doc |
 | --- | --- | --- |
-| **F17.1** | npm distribution | [F17.1-npm-publish.md](phase-17/F17.1-npm-publish.md) |
-| **F17.2** | Docs site | [F17.2-docs-site.md](phase-17/F17.2-docs-site.md) |
+| **F18.1** | npm distribution | [F18.1-npm-publish.md](phase-18/F18.1-npm-publish.md) |
+| **F18.2** | Docs site | [F18.2-docs-site.md](phase-18/F18.2-docs-site.md) |
 
 **Key Deliverables:**
 
@@ -448,14 +472,14 @@ yaao/
 │   │   └── status.tsx            # F11.5
 │   ├── mcp/                      # F12 — yaao-as-MCP server
 │   ├── web/                      # F13 — HTTP+SSE server, plan/config editors
-│   ├── doctor/                   # F14.1
-│   └── distill/                  # F16 — session → skill distillation
+│   ├── doctor/                   # F15.1
+│   └── distill/                  # F17 — session → skill distillation
 ├── tests/
 │   ├── helpers/
-│   ├── phase-1/ ... phase-17/
+│   ├── phase-1/ ... phase-18/
 ├── docs/
 │   ├── IMPLEMENTATION.md
-│   ├── phase-1/ ... phase-17/
+│   ├── phase-1/ ... phase-18/
 ├── package.json
 ├── tsconfig.json
 ├── tsup.config.ts
@@ -503,7 +527,7 @@ yaao/
 4. Phase 7 (ctx-sys) is fully optional and independent; can land any time after Phase 5. Default-off in shipped config.
 5. Phases 9-10 (planner/converter skills) build on the MCP-tool path established in 8 + 12.
 6. Phase 11 (TUI) can be developed alongside 5/6 since it just consumes the event bus.
-7. Phase 13 (web viewer) ships independently of the engine. Phase 14 (release polish) is the gating step before tagging v1. Phase 15 (concurrent runs + context handoff) lands next — it unlocks the two-feature-branches-side-by-side workflow the worktree model was shaped for. Phase 16 (distillation) and Phase 17 (npm + docs site) follow.
+7. Phase 13 (web viewer) ships independently of the engine. Phase 14 (integration correctness) lands first among the remaining phases — it fixes the enable/disable contract and the per-spawn MCP overlays that everything downstream depends on. Phase 15 (release polish) is the gating step before tagging v1. Phase 16 (concurrent runs + context handoff) unlocks the two-feature-branches-side-by-side workflow the worktree model was shaped for. Phase 17 (distillation) and Phase 18 (npm + docs site) follow.
 
 ---
 

@@ -21,10 +21,11 @@ Recent additions worth knowing about even mid-MVP: a per-plan `plan.featureBranc
 
 Planned phases (in this order):
 
-- **Phase 14 — Release Polish**: `yaao doctor`, default-on `yaao init --mcp` auto-registration, a 60-second README quickstart + `examples/` directory, an error-message + hint audit, a docs accuracy pass, and gating end-to-end validation on real projects.
-- **Phase 15 — Concurrent Runs & Context Handoff**: runId entropy + branch namespacing so two `yaao run`s against different feature branches don't collide, integration tests + docs alignment for the concurrent-runs workflow, and a `context.md` enrichment pass (parent prompt, validation outcome, commit chain, diff stat) so dependent agents get the meta-context they need on handover.
-- **Phase 16 — Session → Skill Distillation**: capture useful patterns from a finished chat session and crystallise them into a reusable yaao skill via a new `yaao_distill` MCP tool.
-- **Phase 17 — Distribution**: npm publish, docs site.
+- **Phase 14 — Integration Correctness**: enable/disable enforcement end-to-end (so disabling `claude-code` in config actually prevents claude-code agents from spawning), per-spawn MCP overlays for Cursor/Codex/Copilot (today only Claude Code receives ctx-sys and per-plan MCP servers at run time), Anthropic prompt caching shipped + OpenAI/OpenRouter stubs caught at validate time, live backend smoke tests, and Spec Kit parser hardening + `spec.md`/`plan.md` content propagation.
+- **Phase 15 — Release Polish**: `yaao doctor`, default-on `yaao init --mcp` auto-registration, a 60-second README quickstart + `examples/` directory, an error-message + hint audit, a docs accuracy pass, and gating end-to-end validation on real projects.
+- **Phase 16 — Concurrent Runs & Context Handoff**: runId entropy + branch namespacing so two `yaao run`s against different feature branches don't collide, integration tests + docs alignment for the concurrent-runs workflow, and a `context.md` enrichment pass (parent prompt, validation outcome, commit chain, diff stat) so dependent agents get the meta-context they need on handover.
+- **Phase 17 — Session → Skill Distillation**: capture useful patterns from a finished chat session and crystallise them into a reusable yaao skill via a new `yaao_distill` MCP tool.
+- **Phase 18 — Distribution**: npm publish, docs site.
 
 The README and the [implementation plan](docs/IMPLEMENTATION.md) remain the working spec.
 
@@ -131,7 +132,7 @@ ctx-sys is one example of an MCP context provider. yaao's MCP wiring is generic 
 
 ## Installation
 
-Currently no npm publish — clone and build from source (distribution lands in Phase 17):
+Currently no npm publish — clone and build from source (distribution lands in Phase 18):
 
 ```bash
 git clone <repo> yaao
@@ -183,7 +184,7 @@ yaao run --resume <run-id>
 | `yaao stop [run-id]` | Stop a running yaao run by sending SIGTERM to its runner process. The runner stamps `run:end status=cancelled` in the journal before exit; in-flight task branches survive (resume via `--resume`). Omit the run-id to target the most recent `status=running` run. |
 | `yaao status [run-id]` | Inspect a run (live or completed). |
 | `yaao clean [run-id]` | Tear down worktrees + branches. (For finer-grained control, use the `yaao_prune` MCP tool — same logic, structured input/output, dry-run by default.) |
-| `yaao agents` | Report which agent backends are available and their versions. (Subsumed by `yaao doctor` in Phase 14.) |
+| `yaao agents` | Report which agent backends are available and their versions. (Subsumed by `yaao doctor` in Phase 15.) |
 | `yaao skills install` | (Re)install skill/agent files for Claude Code, Cursor, Copilot, Codex. |
 | `yaao serve` | Start the MCP stdio server. Spawned by AI clients (Claude Code, Cursor, etc.) via their MCP config; not run directly by humans. |
 | `yaao web` | Start the local HTTP+SSE web viewer. Defaults to `http://127.0.0.1:8787`. Flags: `--host`, `--port`, `--token`, `--no-open`. Non-loopback binds require `--token`. |
