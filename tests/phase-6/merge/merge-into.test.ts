@@ -16,6 +16,10 @@ describe('Per-task merge.into', () => {
     writeFileSync(planFile, 'plan:\n  name: mp\n  version: 1\ntasks: []\n');
     const { plan } = fakeResolved({
       plan: { name: 'mp' },
+      // F14.8 flipped merge.history's default to 'rebase'; this test
+      // asserts a merge-commit subject so it pins the legacy 'merge'
+      // history shape explicitly.
+      config: { merge: { history: 'merge' } },
       tasks: [
         {
           id: 'a',

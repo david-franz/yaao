@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { writeFileSync, mkdirSync, chmodSync } from 'node:fs';
-import { mkdtempSync } from 'node:fs';
+import { writeFileSync, chmodSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CopilotBackend } from '../../../src/agents/copilot.js';

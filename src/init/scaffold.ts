@@ -13,7 +13,15 @@ export function buildDefaultConfigJson(
   const flag = (a: CliAgentName): boolean => enabledByAgent?.[a] ?? true;
   return `${JSON.stringify(
     {
-      $schema: 'https://yaao.dev/schema/config.json',
+      // F14.8 — Points at the JSON Schema artifact emitted by
+      // scripts/emit-config-schema.mjs and committed to the repo. The
+      // pre-F14.8 URL (https://yaao.dev/schema/config.json) pointed at a
+      // domain that doesn't exist yet; editors silently failed to
+      // resolve the schema and autocomplete didn't work. The
+      // raw.githubusercontent.com URL works today; Phase 18 will swap
+      // to a published yaao.dev URL once the docs site stands up.
+      $schema:
+        'https://raw.githubusercontent.com/yaao/yaao/main/schema/config.schema.json',
       version: 1,
       defaults: {
         agent: 'claude-code',
@@ -22,7 +30,9 @@ export function buildDefaultConfigJson(
         'base-branch': 'main',
         'worktree-root': '.yaao/worktrees',
       },
-      merge: { strategy: 'auto', 'on-conflict': 'agent', history: 'merge' },
+      // F14.8 — history flipped from 'merge' to 'rebase' so the default
+      // trio matches intent (auto / agent / rebase).
+      merge: { strategy: 'auto', 'on-conflict': 'agent', history: 'rebase' },
       agents: {
         'claude-code': { enabled: flag('claude-code') },
         cursor: { enabled: flag('cursor') },
@@ -31,7 +41,9 @@ export function buildDefaultConfigJson(
         api: { providers: {} },
       },
       'ctx-sys': { enabled: false, 'auto-spawn': true, 'require-query': false },
-      plan: { format: 'markdown', speckit: false },
+      // F14.8 — `speckit: false` dropped from new scaffolds (legacy
+      // field, never consumed; see plan-schema doc-comment).
+      plan: { format: 'markdown' },
     },
     null,
     2,

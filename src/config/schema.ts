@@ -36,7 +36,10 @@ export const ConfigSchema = z
         // Which git verb to use when landing a task branch on its target
         // (auto-merge to base-branch, or task.merge.into). `merge` produces a
         // merge commit per task; `rebase` replays commits for linear history.
-        history: z.enum(['merge', 'rebase']).default('merge'),
+        // F14.8 — flipped from 'merge' to 'rebase' so the default trio is
+        // (strategy=auto, on-conflict=agent, history=rebase). Existing plans
+        // that pin `history` explicitly are unaffected.
+        history: z.enum(['merge', 'rebase']).default('rebase'),
         'conflict-resolver': z
           .object({ agent: AgentNameSchema, model: z.string() })
           .optional(),
@@ -94,12 +97,34 @@ export const ConfigSchema = z
     plan: z
       .object({
         format: z.enum(['markdown', 'speckit', 'both']).default('markdown'),
-        speckit: z.boolean().default(false),
+        /**
+         * F14.8 — Deprecated legacy field. Never consumed by any code path
+         * (the `format` enum above is the real control). Kept in the schema
+         * so existing yaao.config.json files with `plan.speckit: false`
+         * still parse cleanly under the schema's `.strict()` mode; new
+         * scaffolds (init/scaffold.ts) no longer write it. Safe to delete
+         * by hand at any time.
+         */
+        speckit: z.boolean().optional(),
         /** Default directory `yaao plan` writes generated plans to. Override per
          * invocation with `--out`. Relative paths resolve against the project root. */
         'out-dir': z.string().default('.yaao/plans'),
         /** Default directory `yaao convert` writes execution YAML to. Override with `--out`. */
         'exec-dir': z.string().default('.yaao/exec'),
+        /**
+         * F14.8 — Optional `plan.agent` / `plan.model` / `plan.api` block
+         * lets users pin a planner backend separate from `defaults.agent`.
+         * Precedence (post-F14.1): `--agent` CLI flag > `plan.agent` here
+         * > `defaults.agent` (walked through the enabled list).
+         */
+        agent: AgentNameSchema.optional(),
+        model: z.string().optional(),
+        api: z
+          .object({
+            provider: z.enum(['anthropic', 'openai', 'openrouter']).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .default({}),
     run: z

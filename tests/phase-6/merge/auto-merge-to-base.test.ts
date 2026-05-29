@@ -19,6 +19,10 @@ describe('merge.strategy: auto', () => {
     const { plan } = fakeResolved({
       plan: { name: 'am' },
       // DEFAULT_CONFIG already sets merge.strategy = 'auto'.
+      // F14.8 flipped merge.history's default to 'rebase'; this test
+      // asserts merge-commit subjects ("Merge X into Y") so it pins the
+      // legacy 'merge' history shape explicitly.
+      config: { merge: { history: 'merge' } },
       tasks: [
         { id: 'a', title: 'A', agent: 'claude-code', prompt: 'p' },
         { id: 'b', title: 'B', agent: 'claude-code', depends: ['a'], prompt: 'p' },

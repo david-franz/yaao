@@ -51,6 +51,19 @@ export class SubprocessBackend implements AgentBackend {
   async isAvailable(): Promise<AvailabilityReport> {
     try {
       const r = await execa(this.opts.bin, ['--version'], { reject: false });
+      // F14.8 — When execa is invoked with `reject: false` and the binary
+      // can't even be spawned (ENOENT), it returns an object with
+      // `failed: true` and `exitCode: undefined` rather than throwing. The
+      // pre-F14.8 code fell back to `-1` and rendered as "codex --version
+      // exited -1" — confusing nonsense. Detect the spawn-failure shape
+      // explicitly and report it as "binary not found on PATH" with an
+      // actionable hint.
+      if (r.failed && typeof r.exitCode !== 'number') {
+        return {
+          available: false,
+          reason: `binary '${this.opts.bin}' not found on PATH (install it or set agents.<name>.bin in yaao.config.json)`,
+        };
+      }
       const code = typeof r.exitCode === 'number' ? r.exitCode : -1;
       if (code !== 0) {
         return {
