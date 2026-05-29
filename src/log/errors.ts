@@ -40,8 +40,6 @@ export const DEFAULT_HINTS: Record<string, string> = {
     "Set agents.<name>.enabled = true in yaao.config.json, choose an enabled agent for the task, or rerun with --allow-disabled-agents to downgrade to a warning.",
   YAAO_NO_ENABLED_AGENTS:
     'Enable at least one agent in yaao.config.json (set agents.<name>.enabled = true) or configure agents.api.providers with a resolvable API key.',
-  YAAO_PLAN_API_PROVIDER_UNIMPLEMENTED:
-    'Use provider: anthropic, or wait for the openai/openrouter implementation (Phase 14 F14.6).',
 };
 
 export class NotInitializedError extends YaaoError {

@@ -177,19 +177,10 @@ export function validatePlan(
           hint: `set the provider's api-key in .yaao/secrets.local.json or as an env var`,
         });
       }
-      // F14.3 — Surface OpenAI and OpenRouter as stubs at validate time
-      // instead of crashing at first step. F14.6 ships the working
-      // providers and removes this rule in the same PR.
-      if (provider === 'openai' || provider === 'openrouter') {
-        issues.push({
-          severity: 'error',
-          code: 'YAAO_PLAN_API_PROVIDER_UNIMPLEMENTED',
-          message: `task '${t.id}' uses api provider '${provider}' which is not yet implemented`,
-          taskId: t.id,
-          location: source.get(t.id),
-          hint: 'use provider: anthropic, or wait for the openai/openrouter implementation (F14.6)',
-        });
-      }
+      // F14.6 removed F14.3's YAAO_PLAN_API_PROVIDER_UNIMPLEMENTED gate
+      // here — OpenAI and OpenRouter providers now ship as working
+      // implementations. The YAAO_PLAN_API_NO_KEY check above remains
+      // and applies symmetrically across all three providers.
     }
   }
 

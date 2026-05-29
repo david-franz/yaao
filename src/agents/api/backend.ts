@@ -419,21 +419,221 @@ interface AnthropicResponse {
   };
 }
 
+/**
+ * F14.6 — OpenAI Chat Completions provider with full tool-use loop.
+ *
+ * Translates yaao's `ApiToolCall` / `ApiToolResult` shapes to OpenAI's
+ * `tool_calls` (assistant turn) + `role: 'tool'` (user-side turn)
+ * sequence. The wire format is otherwise stable; we POST to
+ * `/v1/chat/completions` with a `tools` array and read
+ * `choices[0].message`.
+ *
+ * Cache telemetry: OpenAI applies automatic prefix caching for prompts
+ * ≥ 1024 input tokens with no markers required. The response's
+ * `usage.prompt_tokens_details.cached_tokens` surfaces cache hits;
+ * we propagate it to `AssistantStep.usage.cacheRead`. Cache *creation*
+ * isn't reported, so `cacheCreation` is always omitted for OpenAI.
+ */
 export class OpenAIProvider implements ApiProvider {
   readonly name = 'openai' as const;
-  isAvailable(): { available: boolean; reason?: string } {
-    return { available: false, reason: 'openai provider SDK integration is post-MVP' };
+
+  constructor(
+    private readonly opts: {
+      fetchFn?: typeof fetch;
+      maxTokens?: number;
+    } = {},
+  ) {}
+
+  isAvailable(config: ApiProviderConfig): { available: boolean; reason?: string } {
+    if (!config.apiKey) return { available: false, reason: 'no OPENAI_API_KEY configured' };
+    return { available: true };
   }
-  async step(): Promise<AssistantStep> {
-    throw new Error('OpenAIProvider not yet implemented');
+
+  async step(req: ApiRunRequest): Promise<AssistantStep> {
+    return stepOpenAICompatible(req, {
+      defaultBaseUrl: 'https://api.openai.com',
+      ...(this.opts.fetchFn ? { fetchFn: this.opts.fetchFn } : {}),
+      ...(this.opts.maxTokens !== undefined ? { maxTokens: this.opts.maxTokens } : {}),
+    });
   }
 }
+
+/**
+ * F14.6 — OpenRouter provider. OpenRouter exposes an OpenAI-compatible
+ * chat-completions API, so the wire shape is identical to `OpenAIProvider`
+ * with a different default `baseUrl` and a vendor-prefixed model namespace
+ * (`anthropic/claude-opus-4-7`, `openai/gpt-5`, etc.). Recommended
+ * attribution headers (`HTTP-Referer`, `X-Title`) are set per
+ * OpenRouter's guidance — they're advisory and the API accepts requests
+ * without them, but populating them lets OpenRouter surface yaao runs in
+ * dashboards.
+ */
 export class OpenRouterProvider implements ApiProvider {
   readonly name = 'openrouter' as const;
-  isAvailable(): { available: boolean; reason?: string } {
-    return { available: false, reason: 'openrouter provider SDK integration is post-MVP' };
+
+  constructor(
+    private readonly opts: {
+      fetchFn?: typeof fetch;
+      maxTokens?: number;
+    } = {},
+  ) {}
+
+  isAvailable(config: ApiProviderConfig): { available: boolean; reason?: string } {
+    if (!config.apiKey) return { available: false, reason: 'no OPENROUTER_API_KEY configured' };
+    return { available: true };
   }
-  async step(): Promise<AssistantStep> {
-    throw new Error('OpenRouterProvider not yet implemented');
+
+  async step(req: ApiRunRequest): Promise<AssistantStep> {
+    return stepOpenAICompatible(req, {
+      defaultBaseUrl: 'https://openrouter.ai/api',
+      ...(this.opts.fetchFn ? { fetchFn: this.opts.fetchFn } : {}),
+      ...(this.opts.maxTokens !== undefined ? { maxTokens: this.opts.maxTokens } : {}),
+      extraHeaders: {
+        // OpenRouter docs recommend these for attribution / quota surfacing;
+        // both are advisory and accepted as best-effort.
+        'HTTP-Referer': 'https://github.com/yaao/yaao',
+        'X-Title': 'yaao',
+      },
+    });
   }
+}
+
+interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content?: string | null;
+  tool_calls?: {
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }[];
+  tool_call_id?: string;
+}
+
+interface OpenAIResponseMessage {
+  role: 'assistant';
+  content?: string | null;
+  tool_calls?: {
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }[];
+}
+
+interface OpenAIResponse {
+  choices: { message: OpenAIResponseMessage; finish_reason: string }[];
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
+  error?: { message?: string; type?: string };
+}
+
+/**
+ * Shared OpenAI-compatible step implementation used by both
+ * `OpenAIProvider` and `OpenRouterProvider`. Differences between the two
+ * are captured in `opts` (default baseUrl, optional extra headers).
+ */
+async function stepOpenAICompatible(
+  req: ApiRunRequest,
+  opts: {
+    defaultBaseUrl: string;
+    fetchFn?: typeof fetch;
+    maxTokens?: number;
+    extraHeaders?: Record<string, string>;
+  },
+): Promise<AssistantStep> {
+  const fetchImpl = opts.fetchFn ?? fetch;
+  const baseUrl = req.baseUrl ?? opts.defaultBaseUrl;
+  if (!req.apiKey) throw new Error(`OpenAI-compatible provider step called without apiKey on request`);
+
+  // Reconstruct the conversation. OpenAI's shape:
+  //   system → user → assistant (with optional tool_calls) → role:'tool'
+  //   (one per call_id) → assistant ... → repeat
+  const messages: OpenAIMessage[] = [
+    { role: 'system', content: req.systemPrompt },
+    { role: 'user', content: req.prompt },
+  ];
+  for (const prev of req.prevAssistantMessages ?? []) {
+    const assistant: OpenAIMessage = { role: 'assistant', content: prev.text || null };
+    if (prev.toolCalls.length > 0) {
+      assistant.tool_calls = prev.toolCalls.map((tc) => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: { name: tc.name, arguments: JSON.stringify(tc.input ?? {}) },
+      }));
+    }
+    messages.push(assistant);
+    for (const tr of prev.toolResults ?? []) {
+      messages.push({
+        role: 'tool',
+        tool_call_id: tr.id,
+        content: tr.isError ? `ERROR: ${tr.content}` : tr.content,
+      });
+    }
+  }
+
+  const body = {
+    model: req.model,
+    max_tokens: opts.maxTokens ?? 4096,
+    messages,
+    ...(req.tools.length > 0
+      ? {
+          tools: req.tools.map((t) => ({
+            type: 'function' as const,
+            function: {
+              name: t.name,
+              description: t.description,
+              parameters: t.inputSchema,
+            },
+          })),
+        }
+      : {}),
+  };
+
+  const resp = await fetchImpl(`${baseUrl}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${req.apiKey}`,
+      ...(opts.extraHeaders ?? {}),
+    },
+    body: JSON.stringify(body),
+    ...(req.signal ? { signal: req.signal } : {}),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    // Don't echo the request payload back in the error message — system
+    // prompt and tool outputs are sensitive.
+    throw new Error(`openai ${resp.status}: ${text.slice(0, 500) || resp.statusText}`);
+  }
+  const parsed = (await resp.json()) as OpenAIResponse;
+  const msg = parsed.choices?.[0]?.message;
+  const text = (msg?.content ?? '').toString();
+  const toolCalls: ApiToolCall[] = (msg?.tool_calls ?? []).map((tc) => {
+    let input: unknown = {};
+    try {
+      input = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+    } catch {
+      // Malformed arguments JSON — pass through as a string under a known key
+      // so the downstream tool sees the raw payload rather than dropping it.
+      input = { raw: tc.function.arguments };
+    }
+    return { id: tc.id, name: tc.function.name, input };
+  });
+  const finishReason = parsed.choices?.[0]?.finish_reason ?? 'stop';
+  const stop = finishReason !== 'tool_calls';
+  const usageRaw = parsed.usage;
+  const usage = usageRaw
+    ? {
+        ...(usageRaw.prompt_tokens !== undefined ? { inputTokens: usageRaw.prompt_tokens } : {}),
+        ...(usageRaw.completion_tokens !== undefined ? { outputTokens: usageRaw.completion_tokens } : {}),
+        ...(usageRaw.prompt_tokens_details?.cached_tokens !== undefined
+          ? { cacheRead: usageRaw.prompt_tokens_details.cached_tokens }
+          : {}),
+      }
+    : undefined;
+  const step: AssistantStep = { text, toolCalls, stop };
+  if (usage !== undefined && Object.keys(usage).length > 0) step.usage = usage;
+  return step;
 }
